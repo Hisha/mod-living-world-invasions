@@ -1,1 +1,28 @@
+#
+# Living World Invasions
+#
 
+###################################################################################################
+# LWI.Enable
+#   Description: Enables the Living World Invasions engine.
+#   Default:     1
+###################################################################################################
+
+LWI.Enable = 1
+
+###################################################################################################
+# LWI.Playerbots.Enable
+#   Description: Enables optional Playerbots participation when support is available.
+#                This setting does not make Playerbots a requirement for the module.
+#   Default:     0
+###################################################################################################
+
+LWI.Playerbots.Enable = 0
+
+###################################################################################################
+# LWI.Debug
+#   Description: Enables additional module logging.
+#   Default:     0
+###################################################################################################
+
+LWI.Debug = 0
