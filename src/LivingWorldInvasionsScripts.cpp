@@ -17,13 +17,27 @@ enum class LwiConfig
 class LwiConfigData final : public ConfigValueCache<LwiConfig>
 {
 public:
-    LwiConfigData() : ConfigValueCache(LwiConfig::Count) { }
+    LwiConfigData()
+        : ConfigValueCache(LwiConfig::Count)
+    {
+    }
 
     void BuildConfigCache() override
     {
-        SetConfigValue<bool>(LwiConfig::Enabled, "LWI.Enable", true);
-        SetConfigValue<bool>(LwiConfig::PlayerbotsEnabled, "LWI.Playerbots.Enable", false);
-        SetConfigValue<bool>(LwiConfig::Debug, "LWI.Debug", false);
+        SetConfigValue<bool>(
+            LwiConfig::Enabled,
+            "LWI.Enable",
+            true);
+
+        SetConfigValue<bool>(
+            LwiConfig::PlayerbotsEnabled,
+            "LWI.Playerbots.Enable",
+            false);
+
+        SetConfigValue<bool>(
+            LwiConfig::Debug,
+            "LWI.Debug",
+            false);
     }
 };
 
@@ -32,36 +46,41 @@ LwiConfigData lwiConfig;
 class LivingWorldInvasionsWorldScript final : public WorldScript
 {
 public:
-    LivingWorldInvasionsWorldScript() : WorldScript("LivingWorldInvasionsWorldScript", {
-        WORLDHOOK_ON_BEFORE_CONFIG_LOAD,
-        WORLDHOOK_ON_STARTUP
-    }) { }
-
-    void OnBeforeConfigLoad(bool reload) override
+    LivingWorldInvasionsWorldScript()
+        : WorldScript("LivingWorldInvasionsWorldScript",
+        {
+            WORLDHOOK_ON_AFTER_CONFIG_LOAD
+        })
     {
-        lwiConfig.Initialize(reload);
     }
 
-	void OnStartup() override
-	{
-	    LOG_INFO("server.loading",
-	        "Living World Invasions: startup hook reached.");
+    void OnAfterConfigLoad(bool reload) override
+    {
+        LOG_INFO(
+            "server.loading",
+            "Living World Invasions: configuration hook reached. Reload: {}.",
+            reload ? "yes" : "no");
 
-	    if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Enabled))
-	    {
-	        LOG_INFO("server.loading",
-	            "Living World Invasions is disabled.");
-	        return;
-	    }
+        lwiConfig.Initialize(reload);
 
-	    sInvasionMgr.LoadDefinitions();
+        if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Enabled))
+        {
+            LOG_INFO(
+                "server.loading",
+                "Living World Invasions is disabled.");
 
-	    LOG_INFO("server.loading",
-	        "Living World Invasions initialized. "
-	        "Playerbots integration requested: {}.",
-	        lwiConfig.GetConfigValue<bool>(
-	            LwiConfig::PlayerbotsEnabled) ? "yes" : "no");
-	}
+            return;
+        }
+
+        sInvasionMgr.LoadDefinitions();
+
+        LOG_INFO(
+            "server.loading",
+            "Living World Invasions initialized. "
+            "Playerbots integration requested: {}.",
+            lwiConfig.GetConfigValue<bool>(
+                LwiConfig::PlayerbotsEnabled) ? "yes" : "no");
+    }
 };
 }
 
