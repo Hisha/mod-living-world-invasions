@@ -3,6 +3,7 @@
 
 #include "Define.h"
 
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -52,6 +53,8 @@ public:
     void Initialize();
     void Update(uint32 diff);
     void Reset();
+	
+	[[nodiscard]] std::string BuildStatusReport() const;
 
 private:
     InvasionScheduler() = default;

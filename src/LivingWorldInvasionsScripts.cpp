@@ -1,9 +1,13 @@
+#include "Chat.h"
+#include "CommandScript.h"
 #include "InvasionScheduler.h"
 #include "LivingWorldInvasions.h"
 
 #include "ConfigValueCache.h"
 #include "Log.h"
 #include "ScriptMgr.h"
+
+using namespace Acore::ChatCommands;
 
 namespace
 {
@@ -106,9 +110,52 @@ public:
         sInvasionScheduler.Update(diff);
     }
 };
+
+class LivingWorldInvasionsCommandScript final : public CommandScript
+{
+public:
+    LivingWorldInvasionsCommandScript()
+        : CommandScript("LivingWorldInvasionsCommandScript")
+    {
+    }
+
+    ChatCommandTable GetCommands() const override
+    {
+        static ChatCommandTable lwiCommandTable =
+        {
+            {
+                "status",
+                HandleStatusCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::Yes
+            }
+        };
+
+        static ChatCommandTable commandTable =
+        {
+            {
+                "lwi",
+                lwiCommandTable
+            }
+        };
+
+        return commandTable;
+    }
+
+private:
+    static bool HandleStatusCommand(ChatHandler* handler)
+    {
+        handler->SendSysMessage(
+            sInvasionScheduler.BuildStatusReport());
+
+        return true;
+    }
+};
+
 }
 
 void AddLivingWorldInvasionsScripts()
 {
     new LivingWorldInvasionsWorldScript();
+    new LivingWorldInvasionsCommandScript();
 }

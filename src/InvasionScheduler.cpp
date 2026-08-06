@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <ctime>
 #include <limits>
+#include <sstream>
 #include <string>
 
 namespace lwi
@@ -419,4 +420,142 @@ uint32 InvasionScheduler::CountActiveForResponseOrigin(uint32 responseOriginId) 
     }
     return count;
 }
+
+std::string InvasionScheduler::BuildStatusReport() const
+{
+    std::ostringstream output;
+    uint64 const now = UnixTimeNow();
+
+    output << "Living World Invasions Scheduler\n";
+    output << "--------------------------------\n";
+    output << "Enabled: " << (_settings.Enabled ? "yes" : "no") << '\n';
+    output << "Initialized: " << (_initialized ? "yes" : "no") << '\n';
+    output << "Runtime records: " << _runtime.size() << '\n';
+    output << "Active globally: " << CountActiveGlobal();
+
+    if (_settings.MaxActiveGlobal != 0)
+    {
+        output << " / " << _settings.MaxActiveGlobal;
+    }
+
+    output << "\n\nMap evaluations:\n";
+
+    if (_nextMapEvaluation.empty())
+    {
+        output << "  None scheduled.\n";
+    }
+    else
+    {
+        for (auto const& [mapId, nextEvaluation] : _nextMapEvaluation)
+        {
+            uint64 const remaining =
+                nextEvaluation > now ? nextEvaluation - now : 0;
+
+            output << "  Map " << mapId
+                   << ": next evaluation in "
+                   << remaining << " second(s)\n";
+        }
+    }
+
+    output << "\nInvasions:\n";
+
+    if (_runtime.empty())
+    {
+        output << "  No runtime records loaded.\n";
+        return output.str();
+    }
+
+    for (auto const& [invasionId, runtime] : _runtime)
+    {
+        InvasionDefinition const* definition =
+            sInvasionMgr.GetDefinition(invasionId);
+
+        output << "  [" << invasionId << "] ";
+
+        if (definition)
+        {
+            output << definition->Name
+                   << " (map " << definition->MapId << ")";
+        }
+        else
+        {
+            output << "Unknown definition";
+        }
+
+        output << '\n';
+
+        switch (runtime.State)
+        {
+            case InvasionRuntimeState::Inactive:
+                output << "      State: inactive\n";
+                break;
+
+            case InvasionRuntimeState::Active:
+            {
+                uint64 const remaining =
+                    runtime.ActiveUntil > now
+                        ? runtime.ActiveUntil - now
+                        : 0;
+
+                output << "      State: active\n";
+                output << "      Time remaining: "
+                       << remaining << " second(s)\n";
+                break;
+            }
+
+            case InvasionRuntimeState::Cooldown:
+            {
+                uint64 const remaining =
+                    runtime.NextEligibleAt > now
+                        ? runtime.NextEligibleAt - now
+                        : 0;
+
+                output << "      State: cooldown\n";
+                output << "      Cooldown remaining: "
+                       << remaining << " second(s)\n";
+                break;
+            }
+
+            default:
+                output << "      State: unknown\n";
+                break;
+        }
+
+        output << "      Times started: "
+               << runtime.TimesStarted << '\n';
+
+        output << "      Times completed: "
+               << runtime.TimesCompleted << '\n';
+
+        if (definition)
+        {
+            uint32 const originActive =
+                CountActiveForResponseOrigin(
+                    definition->ResponseOriginId);
+
+            ResponseOriginDefinition const* origin =
+                sInvasionMgr.GetResponseOrigin(
+                    definition->ResponseOriginId);
+
+            output << "      Response origin: ";
+
+            if (origin)
+            {
+                output << origin->Name
+                       << " [" << origin->Id << "]";
+            }
+            else
+            {
+                output << "unknown ["
+                       << definition->ResponseOriginId << "]";
+            }
+
+            output << ", active invasions: "
+                   << originActive << '\n';
+        }
+    }
+
+    return output.str();
+}
+
 }
