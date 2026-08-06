@@ -16,10 +16,13 @@
 
 namespace lwi
 {
+
 namespace
 {
-uint64 UnixTimeNow()
+
 constexpr uint32 MillisecondsPerSecond = 1000;
+
+uint64 UnixTimeNow()
 {
     return static_cast<uint64>(std::time(nullptr));
 }
@@ -33,6 +36,7 @@ uint32 RandomBetween(uint32 minimum, uint32 maximum)
 
     return minimum == maximum ? minimum : urand(minimum, maximum);
 }
+
 }
 
 InvasionScheduler& InvasionScheduler::Instance()
