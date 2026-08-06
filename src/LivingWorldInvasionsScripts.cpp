@@ -55,6 +55,7 @@ class LivingWorldInvasionsWorldScript final : public WorldScript
 public:
     LivingWorldInvasionsWorldScript() : WorldScript("LivingWorldInvasionsWorldScript", {
         WORLDHOOK_ON_AFTER_CONFIG_LOAD,
+		WORLDHOOK_ON_STARTUP,
         WORLDHOOK_ON_UPDATE
     }) { }
 
@@ -85,11 +86,20 @@ public:
         settings.DefaultMaxActivePerResponseOrigin = lwiConfig.GetConfigValue<uint32>(LwiConfig::SchedulerDefaultMaxActivePerResponseOrigin);
 
         sInvasionScheduler.Configure(settings);
-        sInvasionScheduler.Initialize();
-
-        LOG_INFO("server.loading", "Living World Invasions initialized. Playerbots integration requested: {}.",
+        
+        LOG_INFO("server.loading", "Living World Invasions configured. Playerbots integration requested: {}.",
             lwiConfig.GetConfigValue<bool>(LwiConfig::PlayerbotsEnabled) ? "yes" : "no");
     }
+	
+	void OnStartup() override
+	{
+	    if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Enabled))
+	    {
+	        return;
+	    }
+
+	    sInvasionScheduler.Initialize();
+	}
 
     void OnUpdate(uint32 diff) override
     {
