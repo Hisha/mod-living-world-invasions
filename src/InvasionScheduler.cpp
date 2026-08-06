@@ -486,9 +486,9 @@ std::string InvasionScheduler::BuildStatusReport() const
 
         switch (runtime.State)
         {
-            case InvasionRuntimeState::Inactive:
-                output << "      State: inactive\n";
-                break;
+			case InvasionRuntimeState::Available:
+			    output << "      State: available\n";
+			    break;
 
             case InvasionRuntimeState::Active:
             {
