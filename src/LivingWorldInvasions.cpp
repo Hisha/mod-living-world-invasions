@@ -1,7 +1,10 @@
 #include "LivingWorldInvasions.h"
 
 #include "DatabaseEnv.h"
+#include "Field.h"
 #include "Log.h"
+#include "QueryResult.h"
+
 
 namespace lwi
 {
