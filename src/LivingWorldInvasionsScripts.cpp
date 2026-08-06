@@ -46,13 +46,13 @@ public:
     {
         if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Enabled))
         {
-            LOG_INFO("module", "Living World Invasions is disabled.");
+            LOG_INFO("server.loading", "Living World Invasions is disabled.");
             return;
         }
 
         sInvasionMgr.LoadDefinitions();
 
-        LOG_INFO("module", "Living World Invasions initialized. Playerbots integration requested: {}.",
+        LOG_INFO("server.loading", "Living World Invasions initialized. Playerbots integration requested: {}.",
             lwiConfig.GetConfigValue<bool>(LwiConfig::PlayerbotsEnabled) ? "yes" : "no");
     }
 };

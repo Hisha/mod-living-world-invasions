@@ -30,7 +30,7 @@ void InvasionMgr::LoadDefinitions()
 
     if (!result)
     {
-        LOG_INFO("module", "Living World Invasions: loaded 0 enabled invasion definitions.");
+        LOG_INFO("server.loading", "Living World Invasions: loaded 0 enabled invasion definitions.");
         return;
     }
 
@@ -51,11 +51,11 @@ void InvasionMgr::LoadDefinitions()
         auto [iterator, inserted] = _definitions.emplace(definition.Id, std::move(definition));
         if (!inserted)
         {
-            LOG_ERROR("module", "Living World Invasions: duplicate invasion id {} ignored.", iterator->first);
+            LOG_ERROR("server.loading", "Living World Invasions: duplicate invasion id {} ignored.", iterator->first);
         }
     } while (result->NextRow());
 
-    LOG_INFO("module", "Living World Invasions: loaded {} enabled invasion definition(s).", _definitions.size());
+    LOG_INFO("server.loading", "Living World Invasions: loaded {} enabled invasion definition(s).", _definitions.size());
 }
 
 InvasionDefinition const* InvasionMgr::GetDefinition(uint32 invasionId) const
