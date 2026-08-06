@@ -1,0 +1,416 @@
+#include "InvasionScheduler.h"
+
+#include "LivingWorldInvasions.h"
+
+#include "Config.h"
+#include "DatabaseEnv.h"
+#include "Field.h"
+#include "Log.h"
+#include "QueryResult.h"
+#include "Random.h"
+
+#include <algorithm>
+#include <ctime>
+#include <limits>
+#include <string>
+
+namespace lwi
+{
+namespace
+{
+uint64 UnixTimeNow()
+{
+    return static_cast<uint64>(std::time(nullptr));
+}
+
+uint32 RandomBetween(uint32 minimum, uint32 maximum)
+{
+    if (maximum < minimum)
+    {
+        std::swap(minimum, maximum);
+    }
+
+    return minimum == maximum ? minimum : urand(minimum, maximum);
+}
+}
+
+InvasionScheduler& InvasionScheduler::Instance()
+{
+    static InvasionScheduler instance;
+    return instance;
+}
+
+void InvasionScheduler::Configure(SchedulerSettings settings)
+{
+    _settings = settings;
+}
+
+void InvasionScheduler::Reset()
+{
+    _runtime.clear();
+    _nextMapEvaluation.clear();
+    _updateTimerMs = 0;
+    _initialized = false;
+}
+
+void InvasionScheduler::Initialize()
+{
+    Reset();
+
+    if (!_settings.Enabled)
+    {
+        LOG_INFO("server.loading", "Living World Invasions Scheduler is disabled.");
+        return;
+    }
+
+    LoadRuntimeState();
+    EnsureRuntimeRows();
+
+    uint64 const now = UnixTimeNow();
+    RecoverExpiredActiveInvasions(now);
+
+    for (auto const& [invasionId, definition] : sInvasionMgr.GetDefinitions())
+    {
+        (void)invasionId;
+        if (_nextMapEvaluation.find(definition.MapId) == _nextMapEvaluation.end())
+        {
+            ScheduleMap(definition.MapId, now, true);
+        }
+    }
+
+    _updateTimerMs = _settings.CheckIntervalSeconds * IN_MILLISECONDS;
+    _initialized = true;
+
+    LOG_INFO("server.loading", "Living World Invasions Scheduler initialized for {} map(s).", _nextMapEvaluation.size());
+}
+
+void InvasionScheduler::Update(uint32 diff)
+{
+    if (!_initialized || !_settings.Enabled)
+    {
+        return;
+    }
+
+    if (_updateTimerMs > diff)
+    {
+        _updateTimerMs -= diff;
+        return;
+    }
+
+    _updateTimerMs = std::max<uint32>(1, _settings.CheckIntervalSeconds) * IN_MILLISECONDS;
+
+    uint64 const now = UnixTimeNow();
+    CompleteExpiredInvasions(now);
+    EvaluateDueMaps(now);
+}
+
+void InvasionScheduler::LoadRuntimeState()
+{
+    if (QueryResult result = CharacterDatabase.Query(
+        "SELECT `invasion_id`, `state`, `last_started_at`, `last_completed_at`, `next_eligible_at`, "
+        "`active_since`, `active_until`, `times_started`, `times_completed` FROM `lwi_invasion_runtime`"))
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+
+            InvasionRuntime runtime;
+            runtime.InvasionId = fields[0].Get<uint32>();
+            runtime.State = static_cast<InvasionRuntimeState>(fields[1].Get<uint8>());
+            runtime.LastStartedAt = fields[2].Get<uint64>();
+            runtime.LastCompletedAt = fields[3].Get<uint64>();
+            runtime.NextEligibleAt = fields[4].Get<uint64>();
+            runtime.ActiveSince = fields[5].Get<uint64>();
+            runtime.ActiveUntil = fields[6].Get<uint64>();
+            runtime.TimesStarted = fields[7].Get<uint32>();
+            runtime.TimesCompleted = fields[8].Get<uint32>();
+
+            if (sInvasionMgr.GetDefinition(runtime.InvasionId))
+            {
+                _runtime[runtime.InvasionId] = runtime;
+            }
+        } while (result->NextRow());
+    }
+
+    LOG_INFO("server.loading", "Living World Invasions Scheduler: loaded {} runtime record(s).", _runtime.size());
+}
+
+void InvasionScheduler::EnsureRuntimeRows()
+{
+    for (auto const& [invasionId, definition] : sInvasionMgr.GetDefinitions())
+    {
+        (void)definition;
+        if (_runtime.find(invasionId) != _runtime.end())
+        {
+            continue;
+        }
+
+        InvasionRuntime runtime;
+        runtime.InvasionId = invasionId;
+        _runtime.emplace(invasionId, runtime);
+        SaveRuntime(runtime);
+    }
+}
+
+void InvasionScheduler::RecoverExpiredActiveInvasions(uint64 now)
+{
+    for (auto& [invasionId, runtime] : _runtime)
+    {
+        (void)invasionId;
+        if (runtime.State == InvasionRuntimeState::Active && runtime.ActiveUntil <= now)
+        {
+            CompleteTestInvasion(runtime.InvasionId, now);
+        }
+    }
+}
+
+void InvasionScheduler::CompleteExpiredInvasions(uint64 now)
+{
+    std::vector<uint32> expired;
+    for (auto const& [invasionId, runtime] : _runtime)
+    {
+        if (runtime.State == InvasionRuntimeState::Active && runtime.ActiveUntil <= now)
+        {
+            expired.push_back(invasionId);
+        }
+    }
+
+    for (uint32 invasionId : expired)
+    {
+        CompleteTestInvasion(invasionId, now);
+    }
+}
+
+void InvasionScheduler::EvaluateDueMaps(uint64 now)
+{
+    for (auto& [mapId, nextEvaluation] : _nextMapEvaluation)
+    {
+        if (nextEvaluation > now)
+        {
+            continue;
+        }
+
+        EvaluateMap(mapId, now);
+        ScheduleMap(mapId, now, false);
+    }
+}
+
+void InvasionScheduler::EvaluateMap(uint16 mapId, uint64 now)
+{
+    if (_settings.MaxActiveGlobal != 0 && CountActiveGlobal() >= _settings.MaxActiveGlobal)
+    {
+        if (_settings.Debug)
+        {
+            LOG_INFO("server.loading", "Living World Invasions Scheduler: map {} evaluation blocked by global active limit.", mapId);
+        }
+        return;
+    }
+
+    uint32 const mapLimit = GetMapLimit(mapId);
+    if (mapLimit != 0 && CountActiveOnMap(mapId) >= mapLimit)
+    {
+        if (_settings.Debug)
+        {
+            LOG_INFO("server.loading", "Living World Invasions Scheduler: map {} evaluation blocked by map active limit {}.", mapId, mapLimit);
+        }
+        return;
+    }
+
+    std::vector<InvasionDefinition const*> candidates;
+    uint64 totalWeight = 0;
+
+    for (auto const& [invasionId, definition] : sInvasionMgr.GetDefinitions())
+    {
+        if (definition.MapId != mapId || !definition.AllowRandomStart)
+        {
+            continue;
+        }
+
+        auto runtimeIterator = _runtime.find(invasionId);
+        if (runtimeIterator == _runtime.end())
+        {
+            continue;
+        }
+
+        InvasionRuntime const& runtime = runtimeIterator->second;
+        if (runtime.State == InvasionRuntimeState::Active || runtime.NextEligibleAt > now)
+        {
+            continue;
+        }
+
+        ResponseOriginDefinition const* origin = sInvasionMgr.GetResponseOrigin(definition.ResponseOriginId);
+        if (!origin)
+        {
+            continue;
+        }
+
+        uint32 const originLimit = GetResponseOriginLimit(origin->Id, origin->MaxActiveDefault);
+        if (originLimit != 0 && CountActiveForResponseOrigin(origin->Id) >= originLimit)
+        {
+            if (_settings.Debug)
+            {
+                LOG_INFO("server.loading", "Living World Invasions Scheduler: invasion {} ({}) rejected because response origin {} ({}) is at capacity.",
+                    definition.Id, definition.Name, origin->Id, origin->Name);
+            }
+            continue;
+        }
+
+        candidates.push_back(&definition);
+        totalWeight += definition.SelectionWeight;
+    }
+
+    if (candidates.empty() || totalWeight == 0)
+    {
+        if (_settings.Debug)
+        {
+            LOG_INFO("server.loading", "Living World Invasions Scheduler: no eligible invasions for map {}.", mapId);
+        }
+        return;
+    }
+
+    uint64 roll = urand(1, static_cast<uint32>(std::min<uint64>(totalWeight, std::numeric_limits<uint32>::max())));
+    InvasionDefinition const* selected = candidates.back();
+
+    for (InvasionDefinition const* candidate : candidates)
+    {
+        if (roll <= candidate->SelectionWeight)
+        {
+            selected = candidate;
+            break;
+        }
+
+        roll -= candidate->SelectionWeight;
+    }
+
+    StartTestInvasion(selected->Id, now);
+}
+
+void InvasionScheduler::ScheduleMap(uint16 mapId, uint64 now, bool initial)
+{
+    uint32 const delay = initial
+        ? RandomBetween(_settings.InitialDelayMinSeconds, _settings.InitialDelayMaxSeconds)
+        : RandomBetween(_settings.NextDelayMinSeconds, _settings.NextDelayMaxSeconds);
+
+    _nextMapEvaluation[mapId] = now + std::max<uint32>(1, delay);
+
+    if (_settings.Debug)
+    {
+        LOG_INFO("server.loading", "Living World Invasions Scheduler: map {} next evaluation in {} second(s).", mapId, delay);
+    }
+}
+
+void InvasionScheduler::StartTestInvasion(uint32 invasionId, uint64 now)
+{
+    InvasionDefinition const* definition = sInvasionMgr.GetDefinition(invasionId);
+    auto runtimeIterator = _runtime.find(invasionId);
+    if (!definition || runtimeIterator == _runtime.end())
+    {
+        return;
+    }
+
+    InvasionRuntime& runtime = runtimeIterator->second;
+    runtime.State = InvasionRuntimeState::Active;
+    runtime.LastStartedAt = now;
+    runtime.ActiveSince = now;
+    runtime.ActiveUntil = now + std::max<uint32>(1, _settings.TestActiveDurationSeconds);
+    runtime.NextEligibleAt = 0;
+    ++runtime.TimesStarted;
+    SaveRuntime(runtime);
+
+    ResponseOriginDefinition const* origin = sInvasionMgr.GetResponseOrigin(definition->ResponseOriginId);
+    LOG_INFO("server.loading",
+        "Living World Invasions Scheduler: selected invasion {} ({}) on map {}; response origin {} ({}). Test active duration: {} second(s).",
+        definition->Id, definition->Name, definition->MapId,
+        origin ? origin->Id : 0, origin ? origin->Name : "unknown", _settings.TestActiveDurationSeconds);
+}
+
+void InvasionScheduler::CompleteTestInvasion(uint32 invasionId, uint64 now)
+{
+    InvasionDefinition const* definition = sInvasionMgr.GetDefinition(invasionId);
+    auto runtimeIterator = _runtime.find(invasionId);
+    if (!definition || runtimeIterator == _runtime.end())
+    {
+        return;
+    }
+
+    InvasionRuntime& runtime = runtimeIterator->second;
+    uint32 const cooldown = RandomBetween(definition->MinimumCooldownSeconds, definition->MaximumCooldownSeconds);
+
+    runtime.State = InvasionRuntimeState::Cooldown;
+    runtime.LastCompletedAt = now;
+    runtime.NextEligibleAt = now + cooldown;
+    runtime.ActiveSince = 0;
+    runtime.ActiveUntil = 0;
+    ++runtime.TimesCompleted;
+    SaveRuntime(runtime);
+
+    LOG_INFO("server.loading", "Living World Invasions Scheduler: test invasion {} ({}) completed and entered cooldown for {} second(s).",
+        definition->Id, definition->Name, cooldown);
+}
+
+void InvasionScheduler::SaveRuntime(InvasionRuntime const& runtime)
+{
+    CharacterDatabase.Execute(
+        "REPLACE INTO `lwi_invasion_runtime` "
+        "(`invasion_id`, `state`, `last_started_at`, `last_completed_at`, `next_eligible_at`, `active_since`, `active_until`, `times_started`, `times_completed`) "
+        "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {})",
+        runtime.InvasionId,
+        static_cast<uint32>(runtime.State),
+        runtime.LastStartedAt,
+        runtime.LastCompletedAt,
+        runtime.NextEligibleAt,
+        runtime.ActiveSince,
+        runtime.ActiveUntil,
+        runtime.TimesStarted,
+        runtime.TimesCompleted);
+}
+
+uint32 InvasionScheduler::GetMapLimit(uint16 mapId) const
+{
+    std::string const key = "LWI.Scheduler.MaxActive.Map." + std::to_string(mapId);
+    return sConfigMgr->GetOption<uint32>(key, _settings.DefaultMaxActivePerMap);
+}
+
+uint32 InvasionScheduler::GetResponseOriginLimit(uint32 responseOriginId, uint32 sqlDefault) const
+{
+    std::string const key = "LWI.Scheduler.MaxActive.ResponseOrigin." + std::to_string(responseOriginId);
+    uint32 const fallback = sqlDefault == 0 ? _settings.DefaultMaxActivePerResponseOrigin : sqlDefault;
+    return sConfigMgr->GetOption<uint32>(key, fallback);
+}
+
+uint32 InvasionScheduler::CountActiveGlobal() const
+{
+    return static_cast<uint32>(std::count_if(_runtime.begin(), _runtime.end(), [](auto const& item)
+    {
+        return item.second.State == InvasionRuntimeState::Active;
+    }));
+}
+
+uint32 InvasionScheduler::CountActiveOnMap(uint16 mapId) const
+{
+    uint32 count = 0;
+    for (auto const& [invasionId, runtime] : _runtime)
+    {
+        InvasionDefinition const* definition = sInvasionMgr.GetDefinition(invasionId);
+        if (definition && definition->MapId == mapId && runtime.State == InvasionRuntimeState::Active)
+        {
+            ++count;
+        }
+    }
+    return count;
+}
+
+uint32 InvasionScheduler::CountActiveForResponseOrigin(uint32 responseOriginId) const
+{
+    uint32 count = 0;
+    for (auto const& [invasionId, runtime] : _runtime)
+    {
+        InvasionDefinition const* definition = sInvasionMgr.GetDefinition(invasionId);
+        if (definition && definition->ResponseOriginId == responseOriginId && runtime.State == InvasionRuntimeState::Active)
+        {
+            ++count;
+        }
+    }
+    return count;
+}
+}

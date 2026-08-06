@@ -1,28 +1,24 @@
-#
 # Living World Invasions
-#
-
-###################################################################################################
-# LWI.Enable
-#   Description: Enables the Living World Invasions engine.
-#   Default:     1
-###################################################################################################
 
 LWI.Enable = 1
-
-###################################################################################################
-# LWI.Playerbots.Enable
-#   Description: Enables optional Playerbots participation when support is available.
-#                This setting does not make Playerbots a requirement for the module.
-#   Default:     0
-###################################################################################################
-
 LWI.Playerbots.Enable = 0
+LWI.Debug = 1
 
-###################################################################################################
-# LWI.Debug
-#   Description: Enables additional module logging.
-#   Default:     0
-###################################################################################################
+# Log-only scheduler test settings. These deliberately use seconds so the framework can be observed quickly.
+LWI.Scheduler.Enable = 1
+LWI.Scheduler.CheckIntervalSeconds = 5
+LWI.Scheduler.InitialDelayMinSeconds = 20
+LWI.Scheduler.InitialDelayMaxSeconds = 40
+LWI.Scheduler.NextDelayMinSeconds = 30
+LWI.Scheduler.NextDelayMaxSeconds = 60
+LWI.Scheduler.TestActiveDurationSeconds = 45
 
-LWI.Debug = 0
+# A value of 0 means unlimited.
+LWI.Scheduler.MaxActiveGlobal = 3
+LWI.Scheduler.DefaultMaxActivePerMap = 2
+LWI.Scheduler.DefaultMaxActivePerResponseOrigin = 1
+
+# Dynamic overrides support any standard or custom map/response-origin ID.
+LWI.Scheduler.MaxActive.Map.0 = 2
+LWI.Scheduler.MaxActive.ResponseOrigin.1 = 1
+LWI.Scheduler.MaxActive.ResponseOrigin.2 = 1
