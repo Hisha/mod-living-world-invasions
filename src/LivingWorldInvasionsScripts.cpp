@@ -67,5 +67,13 @@ public:
 
 void AddLivingWorldInvasionsScripts()
 {
+    LOG_INFO(
+        "server.loading",
+        "Living World Invasions: registering WorldScript.");
+
     new LivingWorldInvasionsWorldScript();
+
+    LOG_INFO(
+        "server.loading",
+        "Living World Invasions: WorldScript registered.");
 }
