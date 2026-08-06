@@ -19,6 +19,7 @@ namespace lwi
 namespace
 {
 uint64 UnixTimeNow()
+constexpr uint32 MillisecondsPerSecond = 1000;
 {
     return static_cast<uint64>(std::time(nullptr));
 }
@@ -78,7 +79,7 @@ void InvasionScheduler::Initialize()
         }
     }
 
-    _updateTimerMs = _settings.CheckIntervalSeconds * IN_MILLISECONDS;
+    _updateTimerMs = _settings.CheckIntervalSeconds * MillisecondsPerSecond;
     _initialized = true;
 
     LOG_INFO("server.loading", "Living World Invasions Scheduler initialized for {} map(s).", _nextMapEvaluation.size());
@@ -97,7 +98,8 @@ void InvasionScheduler::Update(uint32 diff)
         return;
     }
 
-    _updateTimerMs = std::max<uint32>(1, _settings.CheckIntervalSeconds) * IN_MILLISECONDS;
+	_updateTimerMs =
+	    std::max<uint32>(1, _settings.CheckIntervalSeconds) * MillisecondsPerSecond;
 
     uint64 const now = UnixTimeNow();
     CompleteExpiredInvasions(now);
