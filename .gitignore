@@ -6,3 +6,6 @@
 .vscode/
 .idea/
 build/
+.settings/
+.project
+.cproject
