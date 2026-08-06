@@ -44,6 +44,8 @@ public:
 
     void OnStartup() override
     {
+        LOG_INFO("server.loading", "Living World Invasions: startup hook reached.");
+
         if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Enabled))
         {
             LOG_INFO("server.loading", "Living World Invasions is disabled.");
@@ -52,8 +54,11 @@ public:
 
         sInvasionMgr.LoadDefinitions();
 
-        LOG_INFO("server.loading", "Living World Invasions initialized. Playerbots integration requested: {}.",
-            lwiConfig.GetConfigValue<bool>(LwiConfig::PlayerbotsEnabled) ? "yes" : "no");
+        LOG_INFO(
+            "server.loading",
+            "Living World Invasions initialized. Playerbots integration requested: {}.",
+            lwiConfig.GetConfigValue<bool>(LwiConfig::PlayerbotsEnabled) ? "yes" : "no"
+        );
     }
 };
 }
