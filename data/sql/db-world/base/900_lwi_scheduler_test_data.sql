@@ -34,3 +34,38 @@ ON DUPLICATE KEY UPDATE
     `allow_random_start` = VALUES(`allow_random_start`),
     `enabled` = VALUES(`enabled`),
     `comment` = VALUES(`comment`);
+
+-- ---------------------------------------------------------------------------
+-- Timer-only runtime stages for scheduler test invasions
+-- completion_type: 0 = timer
+-- ---------------------------------------------------------------------------
+
+DELETE FROM `lwi_invasion_stage`
+WHERE `invasion_id` IN (1, 2, 3);
+
+INSERT INTO `lwi_invasion_stage`
+(
+    `id`,
+    `invasion_id`,
+    `stage_order`,
+    `name`,
+    `duration_seconds`,
+    `completion_type`,
+    `enabled`,
+    `comment`
+)
+VALUES
+    -- Westfall Scheduler Test
+    (1001, 1, 10, 'Scouts',          20, 0, 1, 'Timer-only runtime framework test'),
+    (1002, 1, 20, 'Reinforcements',  20, 0, 1, 'Timer-only runtime framework test'),
+    (1003, 1, 30, 'Lieutenant',      20, 0, 1, 'Timer-only runtime framework test'),
+
+    -- Duskwood Scheduler Test
+    (2001, 2, 10, 'Scouts',          20, 0, 1, 'Timer-only runtime framework test'),
+    (2002, 2, 20, 'Reinforcements',  20, 0, 1, 'Timer-only runtime framework test'),
+    (2003, 2, 30, 'Lieutenant',      20, 0, 1, 'Timer-only runtime framework test'),
+
+    -- Wetlands Scheduler Test
+    (3001, 3, 10, 'Scouts',          20, 0, 1, 'Timer-only runtime framework test'),
+    (3002, 3, 20, 'Reinforcements',  20, 0, 1, 'Timer-only runtime framework test'),
+    (3003, 3, 30, 'Lieutenant',      20, 0, 1, 'Timer-only runtime framework test');
