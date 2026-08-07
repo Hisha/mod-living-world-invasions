@@ -2,7 +2,9 @@
 #define MOD_LIVING_WORLD_INVASIONS_SPAWN_MANAGER_H
 
 #include "Define.h"
-#include "ObjectGuid.h"
+#include "IEntityProvider.h"
+
+#include <memory>
 #include <unordered_map>
 #include <vector>
 
@@ -18,13 +20,13 @@ public:
     void CleanupRuntime(uint64 runtimeId);
 
 private:
-    struct SpawnedCreature
-    {
-        uint32 MapId;
-        ObjectGuid Guid;
-    };
+    InvasionSpawnManager();
 
-    std::unordered_map<uint64, std::vector<SpawnedCreature>> _runtimeCreatures;
+    IEntityProvider* GetProvider(uint8 entityType);
+    void RegisterProvider(std::unique_ptr<IEntityProvider> provider);
+
+    std::unordered_map<uint8, std::unique_ptr<IEntityProvider>> _providers;
+    std::unordered_map<uint64, std::vector<RuntimeEntity>> _runtimeEntities;
 };
 }
 

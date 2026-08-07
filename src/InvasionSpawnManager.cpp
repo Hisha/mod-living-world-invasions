@@ -1,12 +1,10 @@
 #include "InvasionSpawnManager.h"
 
-#include <cmath>
+#include "CreatureProvider.h"
 #include "LivingWorldInvasions.h"
 #include "Log.h"
-#include "Map.h"
-#include "MapMgr.h"
-#include "Position.h"
-#include "TemporarySummon.h"
+
+#include <utility>
 
 namespace lwi
 {
@@ -16,9 +14,36 @@ InvasionSpawnManager& InvasionSpawnManager::Instance()
     return instance;
 }
 
+InvasionSpawnManager::InvasionSpawnManager()
+{
+    RegisterProvider(std::make_unique<CreatureProvider>());
+}
+
+void InvasionSpawnManager::RegisterProvider(std::unique_ptr<IEntityProvider> provider)
+{
+    if (!provider)
+    {
+        return;
+    }
+
+    uint8 type = provider->GetType();
+    _providers[type] = std::move(provider);
+}
+
+IEntityProvider* InvasionSpawnManager::GetProvider(uint8 entityType)
+{
+    auto itr = _providers.find(entityType);
+    if (itr == _providers.end())
+    {
+        return nullptr;
+    }
+
+    return itr->second.get();
+}
+
 void InvasionSpawnManager::Reset()
 {
-    _runtimeCreatures.clear();
+    _runtimeEntities.clear();
 }
 
 bool InvasionSpawnManager::SpawnGroup(uint64 runtimeId, uint32 spawnGroupId)
@@ -43,107 +68,69 @@ bool InvasionSpawnManager::SpawnGroup(uint64 runtimeId, uint32 spawnGroupId)
         spawnGroupId,
         group->Name);
 
-
-    Map* map = sMapMgr->FindMap(group->MapId, 0);
-
-    if (!map)
+    // Provider architecture is introduced before the SQL entity-type column.
+    // All existing spawn members are creatures, so they are dispatched to the
+    // creature provider without changing current database behavior.
+    uint8 entityType = static_cast<uint8>(EntityProviderType::Creature);
+    IEntityProvider* provider = GetProvider(entityType);
+    if (!provider)
     {
         LOG_ERROR("server.loading",
-            "[LWI Spawn] Unable to find map {} for spawn group {}.",
-            group->MapId,
-            spawnGroupId);
-
+            "[LWI Spawn] No entity provider registered for type {}.",
+            entityType);
         return false;
     }
 
-    for (auto const& member : *members)
+    bool spawnedAny = false;
+    std::vector<RuntimeEntity>& runtimeEntities = _runtimeEntities[runtimeId];
+
+    for (SpawnMemberDefinition const& member : *members)
     {
-        for (uint32 i = 0; i < member.Count; ++i)
+        if (provider->Spawn(runtimeId, *group, member, runtimeEntities))
         {
-            Position position;
-            position.Relocate(
-                group->X,
-                group->Y,
-                group->Z,
-                group->Orientation
-            );
-
-            if (group->SpawnRadius > 0)
-            {
-                float angle = frand(0.0f, 6.283185f);
-                float distance = frand(0.0f, group->SpawnRadius);
-
-                position.m_positionX += std::cos(angle) * distance;
-                position.m_positionY += std::sin(angle) * distance;
-            }
-
-            TempSummon* summon = map->SummonCreature(
-                member.CreatureEntry,
-                position,
-                nullptr,
-                0
-            );
-
-            if (!summon)
-            {
-                LOG_ERROR("server.loading",
-                    "[LWI Spawn] Failed spawning creature entry {}.",
-                    member.CreatureEntry);
-
-                continue;
-            }
-
-
-            _runtimeCreatures[runtimeId].push_back(
-                {
-                    group->MapId,
-                    summon->GetGUID()
-                }
-            );
-
-
-            LOG_INFO("server.loading",
-                "[LWI Spawn] Runtime #{} spawned creature {} GUID {}.",
-                runtimeId,
-                member.CreatureEntry,
-                summon->GetGUID().ToString());
+            spawnedAny = true;
         }
     }
 
-    return true;
+    return spawnedAny;
 }
 
 void InvasionSpawnManager::CleanupRuntime(uint64 runtimeId)
 {
-    auto itr = _runtimeCreatures.find(runtimeId);
-
-    if (itr == _runtimeCreatures.end())
-        return;
-
-
-    uint32 despawned = 0;
-
-    for (SpawnedCreature const& spawned : itr->second)
+    auto itr = _runtimeEntities.find(runtimeId);
+    if (itr == _runtimeEntities.end())
     {
-    	Map* map = sMapMgr->FindMap(spawned.MapId, 0);
+        return;
+    }
 
-        if (!map)
-            continue;
+    uint32 cleaned = 0;
 
-        if (Creature* creature = map->GetCreature(spawned.Guid))
+    for (RuntimeEntity const& entity : itr->second)
+    {
+        IEntityProvider* provider = GetProvider(entity.EntityType);
+        if (!provider)
         {
-            creature->DespawnOrUnsummon();
-            ++despawned;
+            LOG_ERROR("server.loading",
+                "[LWI Spawn] Runtime #{} cannot clean entity GUID {} because provider type {} is not registered.",
+                runtimeId,
+                entity.Guid.ToString(),
+                entity.EntityType);
+            continue;
+        }
+
+        if (provider->Cleanup(entity))
+        {
+            ++cleaned;
         }
     }
 
-
-    _runtimeCreatures.erase(itr);
-
+    std::size_t tracked = itr->second.size();
+    _runtimeEntities.erase(itr);
 
     LOG_INFO("server.loading",
-        "[LWI Spawn] Cleaned runtime #{}. Despawned {} creature(s).",
+        "[LWI Spawn] Cleaned runtime #{}. Removed {} of {} tracked entity/entities.",
         runtimeId,
-        despawned);
+        cleaned,
+        tracked);
 }
 }
