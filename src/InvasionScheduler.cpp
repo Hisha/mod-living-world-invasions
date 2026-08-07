@@ -137,7 +137,7 @@ void InvasionScheduler::LoadRuntimeState()
         } while (result->NextRow());
     }
 
-    LOG_INFO("server.loading", "Living World Invasions Scheduler: loaded {} runtime record(s).", _runtime.size());
+    LOG_INFO("server.loading", "[LWI Scheduler] loaded {} runtime record(s).", _runtime.size());
 }
 
 void InvasionScheduler::EnsureRuntimeRows()
@@ -177,7 +177,7 @@ void InvasionScheduler::EvaluateMap(uint16 mapId, uint64 now)
     {
         if (_settings.Debug)
         {
-            LOG_INFO("server.loading", "Living World Invasions Scheduler: map {} evaluation blocked by global active limit.", mapId);
+            LOG_INFO("server.loading", "[LWI Scheduler] map {} evaluation blocked by global active limit.", mapId);
         }
         return;
     }
@@ -187,7 +187,7 @@ void InvasionScheduler::EvaluateMap(uint16 mapId, uint64 now)
     {
         if (_settings.Debug)
         {
-            LOG_INFO("server.loading", "Living World Invasions Scheduler: map {} evaluation blocked by map active limit {}.", mapId, mapLimit);
+            LOG_INFO("server.loading", "[LWI Scheduler] map {} evaluation blocked by map active limit {}.", mapId, mapLimit);
         }
         return;
     }
@@ -225,7 +225,7 @@ void InvasionScheduler::EvaluateMap(uint16 mapId, uint64 now)
         {
             if (_settings.Debug)
             {
-                LOG_INFO("server.loading", "Living World Invasions Scheduler: invasion {} ({}) rejected because response origin {} ({}) is at capacity.",
+                LOG_INFO("server.loading", "[LWI Scheduler] invasion {} ({}) rejected because response origin {} ({}) is at capacity.",
                     definition.Id, definition.Name, origin->Id, origin->Name);
             }
             continue;
@@ -239,7 +239,7 @@ void InvasionScheduler::EvaluateMap(uint16 mapId, uint64 now)
     {
         if (_settings.Debug)
         {
-            LOG_INFO("server.loading", "Living World Invasions Scheduler: no eligible invasions for map {}.", mapId);
+            LOG_INFO("server.loading", "[LWI Scheduler] no eligible invasions for map {}.", mapId);
         }
         return;
     }
@@ -271,7 +271,7 @@ void InvasionScheduler::ScheduleMap(uint16 mapId, uint64 now, bool initial)
 
     if (_settings.Debug)
     {
-        LOG_INFO("server.loading", "Living World Invasions Scheduler: map {} next evaluation in {} second(s).", mapId, delay);
+        LOG_INFO("server.loading", "[LWI Scheduler] map {} next evaluation in {} second(s).", mapId, delay);
     }
 }
 
