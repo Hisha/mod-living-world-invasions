@@ -6,7 +6,6 @@
 
 #include <memory>
 #include <unordered_map>
-#include <vector>
 
 namespace lwi
 {
@@ -16,7 +15,7 @@ public:
     static InvasionSpawnManager& Instance();
 
     void Reset();
-    bool SpawnGroup(uint64 runtimeId, uint32 spawnGroupId);
+    bool SpawnGroup(uint64 runtimeId, uint32 spawnGroupId, uint64* runtimeGroupId = nullptr);
     void CleanupRuntime(uint64 runtimeId);
 
 private:
@@ -26,7 +25,6 @@ private:
     void RegisterProvider(std::unique_ptr<IEntityProvider> provider);
 
     std::unordered_map<uint8, std::unique_ptr<IEntityProvider>> _providers;
-    std::unordered_map<uint64, std::vector<RuntimeEntity>> _runtimeEntities;
 };
 }
 

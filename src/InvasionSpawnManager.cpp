@@ -4,6 +4,7 @@
 #include "GameObjectProvider.h"
 #include "LivingWorldInvasions.h"
 #include "Log.h"
+#include "RuntimeEntityGroup.h"
 
 #include <utility>
 
@@ -45,10 +46,10 @@ IEntityProvider* InvasionSpawnManager::GetProvider(uint8 entityType)
 
 void InvasionSpawnManager::Reset()
 {
-    _runtimeEntities.clear();
+    sRuntimeEntityGroupMgr.Reset();
 }
 
-bool InvasionSpawnManager::SpawnGroup(uint64 runtimeId, uint32 spawnGroupId)
+bool InvasionSpawnManager::SpawnGroup(uint64 runtimeId, uint32 spawnGroupId, uint64* runtimeGroupId)
 {
     SpawnGroupDefinition const* group = sInvasionMgr.GetSpawnGroup(spawnGroupId);
     if (!group)
@@ -64,14 +65,21 @@ bool InvasionSpawnManager::SpawnGroup(uint64 runtimeId, uint32 spawnGroupId)
         return false;
     }
 
+    RuntimeEntityGroup& runtimeGroup = sRuntimeEntityGroupMgr.CreateGroup(runtimeId, spawnGroupId);
+
+    if (runtimeGroupId)
+    {
+        *runtimeGroupId = runtimeGroup.Id;
+    }
+
     LOG_INFO("server.loading",
-        "[LWI Spawn] Runtime #{} executing spawn group {} ({}).",
+        "[LWI Spawn] Runtime #{} executing spawn group {} ({}) as runtime entity group #{}.",
         runtimeId,
         spawnGroupId,
-        group->Name);
+        group->Name,
+        runtimeGroup.Id);
 
     bool spawnedAny = false;
-    std::vector<RuntimeEntity>& runtimeEntities = _runtimeEntities[runtimeId];
 
     for (SpawnMemberDefinition const& member : *members)
     {
@@ -86,51 +94,91 @@ bool InvasionSpawnManager::SpawnGroup(uint64 runtimeId, uint32 spawnGroupId)
             continue;
         }
 
-        if (provider->Spawn(runtimeId, *group, member, runtimeEntities))
+        if (provider->Spawn(runtimeId, *group, member, runtimeGroup.Entities))
         {
             spawnedAny = true;
         }
     }
 
-    return spawnedAny;
+    if (!spawnedAny)
+    {
+        sRuntimeEntityGroupMgr.RemoveGroup(runtimeGroup.Id);
+
+        if (runtimeGroupId)
+        {
+            *runtimeGroupId = 0;
+        }
+
+        LOG_ERROR("server.loading",
+            "[LWI Spawn] Runtime #{} spawn group {} created no entities; runtime entity group removed.",
+            runtimeId,
+            spawnGroupId);
+
+        return false;
+    }
+
+    LOG_INFO("server.loading",
+        "[LWI Spawn] Runtime entity group #{} now owns {} entity/entities for runtime #{}.",
+        runtimeGroup.Id,
+        runtimeGroup.Entities.size(),
+        runtimeId);
+
+    return true;
 }
 
 void InvasionSpawnManager::CleanupRuntime(uint64 runtimeId)
 {
-    auto itr = _runtimeEntities.find(runtimeId);
-    if (itr == _runtimeEntities.end())
+    std::vector<uint64> groupIds = sRuntimeEntityGroupMgr.GetGroupsForRuntime(runtimeId);
+    if (groupIds.empty())
     {
         return;
     }
 
     uint32 cleaned = 0;
+    uint32 tracked = 0;
+    uint32 groupsCleaned = 0;
 
-    for (RuntimeEntity const& entity : itr->second)
+    for (uint64 groupId : groupIds)
     {
-        IEntityProvider* provider = GetProvider(entity.EntityType);
-        if (!provider)
+        RuntimeEntityGroup* group = sRuntimeEntityGroupMgr.GetGroup(groupId);
+        if (!group)
         {
-            LOG_ERROR("server.loading",
-                "[LWI Spawn] Runtime #{} cannot clean entity GUID {} because provider type {} is not registered.",
-                runtimeId,
-                entity.Guid.ToString(),
-                entity.EntityType);
             continue;
         }
 
-        if (provider->Cleanup(entity))
+        group->State = RuntimeEntityGroupState::CleaningUp;
+        tracked += static_cast<uint32>(group->Entities.size());
+
+        for (RuntimeEntity const& entity : group->Entities)
         {
-            ++cleaned;
+            IEntityProvider* provider = GetProvider(entity.EntityType);
+            if (!provider)
+            {
+                LOG_ERROR("server.loading",
+                    "[LWI Spawn] Runtime #{} cannot clean entity GUID {} because provider type {} is not registered.",
+                    runtimeId,
+                    entity.Guid.ToString(),
+                    entity.EntityType);
+                continue;
+            }
+
+            if (provider->Cleanup(entity))
+            {
+                ++cleaned;
+            }
         }
+
+        group->State = RuntimeEntityGroupState::Completed;
+        ++groupsCleaned;
     }
 
-    std::size_t tracked = itr->second.size();
-    _runtimeEntities.erase(itr);
+    sRuntimeEntityGroupMgr.RemoveRuntime(runtimeId);
 
     LOG_INFO("server.loading",
-        "[LWI Spawn] Cleaned runtime #{}. Removed {} of {} tracked entity/entities.",
+        "[LWI Spawn] Cleaned runtime #{}. Removed {} of {} tracked entity/entities across {} runtime entity group(s).",
         runtimeId,
         cleaned,
-        tracked);
+        tracked,
+        groupsCleaned);
 }
 }
