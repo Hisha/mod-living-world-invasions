@@ -2,6 +2,7 @@
 
 #include "InvasionScheduler.h"
 #include "LivingWorldInvasions.h"
+#include "MovementController.h"
 
 #include "DatabaseEnv.h"
 #include "Field.h"
@@ -32,6 +33,7 @@ InvasionRuntimeManager& InvasionRuntimeManager::Instance()
 
 void InvasionRuntimeManager::Reset()
 {
+    sMovementController.Reset();
     _runtimes.clear();
     _runtimeByInvasion.clear();
     _updateTimerMs = 0;
@@ -57,6 +59,8 @@ void InvasionRuntimeManager::Update(uint32 diff)
     {
         return;
     }
+
+    sMovementController.Update(diff);
 
     if (_updateTimerMs > diff)
     {

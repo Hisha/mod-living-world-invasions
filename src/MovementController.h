@@ -1,0 +1,57 @@
+#ifndef MOD_LIVING_WORLD_INVASIONS_MOVEMENT_CONTROLLER_H
+#define MOD_LIVING_WORLD_INVASIONS_MOVEMENT_CONTROLLER_H
+
+#include "Define.h"
+
+#include <cstddef>
+#include <unordered_map>
+
+namespace lwi
+{
+enum class RuntimeMovementState : uint8
+{
+    Moving = 0,
+    Waiting = 1
+};
+
+struct ActiveRuntimeMovement
+{
+    uint64 RuntimeGroupId = 0;
+    uint64 RuntimeId = 0;
+    uint32 PathId = 0;
+    uint32 ProfileId = 0;
+    std::size_t NodeIndex = 0;
+    RuntimeMovementState State = RuntimeMovementState::Moving;
+    uint64 WaitEndsAtMs = 0;
+};
+
+class MovementController
+{
+public:
+    static MovementController& Instance();
+
+    void Reset();
+    void Update(uint32 diff);
+
+    bool StartPath(uint64 runtimeGroupId, uint32 pathId, uint32 profileId = 0);
+    bool CancelGroup(uint64 runtimeGroupId);
+    void CancelRuntime(uint64 runtimeId);
+
+    [[nodiscard]] bool IsGroupMoving(uint64 runtimeGroupId) const;
+
+private:
+    MovementController() = default;
+
+    bool BeginCurrentNode(ActiveRuntimeMovement& movement);
+    bool HasGroupReachedCurrentNode(ActiveRuntimeMovement const& movement) const;
+    void AdvanceOrComplete(uint64 runtimeGroupId, ActiveRuntimeMovement& movement, uint64 nowMs);
+    void CompleteMovement(uint64 runtimeGroupId, ActiveRuntimeMovement const& movement);
+
+    std::unordered_map<uint64, ActiveRuntimeMovement> _activeMovements;
+    uint32 _updateTimerMs = 0;
+};
+}
+
+#define sMovementController lwi::MovementController::Instance()
+
+#endif
