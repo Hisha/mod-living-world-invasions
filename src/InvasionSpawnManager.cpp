@@ -4,6 +4,7 @@
 #include "Log.h"
 #include "Map.h"
 #include "MapMgr.h"
+#include "ObjectAccessor.h"
 #include "Position.h"
 #include "TemporarySummon.h"
 
@@ -104,7 +105,35 @@ bool InvasionSpawnManager::SpawnGroup(uint64 runtimeId, uint32 spawnGroupId)
 
 void InvasionSpawnManager::CleanupRuntime(uint64 runtimeId)
 {
-    _runtimeCreatures.erase(runtimeId);
-    LOG_INFO("server.loading", "[LWI Spawn] Cleaned runtime #{} spawn tracking.", runtimeId);
+    auto itr = _runtimeCreatures.find(runtimeId);
+
+    if (itr == _runtimeCreatures.end())
+        return;
+
+
+    uint32 despawned = 0;
+
+    for (SpawnedCreature const& spawned : itr->second)
+    {
+        Map* map = sMapMgr->FindMap(spawned.mapId, 0);
+
+        if (!map)
+            continue;
+
+        if (Creature* creature = map->GetCreature(spawned.guid))
+        {
+            creature->DespawnOrUnsummon();
+            ++despawned;
+        }
+    }
+
+
+    _runtimeCreatures.erase(itr);
+
+
+    LOG_INFO("server.loading",
+        "[LWI Spawn] Cleaned runtime #{}. Despawned {} creature(s).",
+        runtimeId,
+        despawned);
 }
 }
