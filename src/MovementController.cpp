@@ -159,7 +159,7 @@ void MovementController::Update(uint32 diff)
     }
 
     _updateTimerMs = MovementUpdateIntervalMs;
-    uint64 const nowMs = getMSTime64();
+    uint64 const nowMs = static_cast<uint64>(getMSTime());
     std::vector<uint64> completed;
 
     for (auto& [runtimeGroupId, movement] : _activeMovements)

@@ -21,6 +21,9 @@ void InvasionMgr::Clear()
     _actionsByStage.clear();
     _spawnGroups.clear();
     _spawnMembersByGroup.clear();
+    _movementPaths.clear();
+    _movementNodesByPath.clear();
+    _movementProfiles.clear();
 }
 
 void InvasionMgr::LoadDefinitions()
@@ -239,6 +242,86 @@ void InvasionMgr::LoadDefinitions()
             _spawnMembersByGroup[member.SpawnGroupId].push_back(std::move(member));
         } while (result->NextRow());
     }
+
+    if (QueryResult result = WorldDatabase.Query(
+        "SELECT `id`, `name`, `enabled`, `comment` "
+        "FROM `lwi_movement_path` WHERE `enabled` = 1 ORDER BY `id`"))
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            MovementPathDefinition path;
+            path.Id = fields[0].Get<uint32>();
+            path.Name = fields[1].Get<std::string>();
+            path.Enabled = fields[2].Get<bool>();
+            if (!fields[3].IsNull())
+                path.Comment = fields[3].Get<std::string>();
+            _movementPaths.emplace(path.Id, std::move(path));
+        } while (result->NextRow());
+    }
+
+    std::size_t movementNodeCount = 0;
+    if (QueryResult result = WorldDatabase.Query(
+        "SELECT `id`, `path_id`, `node_order`, `map_id`, `x`, `y`, `z`, `orientation`, `wait_ms`, "
+        "`profile_override_id`, `enabled`, `comment` "
+        "FROM `lwi_movement_node` WHERE `enabled` = 1 ORDER BY `path_id`, `node_order`"))
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            MovementNodeDefinition node;
+            node.Id = fields[0].Get<uint32>();
+            node.PathId = fields[1].Get<uint32>();
+            node.NodeOrder = fields[2].Get<uint16>();
+            node.MapId = fields[3].Get<uint16>();
+            node.X = fields[4].Get<float>();
+            node.Y = fields[5].Get<float>();
+            node.Z = fields[6].Get<float>();
+            node.Orientation = fields[7].Get<float>();
+            node.WaitMs = fields[8].Get<uint32>();
+            node.ProfileOverrideId = fields[9].Get<uint32>();
+            node.Enabled = fields[10].Get<bool>();
+            if (!fields[11].IsNull())
+                node.Comment = fields[11].Get<std::string>();
+
+            if (_movementPaths.find(node.PathId) == _movementPaths.end())
+            {
+                LOG_ERROR("server.loading",
+                    "[LWI Movement] Node {} references missing or disabled movement path {}; node ignored.",
+                    node.Id, node.PathId);
+                continue;
+            }
+
+            _movementNodesByPath[node.PathId].push_back(std::move(node));
+            ++movementNodeCount;
+        } while (result->NextRow());
+    }
+
+    if (QueryResult result = WorldDatabase.Query(
+        "SELECT `id`, `name`, `default_mode`, `walk_speed_multiplier`, `run_speed_multiplier`, "
+        "`stealth_enabled`, `enabled`, `comment` "
+        "FROM `lwi_movement_profile` WHERE `enabled` = 1 ORDER BY `id`"))
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            MovementProfileDefinition profile;
+            profile.Id = fields[0].Get<uint32>();
+            profile.Name = fields[1].Get<std::string>();
+            profile.DefaultMode = fields[2].Get<uint8>();
+            profile.WalkSpeedMultiplier = fields[3].Get<float>();
+            profile.RunSpeedMultiplier = fields[4].Get<float>();
+            profile.StealthEnabled = fields[5].Get<bool>();
+            profile.Enabled = fields[6].Get<bool>();
+            if (!fields[7].IsNull())
+                profile.Comment = fields[7].Get<std::string>();
+            _movementProfiles.emplace(profile.Id, std::move(profile));
+        } while (result->NextRow());
+    }
+
+    LOG_INFO("server.loading", "[LWI Movement] Loaded {} movement path(s).", _movementPaths.size());
+    LOG_INFO("server.loading", "[LWI Movement] Loaded {} movement node(s).", movementNodeCount);
+    LOG_INFO("server.loading", "[LWI Movement] Loaded {} movement profile(s).", _movementProfiles.size());
 }
 
 ResponseOriginDefinition const* InvasionMgr::GetResponseOrigin(uint32 responseOriginId) const
@@ -292,5 +375,23 @@ std::vector<SpawnMemberDefinition> const* InvasionMgr::GetSpawnMembers(uint32 id
 {
     auto it = _spawnMembersByGroup.find(id);
     return it != _spawnMembersByGroup.end() ? &it->second : nullptr;
+}
+
+MovementPathDefinition const* InvasionMgr::GetMovementPath(uint32 id) const
+{
+    auto it = _movementPaths.find(id);
+    return it != _movementPaths.end() ? &it->second : nullptr;
+}
+
+std::vector<MovementNodeDefinition> const* InvasionMgr::GetMovementNodes(uint32 pathId) const
+{
+    auto it = _movementNodesByPath.find(pathId);
+    return it != _movementNodesByPath.end() ? &it->second : nullptr;
+}
+
+MovementProfileDefinition const* InvasionMgr::GetMovementProfile(uint32 id) const
+{
+    auto it = _movementProfiles.find(id);
+    return it != _movementProfiles.end() ? &it->second : nullptr;
 }
 }

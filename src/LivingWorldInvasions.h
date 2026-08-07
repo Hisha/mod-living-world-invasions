@@ -56,6 +56,43 @@ struct SpawnGroupDefinition
     bool Enabled = false;
 };
 
+
+struct MovementPathDefinition
+{
+    uint32 Id = 0;
+    std::string Name;
+    bool Enabled = false;
+    std::string Comment;
+};
+
+struct MovementNodeDefinition
+{
+    uint32 Id = 0;
+    uint32 PathId = 0;
+    uint16 NodeOrder = 0;
+    uint16 MapId = 0;
+    float X = 0.0f;
+    float Y = 0.0f;
+    float Z = 0.0f;
+    float Orientation = 0.0f;
+    uint32 WaitMs = 0;
+    uint32 ProfileOverrideId = 0;
+    bool Enabled = false;
+    std::string Comment;
+};
+
+struct MovementProfileDefinition
+{
+    uint32 Id = 0;
+    std::string Name;
+    uint8 DefaultMode = 0;
+    float WalkSpeedMultiplier = 1.0f;
+    float RunSpeedMultiplier = 1.0f;
+    bool StealthEnabled = false;
+    bool Enabled = false;
+    std::string Comment;
+};
+
 struct InvasionStageDefinition
 {
     uint32 Id = 0;
@@ -100,6 +137,9 @@ public:
     [[nodiscard]] std::vector<StageActionDefinition> const* GetActions(uint32 stageId) const;
     [[nodiscard]] SpawnGroupDefinition const* GetSpawnGroup(uint32 id) const;
     [[nodiscard]] std::vector<SpawnMemberDefinition> const* GetSpawnMembers(uint32 id) const;
+    [[nodiscard]] MovementPathDefinition const* GetMovementPath(uint32 id) const;
+    [[nodiscard]] std::vector<MovementNodeDefinition> const* GetMovementNodes(uint32 pathId) const;
+    [[nodiscard]] MovementProfileDefinition const* GetMovementProfile(uint32 id) const;
     [[nodiscard]] std::size_t GetDefinitionCount() const;
 
 private:
@@ -111,6 +151,9 @@ private:
     std::unordered_map<uint32, std::vector<StageActionDefinition>> _actionsByStage;
     std::unordered_map<uint32, SpawnGroupDefinition> _spawnGroups;
     std::unordered_map<uint32, std::vector<SpawnMemberDefinition>> _spawnMembersByGroup;
+    std::unordered_map<uint32, MovementPathDefinition> _movementPaths;
+    std::unordered_map<uint32, std::vector<MovementNodeDefinition>> _movementNodesByPath;
+    std::unordered_map<uint32, MovementProfileDefinition> _movementProfiles;
 };
 }
 
