@@ -18,7 +18,13 @@ public:
     void CleanupRuntime(uint64 runtimeId);
 
 private:
-    std::unordered_map<uint64, std::vector<ObjectGuid>> _runtimeCreatures;
+    struct SpawnedCreature
+    {
+        uint32 MapId;
+        ObjectGuid Guid;
+    };
+
+    std::unordered_map<uint64, std::vector<SpawnedCreature>> _runtimeCreatures;
 };
 }
 

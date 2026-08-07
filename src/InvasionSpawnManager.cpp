@@ -4,7 +4,6 @@
 #include "Log.h"
 #include "Map.h"
 #include "MapMgr.h"
-#include "ObjectAccessor.h"
 #include "Position.h"
 #include "TemporarySummon.h"
 
@@ -88,7 +87,10 @@ bool InvasionSpawnManager::SpawnGroup(uint64 runtimeId, uint32 spawnGroupId)
 
 
             _runtimeCreatures[runtimeId].push_back(
-                summon->GetGUID()
+                {
+                    group->MapId,
+                    summon->GetGUID()
+                }
             );
 
 
@@ -115,12 +117,12 @@ void InvasionSpawnManager::CleanupRuntime(uint64 runtimeId)
 
     for (SpawnedCreature const& spawned : itr->second)
     {
-        Map* map = sMapMgr->FindMap(spawned.mapId, 0);
+    	Map* map = sMapMgr->FindMap(spawned.MapId, 0);
 
         if (!map)
             continue;
 
-        if (Creature* creature = map->GetCreature(spawned.guid))
+        if (Creature* creature = map->GetCreature(spawned.Guid))
         {
             creature->DespawnOrUnsummon();
             ++despawned;
