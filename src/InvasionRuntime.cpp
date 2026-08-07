@@ -1,7 +1,6 @@
 #include "InvasionRuntime.h"
-
-#include "Log.h"
 #include "InvasionSpawnManager.h"
+#include "Log.h"
 
 #include <algorithm>
 #include <sstream>
@@ -105,8 +104,13 @@ bool InvasionRuntime::Advance(uint64 now)
         _stageStartedAt = 0;
         _stageEndsAt = 0;
 
-        LOG_INFO("server.loading", "[LWI Runtime] Runtime #{} for invasion {} completed all stages.",
-            _runtimeId, _invasionId);
+        LOG_INFO("server.loading",
+            "[LWI Runtime] Runtime #{} for invasion {} completed all stages.",
+            _runtimeId,
+            _invasionId);
+
+        sInvasionSpawnMgr.CleanupRuntime(_runtimeId);
+
         return true;
     }
 
