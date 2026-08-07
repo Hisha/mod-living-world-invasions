@@ -3,6 +3,7 @@
 #include "InvasionScheduler.h"
 #include "InvasionRuntimeManager.h"
 #include "LivingWorldInvasions.h"
+#include "RuntimeSignalManager.h"
 
 #include "ConfigValueCache.h"
 #include "Log.h"
@@ -129,6 +130,12 @@ public:
                 HandleStatusCommand,
                 rbac::RBAC_PERM_COMMAND_SERVER_INFO,
                 Console::Yes
+            },
+            {
+                "signals",
+                HandleSignalsCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::Yes
             }
         };
 
@@ -150,6 +157,12 @@ private:
             sInvasionScheduler.BuildStatusReport() +
             sInvasionRuntimeMgr.BuildStatusReport());
 
+        return true;
+    }
+
+    static bool HandleSignalsCommand(ChatHandler* handler)
+    {
+        handler->SendSysMessage(sRuntimeSignalMgr.BuildStatusReport());
         return true;
     }
 };

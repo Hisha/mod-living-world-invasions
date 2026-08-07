@@ -24,6 +24,7 @@ void InvasionMgr::Clear()
     _movementPaths.clear();
     _movementNodesByPath.clear();
     _movementProfiles.clear();
+    _runtimeSignals.clear();
 }
 
 void InvasionMgr::LoadDefinitions()
@@ -190,7 +191,7 @@ void InvasionMgr::LoadDefinitions()
     LOG_INFO("server.loading", "Living World Invasions: loaded {} enabled stage definition(s) for {} invasion(s).",
         stageCount, _stagesByInvasion.size());
 
-    if (QueryResult result = WorldDatabase.Query("SELECT `id`, `stage_id`, `action_order`, `action_type`, `target_id`, `parameter1`, `parameter2`, `delay_seconds`, `enabled` FROM `lwi_stage_action` WHERE `enabled` = 1 ORDER BY `stage_id`, `action_order`"))
+    if (QueryResult result = WorldDatabase.Query("SELECT `id`, `stage_id`, `action_order`, `action_type`, `target_id`, `parameter1`, `parameter2`, `parameter3`, `delay_seconds`, `enabled` FROM `lwi_stage_action` WHERE `enabled` = 1 ORDER BY `stage_id`, `action_order`"))
     {
         do
         {
@@ -203,8 +204,9 @@ void InvasionMgr::LoadDefinitions()
             action.TargetId = fields[4].Get<uint32>();
             action.Parameter1 = fields[5].Get<uint32>();
             action.Parameter2 = fields[6].Get<uint32>();
-            action.DelaySeconds = fields[7].Get<uint32>();
-            action.Enabled = fields[8].Get<bool>();
+            action.Parameter3 = fields[7].Get<uint32>();
+            action.DelaySeconds = fields[8].Get<uint32>();
+            action.Enabled = fields[9].Get<bool>();
             _actionsByStage[action.StageId].push_back(std::move(action));
         } while (result->NextRow());
     }
@@ -244,6 +246,31 @@ void InvasionMgr::LoadDefinitions()
             _spawnMembersByGroup[member.SpawnGroupId].push_back(std::move(member));
         } while (result->NextRow());
     }
+
+    if (QueryResult result = WorldDatabase.Query(
+        "SELECT `id`, `name`, `enabled`, `comment` "
+        "FROM `lwi_runtime_signal` WHERE `enabled` = 1 ORDER BY `id`"))
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            RuntimeSignalDefinition signal;
+            signal.Id = fields[0].Get<uint32>();
+            signal.Name = fields[1].Get<std::string>();
+            signal.Enabled = fields[2].Get<bool>();
+            if (!fields[3].IsNull())
+                signal.Comment = fields[3].Get<std::string>();
+
+            auto [iterator, inserted] = _runtimeSignals.emplace(signal.Id, std::move(signal));
+            if (!inserted)
+            {
+                LOG_ERROR("server.loading",
+                    "[LWI Signal] Duplicate runtime signal definition id {} ignored.", iterator->first);
+            }
+        } while (result->NextRow());
+    }
+
+    LOG_INFO("server.loading", "[LWI Signal] Loaded {} runtime signal definition(s).", _runtimeSignals.size());
 
     if (QueryResult result = WorldDatabase.Query(
         "SELECT `id`, `name`, `enabled`, `comment` "
@@ -395,5 +422,11 @@ MovementProfileDefinition const* InvasionMgr::GetMovementProfile(uint32 id) cons
 {
     auto it = _movementProfiles.find(id);
     return it != _movementProfiles.end() ? &it->second : nullptr;
+}
+
+RuntimeSignalDefinition const* InvasionMgr::GetRuntimeSignal(uint32 id) const
+{
+    auto it = _runtimeSignals.find(id);
+    return it != _runtimeSignals.end() ? &it->second : nullptr;
 }
 }

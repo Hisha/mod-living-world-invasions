@@ -8,6 +8,9 @@
 DELETE FROM `lwi_stage_action`
 WHERE `id` IN (10001,10002,10003,10004);
 
+DELETE FROM `lwi_runtime_signal`
+WHERE `id` IN (100);
+
 DELETE FROM `lwi_spawn_member`
 WHERE `id` IN (100001,100002,100003,100004);
 
@@ -178,6 +181,25 @@ VALUES
     (100003, 102, 1,   441, 1, 0, 'Westfall Defias lieutenant');
 
 -- ===========================================================================
+-- Runtime Signals
+-- ===========================================================================
+
+INSERT INTO `lwi_runtime_signal`
+(
+    `id`,
+    `name`,
+    `enabled`,
+    `comment`
+)
+VALUES
+(
+    100,
+    'ScoutRouteComplete',
+    1,
+    'Emitted when the temporary Westfall scout movement route completes.'
+);
+
+-- ===========================================================================
 -- Movement Profile
 -- default_mode: 0 = provider/default, 1 = walk, 2 = run
 -- ===========================================================================
@@ -255,6 +277,7 @@ VALUES
 --   target_id  = spawn_group_id
 --   parameter1 = movement_path_id
 --   parameter2 = movement_profile_id
+--   parameter3 = completion_signal_id
 -- ===========================================================================
 
 INSERT INTO `lwi_stage_action`
@@ -266,12 +289,13 @@ INSERT INTO `lwi_stage_action`
     `target_id`,
     `parameter1`,
     `parameter2`,
+    `parameter3`,
     `delay_seconds`,
     `enabled`,
     `comment`
 )
 VALUES
-    (10001, 1001, 1, 1, 100,   0,   0, 0, 1, 'Spawn Westfall Defias scouts and campfire'),
-    (10004, 1001, 2, 2, 100, 100, 100, 0, 1, 'Move Westfall Defias scout runtime group along test route'),
-    (10002, 1002, 1, 1, 101,   0,   0, 0, 1, 'Spawn Westfall Defias reinforcements'),
-    (10003, 1003, 1, 1, 102,   0,   0, 0, 1, 'Spawn Westfall Defias lieutenant');
+    (10001, 1001, 1, 1, 100,   0,   0,   0, 0, 1, 'Spawn Westfall Defias scouts and campfire'),
+    (10004, 1001, 2, 2, 100, 100, 100, 100, 0, 1, 'Move Westfall Defias scout runtime group and emit ScoutRouteComplete'),
+    (10002, 1002, 1, 1, 101,   0,   0,   0, 0, 1, 'Spawn Westfall Defias reinforcements'),
+    (10003, 1003, 1, 1, 102,   0,   0,   0, 0, 1, 'Spawn Westfall Defias lieutenant');

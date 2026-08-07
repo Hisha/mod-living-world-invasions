@@ -8,6 +8,7 @@
 #include "MapMgr.h"
 #include "MotionMaster.h"
 #include "RuntimeEntityGroup.h"
+#include "RuntimeSignalManager.h"
 #include "Timer.h"
 
 #include <algorithm>
@@ -34,7 +35,7 @@ void MovementController::Reset()
     _updateTimerMs = 0;
 }
 
-bool MovementController::StartPath(uint64 runtimeGroupId, uint32 pathId, uint32 profileId)
+bool MovementController::StartPath(uint64 runtimeGroupId, uint32 pathId, uint32 profileId, uint32 completionSignalId)
 {
     RuntimeEntityGroup* group = sRuntimeEntityGroupMgr.GetGroup(runtimeGroupId);
     if (!group)
@@ -71,11 +72,20 @@ bool MovementController::StartPath(uint64 runtimeGroupId, uint32 pathId, uint32 
         return false;
     }
 
+    if (completionSignalId != 0 && !sInvasionMgr.GetRuntimeSignal(completionSignalId))
+    {
+        LOG_ERROR("server.loading",
+            "[LWI Movement] Runtime entity group #{} requested missing completion signal {}.",
+            runtimeGroupId, completionSignalId);
+        return false;
+    }
+
     ActiveRuntimeMovement movement;
     movement.RuntimeGroupId = runtimeGroupId;
     movement.RuntimeId = group->RuntimeId;
     movement.PathId = pathId;
     movement.ProfileId = profileId;
+    movement.CompletionSignalId = completionSignalId;
     movement.NodeIndex = 0;
     movement.State = RuntimeMovementState::Moving;
 
@@ -394,6 +404,16 @@ void MovementController::CompleteMovement(
     LOG_INFO("server.loading",
         "[LWI Movement] Runtime entity group #{} completed movement path {}.",
         runtimeGroupId, movement.PathId);
+
+    if (movement.CompletionSignalId != 0)
+    {
+        if (!sRuntimeSignalMgr.EmitSignal(movement.RuntimeId, movement.CompletionSignalId))
+        {
+            LOG_ERROR("server.loading",
+                "[LWI Movement] Runtime entity group #{} failed to emit completion signal {} for runtime #{}.",
+                runtimeGroupId, movement.CompletionSignalId, movement.RuntimeId);
+        }
+    }
 
     movement.State = RuntimeMovementState::Completed;
 }

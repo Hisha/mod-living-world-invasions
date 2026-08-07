@@ -3,6 +3,7 @@
 #include "InvasionScheduler.h"
 #include "LivingWorldInvasions.h"
 #include "MovementController.h"
+#include "RuntimeSignalManager.h"
 
 #include "DatabaseEnv.h"
 #include "Field.h"
@@ -34,6 +35,7 @@ InvasionRuntimeManager& InvasionRuntimeManager::Instance()
 void InvasionRuntimeManager::Reset()
 {
     sMovementController.Reset();
+    sRuntimeSignalMgr.Reset();
     _runtimes.clear();
     _runtimeByInvasion.clear();
     _updateTimerMs = 0;
@@ -227,6 +229,7 @@ void InvasionRuntimeManager::CompleteRuntime(uint64 runtimeId, uint64 now)
     }
 
     uint32 const invasionId = iterator->second.GetInvasionId();
+    sRuntimeSignalMgr.ClearRuntime(runtimeId);
     DeleteRuntime(runtimeId);
     _runtimeByInvasion.erase(invasionId);
     _runtimes.erase(iterator);

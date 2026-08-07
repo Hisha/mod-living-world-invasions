@@ -153,11 +153,11 @@ bool InvasionRuntime::BeginCurrentStage(uint64 now)
                     continue;
                 }
 
-                if (!sMovementController.StartPath(group->Id, action.Parameter1, action.Parameter2))
+                if (!sMovementController.StartPath(group->Id, action.Parameter1, action.Parameter2, action.Parameter3))
                 {
                     LOG_ERROR("server.loading",
-                        "[LWI Runtime] Runtime #{} failed movement action {} for runtime entity group #{} (path {}, profile {}).",
-                        _runtimeId, action.Id, group->Id, action.Parameter1, action.Parameter2);
+                        "[LWI Runtime] Runtime #{} failed movement action {} for runtime entity group #{} (path {}, profile {}, completion signal {}).",
+                        _runtimeId, action.Id, group->Id, action.Parameter1, action.Parameter2, action.Parameter3);
                 }
             }
         }

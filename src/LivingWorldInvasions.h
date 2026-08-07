@@ -30,6 +30,7 @@ struct StageActionDefinition
     uint32 TargetId = 0;
     uint32 Parameter1 = 0;
     uint32 Parameter2 = 0;
+    uint32 Parameter3 = 0;
     uint32 DelaySeconds = 0;
     bool Enabled = false;
 };
@@ -58,6 +59,14 @@ struct SpawnGroupDefinition
     bool Enabled = false;
 };
 
+
+struct RuntimeSignalDefinition
+{
+    uint32 Id = 0;
+    std::string Name;
+    bool Enabled = false;
+    std::string Comment;
+};
 
 struct MovementPathDefinition
 {
@@ -142,6 +151,7 @@ public:
     [[nodiscard]] MovementPathDefinition const* GetMovementPath(uint32 id) const;
     [[nodiscard]] std::vector<MovementNodeDefinition> const* GetMovementNodes(uint32 pathId) const;
     [[nodiscard]] MovementProfileDefinition const* GetMovementProfile(uint32 id) const;
+    [[nodiscard]] RuntimeSignalDefinition const* GetRuntimeSignal(uint32 id) const;
     [[nodiscard]] std::size_t GetDefinitionCount() const;
 
 private:
@@ -156,6 +166,7 @@ private:
     std::unordered_map<uint32, MovementPathDefinition> _movementPaths;
     std::unordered_map<uint32, std::vector<MovementNodeDefinition>> _movementNodesByPath;
     std::unordered_map<uint32, MovementProfileDefinition> _movementProfiles;
+    std::unordered_map<uint32, RuntimeSignalDefinition> _runtimeSignals;
 };
 }
 
