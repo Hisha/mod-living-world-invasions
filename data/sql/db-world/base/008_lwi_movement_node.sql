@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS `lwi_movement_node`
 
     `wait_ms` INT UNSIGNED NOT NULL DEFAULT 0,
 
-    `movement_profile_override_id` INT UNSIGNED NOT NULL DEFAULT 0,
+    `profile_override_id` INT UNSIGNED NOT NULL DEFAULT 0,
 
     `enabled` TINYINT UNSIGNED NOT NULL DEFAULT 1,
     `comment` VARCHAR(255) NULL DEFAULT NULL,
