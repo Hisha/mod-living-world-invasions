@@ -1,5 +1,6 @@
 #include "InvasionSpawnManager.h"
 
+#include <cmath>
 #include "LivingWorldInvasions.h"
 #include "Log.h"
 #include "Map.h"
@@ -55,20 +56,27 @@ bool InvasionSpawnManager::SpawnGroup(uint64 runtimeId, uint32 spawnGroupId)
         return false;
     }
 
-
-    Position position;
-    position.Relocate(
-        group->X,
-        group->Y,
-        group->Z,
-        group->Orientation
-    );
-
-
     for (auto const& member : *members)
     {
         for (uint32 i = 0; i < member.Count; ++i)
         {
+            Position position;
+            position.Relocate(
+                group->X,
+                group->Y,
+                group->Z,
+                group->Orientation
+            );
+
+            if (group->SpawnRadius > 0)
+            {
+                float angle = frand(0.0f, 6.283185f);
+                float distance = frand(0.0f, group->SpawnRadius);
+
+                position.m_positionX += std::cos(angle) * distance;
+                position.m_positionY += std::sin(angle) * distance;
+            }
+
             TempSummon* summon = map->SummonCreature(
                 member.CreatureEntry,
                 position,
