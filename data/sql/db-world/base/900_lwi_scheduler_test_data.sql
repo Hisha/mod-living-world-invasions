@@ -6,10 +6,13 @@
 -- ===========================================================================
 
 DELETE FROM `lwi_stage_action`
-WHERE `id` IN (10001,10002,10003,10004);
+WHERE `id` IN (10001,10002,10003,10004,10005,10006);
 
 DELETE FROM `lwi_runtime_signal`
 WHERE `id` IN (100);
+
+DELETE FROM `lwi_dialogue`
+WHERE `id` IN (100,101);
 
 DELETE FROM `lwi_spawn_member`
 WHERE `id` IN (100001,100002,100003,100004);
@@ -201,6 +204,25 @@ VALUES
 );
 
 -- ===========================================================================
+-- Dialogue
+-- chat_type: 0 = Say, 1 = Yell
+-- ===========================================================================
+
+INSERT INTO `lwi_dialogue`
+(
+    `id`,
+    `name`,
+    `text`,
+    `chat_type`,
+    `language`,
+    `enabled`,
+    `comment`
+)
+VALUES
+    (100, 'Westfall Scout Warning', 'Keep your eyes open. Sentinel Hill is ahead.', 0, 0, 1, 'Temporary Say test for the scout runtime group.'),
+    (101, 'Westfall Lieutenant Challenge', 'The Brotherhood will take Westfall!', 1, 0, 1, 'Temporary Yell test for the lieutenant runtime group.');
+
+-- ===========================================================================
 -- Movement Profile
 -- default_mode: 0 = provider/default, 1 = walk, 2 = run
 -- ===========================================================================
@@ -273,12 +295,19 @@ VALUES
 -- Stage Actions
 -- action_type: 1 = Spawn Group
 -- action_type: 2 = Start Movement
+-- action_type: 3 = Dialogue
 --
 -- Start Movement:
 --   target_id  = spawn_group_id
 --   parameter1 = movement_path_id
 --   parameter2 = movement_profile_id
 --   parameter3 = completion_signal_id
+--
+-- Dialogue:
+--   target_id  = spawn_group_id
+--   parameter1 = dialogue_id
+--   parameter2 = speaker spawn_member_id (0 = first available creature)
+--   parameter3 = reserved
 -- ===========================================================================
 
 INSERT INTO `lwi_stage_action`
@@ -296,7 +325,9 @@ INSERT INTO `lwi_stage_action`
     `comment`
 )
 VALUES
-    (10001, 1001, 1, 1, 100,   0,   0,   0, 0, 1, 'Spawn Westfall Defias scouts and campfire'),
-    (10004, 1001, 2, 2, 100, 100, 100, 100, 0, 1, 'Move Westfall Defias scout runtime group and emit ScoutRouteComplete'),
-    (10002, 1002, 1, 1, 101,   0,   0,   0, 0, 1, 'Spawn Westfall Defias reinforcements'),
-    (10003, 1003, 1, 1, 102,   0,   0,   0, 0, 1, 'Spawn Westfall Defias lieutenant');
+    (10001, 1001, 1, 1, 100,   0,      0,   0, 0, 1, 'Spawn Westfall Defias scouts and campfire'),
+    (10005, 1001, 2, 3, 100, 100, 100001,   0, 0, 1, 'A scout says a warning before beginning the route'),
+    (10004, 1001, 3, 2, 100, 100,    100, 100, 0, 1, 'Move Westfall Defias scout runtime group and emit ScoutRouteComplete'),
+    (10002, 1002, 1, 1, 101,   0,      0,   0, 0, 1, 'Spawn Westfall Defias reinforcements'),
+    (10003, 1003, 1, 1, 102,   0,      0,   0, 0, 1, 'Spawn Westfall Defias lieutenant'),
+    (10006, 1003, 2, 3, 102, 101, 100003,   0, 0, 1, 'The lieutenant yells after spawning');

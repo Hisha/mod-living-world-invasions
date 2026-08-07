@@ -1,12 +1,19 @@
 -- Canonical clean-install schema for stage actions.
 -- action_type 1 = Spawn Group
 -- action_type 2 = Start Movement
+-- action_type 3 = Dialogue
 --
 -- Start Movement parameter mapping:
 --   target_id  = spawn_group_id whose latest runtime entity group should move
 --   parameter1 = movement_path_id
 --   parameter2 = movement_profile_id (0 = provider/default behavior)
 --   parameter3 = completion_signal_id (0 = emit no signal)
+--
+-- Dialogue parameter mapping:
+--   target_id  = spawn_group_id whose latest runtime entity group contains the speaker
+--   parameter1 = dialogue_id
+--   parameter2 = speaker spawn_member_id (0 = first available creature)
+--   parameter3 = reserved
 CREATE TABLE IF NOT EXISTS `lwi_stage_action` (
     `id` INT UNSIGNED NOT NULL,
     `stage_id` INT UNSIGNED NOT NULL,

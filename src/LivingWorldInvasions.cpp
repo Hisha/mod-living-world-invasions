@@ -25,6 +25,7 @@ void InvasionMgr::Clear()
     _movementNodesByPath.clear();
     _movementProfiles.clear();
     _runtimeSignals.clear();
+    _dialogues.clear();
 }
 
 void InvasionMgr::LoadDefinitions()
@@ -290,6 +291,50 @@ void InvasionMgr::LoadDefinitions()
     LOG_INFO("server.loading", "[LWI Signal] Loaded {} runtime signal definition(s).", _runtimeSignals.size());
 
     if (QueryResult result = WorldDatabase.Query(
+        "SELECT `id`, `name`, `text`, `chat_type`, `language`, `enabled`, `comment` "
+        "FROM `lwi_dialogue` WHERE `enabled` = 1 ORDER BY `id`"))
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            DialogueDefinition dialogue;
+            dialogue.Id = fields[0].Get<uint32>();
+            dialogue.Name = fields[1].Get<std::string>();
+            dialogue.Text = fields[2].Get<std::string>();
+            dialogue.ChatType = fields[3].Get<uint8>();
+            dialogue.Language = fields[4].Get<uint8>();
+            dialogue.Enabled = fields[5].Get<bool>();
+            if (!fields[6].IsNull())
+                dialogue.Comment = fields[6].Get<std::string>();
+
+            if (dialogue.Text.empty())
+            {
+                LOG_ERROR("server.loading",
+                    "[LWI Dialogue] Dialogue {} ({}) has empty text and was ignored.",
+                    dialogue.Id, dialogue.Name);
+                continue;
+            }
+
+            if (dialogue.ChatType > 1)
+            {
+                LOG_ERROR("server.loading",
+                    "[LWI Dialogue] Dialogue {} ({}) uses unsupported chat type {} and was ignored.",
+                    dialogue.Id, dialogue.Name, dialogue.ChatType);
+                continue;
+            }
+
+            auto [iterator, inserted] = _dialogues.emplace(dialogue.Id, std::move(dialogue));
+            if (!inserted)
+            {
+                LOG_ERROR("server.loading",
+                    "[LWI Dialogue] Duplicate dialogue definition id {} ignored.", iterator->first);
+            }
+        } while (result->NextRow());
+    }
+
+    LOG_INFO("server.loading", "[LWI Dialogue] Loaded {} dialogue definition(s).", _dialogues.size());
+
+    if (QueryResult result = WorldDatabase.Query(
         "SELECT `id`, `name`, `enabled`, `comment` "
         "FROM `lwi_movement_path` WHERE `enabled` = 1 ORDER BY `id`"))
     {
@@ -445,5 +490,11 @@ RuntimeSignalDefinition const* InvasionMgr::GetRuntimeSignal(uint32 id) const
 {
     auto it = _runtimeSignals.find(id);
     return it != _runtimeSignals.end() ? &it->second : nullptr;
+}
+
+DialogueDefinition const* InvasionMgr::GetDialogue(uint32 id) const
+{
+    auto it = _dialogues.find(id);
+    return it != _dialogues.end() ? &it->second : nullptr;
 }
 }

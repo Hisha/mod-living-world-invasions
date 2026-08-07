@@ -60,6 +60,18 @@ struct SpawnGroupDefinition
 };
 
 
+
+struct DialogueDefinition
+{
+    uint32 Id = 0;
+    std::string Name;
+    std::string Text;
+    uint8 ChatType = 0;
+    uint8 Language = 0;
+    bool Enabled = false;
+    std::string Comment;
+};
+
 struct RuntimeSignalDefinition
 {
     uint32 Id = 0;
@@ -153,6 +165,7 @@ public:
     [[nodiscard]] std::vector<MovementNodeDefinition> const* GetMovementNodes(uint32 pathId) const;
     [[nodiscard]] MovementProfileDefinition const* GetMovementProfile(uint32 id) const;
     [[nodiscard]] RuntimeSignalDefinition const* GetRuntimeSignal(uint32 id) const;
+    [[nodiscard]] DialogueDefinition const* GetDialogue(uint32 id) const;
     [[nodiscard]] std::size_t GetDefinitionCount() const;
 
 private:
@@ -168,6 +181,7 @@ private:
     std::unordered_map<uint32, std::vector<MovementNodeDefinition>> _movementNodesByPath;
     std::unordered_map<uint32, MovementProfileDefinition> _movementProfiles;
     std::unordered_map<uint32, RuntimeSignalDefinition> _runtimeSignals;
+    std::unordered_map<uint32, DialogueDefinition> _dialogues;
 };
 }
 

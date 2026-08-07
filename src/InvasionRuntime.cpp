@@ -1,6 +1,7 @@
 #include "InvasionRuntime.h"
 
 #include "Log.h"
+#include "DialogueManager.h"
 #include "InvasionSpawnManager.h"
 #include "MovementController.h"
 #include "RuntimeEntityGroup.h"
@@ -18,6 +19,7 @@ constexpr uint8 TimerCompletionType = 0;
 constexpr uint8 SignalCompletionType = 1;
 constexpr uint8 SpawnGroupActionType = 1;
 constexpr uint8 StartMovementActionType = 2;
+constexpr uint8 DialogueActionType = 3;
 }
 
 InvasionRuntime::InvasionRuntime(uint64 runtimeId, uint32 invasionId,
@@ -174,6 +176,16 @@ bool InvasionRuntime::BeginCurrentStage(uint64 now)
                     LOG_ERROR("server.loading",
                         "[LWI Runtime] Runtime #{} failed movement action {} for runtime entity group #{} (path {}, profile {}, completion signal {}).",
                         _runtimeId, action.Id, group->Id, action.Parameter1, action.Parameter2, action.Parameter3);
+                }
+            }
+
+            if (action.ActionType == DialogueActionType)
+            {
+                if (!sDialogueManager.Execute(_runtimeId, action.TargetId, action.Parameter1, action.Parameter2))
+                {
+                    LOG_ERROR("server.loading",
+                        "[LWI Runtime] Runtime #{} failed dialogue action {} (spawn group {}, dialogue {}, speaker member {}).",
+                        _runtimeId, action.Id, action.TargetId, action.Parameter1, action.Parameter2);
                 }
             }
         }
