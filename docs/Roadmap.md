@@ -44,8 +44,8 @@
 # Version 0.2 - World Building
 
 ## Entity Providers
-- [ ] GameObject provider
-- [ ] Mixed entity groups
+- [x] GameObject provider
+- [x] Mixed entity groups
 
 ## Actions
 - [ ] Dialogue (Say/Yell/Emote)
