@@ -112,6 +112,7 @@ struct InvasionStageDefinition
     std::string Name;
     uint32 DurationSeconds = 30;
     uint8 CompletionType = 0;
+    uint32 CompletionTargetId = 0;
     bool Enabled = false;
 };
 

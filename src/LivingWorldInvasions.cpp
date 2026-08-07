@@ -132,7 +132,7 @@ void InvasionMgr::LoadDefinitions()
 
     std::size_t stageCount = 0;
     if (QueryResult result = WorldDatabase.Query(
-        "SELECT `id`, `invasion_id`, `stage_order`, `name`, `duration_seconds`, `completion_type`, `enabled` "
+        "SELECT `id`, `invasion_id`, `stage_order`, `name`, `duration_seconds`, `completion_type`, `completion_target_id`, `enabled` "
         "FROM `lwi_invasion_stage` WHERE `enabled` = 1 ORDER BY `invasion_id`, `stage_order`"))
     {
         do
@@ -146,7 +146,8 @@ void InvasionMgr::LoadDefinitions()
             stage.Name = fields[3].Get<std::string>();
             stage.DurationSeconds = fields[4].Get<uint32>();
             stage.CompletionType = fields[5].Get<uint8>();
-            stage.Enabled = fields[6].Get<bool>();
+            stage.CompletionTargetId = fields[6].Get<uint32>();
+            stage.Enabled = fields[7].Get<bool>();
 
             if (!GetDefinition(stage.InvasionId))
             {
@@ -156,10 +157,26 @@ void InvasionMgr::LoadDefinitions()
                 continue;
             }
 
-            if (stage.DurationSeconds == 0)
+            if (stage.CompletionType > 1)
             {
                 LOG_ERROR("server.loading",
-                    "Living World Invasions: stage {} ({}) has duration 0 and was ignored.",
+                    "Living World Invasions: stage {} ({}) uses unsupported completion type {} and was ignored.",
+                    stage.Id, stage.Name, stage.CompletionType);
+                continue;
+            }
+
+            if (stage.CompletionType == 0 && stage.DurationSeconds == 0)
+            {
+                LOG_ERROR("server.loading",
+                    "Living World Invasions: timer stage {} ({}) has duration 0 and was ignored.",
+                    stage.Id, stage.Name);
+                continue;
+            }
+
+            if (stage.CompletionType == 1 && stage.CompletionTargetId == 0)
+            {
+                LOG_ERROR("server.loading",
+                    "Living World Invasions: signal stage {} ({}) has no completion target signal and was ignored.",
                     stage.Id, stage.Name);
                 continue;
             }

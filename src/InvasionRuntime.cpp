@@ -4,6 +4,7 @@
 #include "InvasionSpawnManager.h"
 #include "MovementController.h"
 #include "RuntimeEntityGroup.h"
+#include "RuntimeSignalManager.h"
 
 #include <algorithm>
 #include <sstream>
@@ -14,6 +15,7 @@ namespace lwi
 namespace
 {
 constexpr uint8 TimerCompletionType = 0;
+constexpr uint8 SignalCompletionType = 1;
 constexpr uint8 SpawnGroupActionType = 1;
 constexpr uint8 StartMovementActionType = 2;
 }
@@ -82,17 +84,29 @@ bool InvasionRuntime::Update(uint64 now)
         return false;
     }
 
-    if (stage->CompletionType != TimerCompletionType)
+    switch (stage->CompletionType)
     {
-        return false;
-    }
+        case TimerCompletionType:
+            if (now < _stageEndsAt)
+            {
+                return false;
+            }
+            return Advance(now);
 
-    if (now < _stageEndsAt)
-    {
-        return false;
-    }
+        case SignalCompletionType:
+            if (!sRuntimeSignalMgr.HasSignal(_runtimeId, stage->CompletionTargetId))
+            {
+                return false;
+            }
 
-    return Advance(now);
+            LOG_INFO("server.loading",
+                "[LWI Runtime] Runtime #{} stage {} ({}) satisfied by signal {}.",
+                _runtimeId, stage->StageOrder, stage->Name, stage->CompletionTargetId);
+            return Advance(now);
+
+        default:
+            return false;
+    }
 }
 
 bool InvasionRuntime::Advance(uint64 now)
@@ -130,7 +144,9 @@ bool InvasionRuntime::BeginCurrentStage(uint64 now)
     }
 
     _stageStartedAt = now;
-    _stageEndsAt = now + std::max<uint32>(1, stage->DurationSeconds);
+    _stageEndsAt = stage->CompletionType == TimerCompletionType
+        ? now + std::max<uint32>(1, stage->DurationSeconds)
+        : 0;
 
     if (auto const* actions = sInvasionMgr.GetActions(stage->Id))
     {
@@ -163,10 +179,21 @@ bool InvasionRuntime::BeginCurrentStage(uint64 now)
         }
     }
 
-    LOG_INFO("server.loading",
-        "[LWI Runtime] Runtime #{} invasion {} entered stage {} ({}) for {} second(s).",
-        _runtimeId, _invasionId, stage->StageOrder, stage->Name,
-        std::max<uint32>(1, stage->DurationSeconds));
+    if (stage->CompletionType == SignalCompletionType)
+    {
+        RuntimeSignalDefinition const* signal = sInvasionMgr.GetRuntimeSignal(stage->CompletionTargetId);
+        LOG_INFO("server.loading",
+            "[LWI Runtime] Runtime #{} invasion {} entered stage {} ({}) waiting for signal {} ({}).",
+            _runtimeId, _invasionId, stage->StageOrder, stage->Name,
+            stage->CompletionTargetId, signal ? signal->Name : "unknown");
+    }
+    else
+    {
+        LOG_INFO("server.loading",
+            "[LWI Runtime] Runtime #{} invasion {} entered stage {} ({}) for {} second(s).",
+            _runtimeId, _invasionId, stage->StageOrder, stage->Name,
+            std::max<uint32>(1, stage->DurationSeconds));
+    }
 
     return true;
 }
@@ -209,8 +236,20 @@ std::string InvasionRuntime::BuildStatusLine(uint64 now) const
 
     if (InvasionStageDefinition const* stage = GetCurrentStage())
     {
-        output << ", stage " << stage->StageOrder << " (" << stage->Name << ")"
-               << ", " << GetStageTimeRemaining(now) << " second(s) remaining";
+        output << ", stage " << stage->StageOrder << " (" << stage->Name << ")";
+
+        if (stage->CompletionType == SignalCompletionType)
+        {
+            output << ", waiting for signal " << stage->CompletionTargetId;
+            if (RuntimeSignalDefinition const* signal = sInvasionMgr.GetRuntimeSignal(stage->CompletionTargetId))
+            {
+                output << " (" << signal->Name << ")";
+            }
+        }
+        else
+        {
+            output << ", " << GetStageTimeRemaining(now) << " second(s) remaining";
+        }
     }
     else
     {

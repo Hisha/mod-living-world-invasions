@@ -81,7 +81,7 @@ VALUES
 
 -- ===========================================================================
 -- Runtime Stages
--- completion_type: 0 = timer
+-- completion_type: 0 = timer, 1 = runtime signal
 -- ===========================================================================
 
 INSERT INTO `lwi_invasion_stage`
@@ -92,21 +92,22 @@ INSERT INTO `lwi_invasion_stage`
     `name`,
     `duration_seconds`,
     `completion_type`,
+    `completion_target_id`,
     `enabled`,
     `comment`
 )
 VALUES
-    (1001, 1, 10, 'Scouts',          20, 0, 1, 'Spawn and movement engine test stage.'),
-    (1002, 1, 20, 'Reinforcements',  20, 0, 1, 'Spawn engine test stage.'),
-    (1003, 1, 30, 'Lieutenant',      20, 0, 1, 'Spawn engine test stage.'),
+    (1001, 1, 10, 'Scouts',           0, 1, 100, 1, 'Completes when ScoutRouteComplete is emitted.'),
+    (1002, 1, 20, 'Reinforcements',  20, 0,   0, 1, 'Spawn engine test stage.'),
+    (1003, 1, 30, 'Lieutenant',      20, 0,   0, 1, 'Spawn engine test stage.'),
 
-    (2001, 2, 10, 'Scouts',          20, 0, 1, 'Runtime framework test.'),
-    (2002, 2, 20, 'Reinforcements',  20, 0, 1, 'Runtime framework test.'),
-    (2003, 2, 30, 'Lieutenant',      20, 0, 1, 'Runtime framework test.'),
+    (2001, 2, 10, 'Scouts',          20, 0,   0, 1, 'Runtime framework test.'),
+    (2002, 2, 20, 'Reinforcements',  20, 0,   0, 1, 'Runtime framework test.'),
+    (2003, 2, 30, 'Lieutenant',      20, 0,   0, 1, 'Runtime framework test.'),
 
-    (3001, 3, 10, 'Scouts',          20, 0, 1, 'Runtime framework test.'),
-    (3002, 3, 20, 'Reinforcements',  20, 0, 1, 'Runtime framework test.'),
-    (3003, 3, 30, 'Lieutenant',      20, 0, 1, 'Runtime framework test.');
+    (3001, 3, 10, 'Scouts',          20, 0,   0, 1, 'Runtime framework test.'),
+    (3002, 3, 20, 'Reinforcements',  20, 0,   0, 1, 'Runtime framework test.'),
+    (3003, 3, 30, 'Lieutenant',      20, 0,   0, 1, 'Runtime framework test.');
 
 -- ===========================================================================
 -- Spawn Groups

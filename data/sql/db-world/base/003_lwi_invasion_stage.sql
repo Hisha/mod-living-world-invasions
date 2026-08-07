@@ -1,5 +1,12 @@
 -- Canonical clean-install schema: stages are loaded after invasion definitions.
--- completion_type: 0 = timer. Additional completion types will be added as the runtime engine grows.
+-- completion_type:
+--   0 = timer
+--   1 = runtime signal
+--   2 = objective (reserved)
+--   3 = manual (reserved)
+-- completion_target_id:
+--   timer: 0
+--   runtime signal: lwi_runtime_signal.id
 CREATE TABLE IF NOT EXISTS `lwi_invasion_stage` (
     `id` INT UNSIGNED NOT NULL,
     `invasion_id` INT UNSIGNED NOT NULL,
@@ -7,6 +14,7 @@ CREATE TABLE IF NOT EXISTS `lwi_invasion_stage` (
     `name` VARCHAR(120) NOT NULL,
     `duration_seconds` INT UNSIGNED NOT NULL DEFAULT 30,
     `completion_type` TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    `completion_target_id` INT UNSIGNED NOT NULL DEFAULT 0,
     `enabled` TINYINT UNSIGNED NOT NULL DEFAULT 1,
     `comment` VARCHAR(255) NULL DEFAULT NULL,
     PRIMARY KEY (`id`),
