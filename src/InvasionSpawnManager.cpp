@@ -2,6 +2,9 @@
 
 #include "LivingWorldInvasions.h"
 #include "Log.h"
+#include "Map.h"
+#include "Position.h"
+#include "TemporarySummon.h"
 
 namespace lwi
 {
@@ -32,10 +35,68 @@ bool InvasionSpawnManager::SpawnGroup(uint64 runtimeId, uint32 spawnGroupId)
         return false;
     }
 
-    // Creature creation is intentionally added as the next layer. This first pass
-    // validates data flow and ownership tracking.
-    LOG_INFO("server.loading", "[LWI Spawn] Runtime #{} executing spawn group {} ({}).",
-        runtimeId, spawnGroupId, group->Name);
+    LOG_INFO("server.loading",
+        "[LWI Spawn] Runtime #{} executing spawn group {} ({}).",
+        runtimeId,
+        spawnGroupId,
+        group->Name);
+
+
+    Map* map = sMapMgr->FindMap(group->MapId, 0);
+
+    if (!map)
+    {
+        LOG_ERROR("server.loading",
+            "[LWI Spawn] Unable to find map {} for spawn group {}.",
+            group->MapId,
+            spawnGroupId);
+
+        return false;
+    }
+
+
+    Position position;
+    position.Relocate(
+        group->X,
+        group->Y,
+        group->Z,
+        group->Orientation
+    );
+
+
+    for (auto const& member : *members)
+    {
+        for (uint32 i = 0; i < member.Count; ++i)
+        {
+            TempSummon* summon = map->SummonCreature(
+                member.CreatureEntry,
+                position,
+                nullptr,
+                0
+            );
+
+            if (!summon)
+            {
+                LOG_ERROR("server.loading",
+                    "[LWI Spawn] Failed spawning creature entry {}.",
+                    member.CreatureEntry);
+
+                continue;
+            }
+
+
+            _runtimeCreatures[runtimeId].push_back(
+                summon->GetGUID()
+            );
+
+
+            LOG_INFO("server.loading",
+                "[LWI Spawn] Runtime #{} spawned creature {} GUID {}.",
+                runtimeId,
+                member.CreatureEntry,
+                summon->GetGUID().ToString());
+        }
+    }
 
     return true;
 }
