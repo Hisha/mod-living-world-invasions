@@ -1,0 +1,12 @@
+CREATE TABLE IF NOT EXISTS `lwi_spawn_group` (
+    `id` INT UNSIGNED NOT NULL,
+    `name` VARCHAR(120) NOT NULL,
+    `map_id` SMALLINT UNSIGNED NOT NULL,
+    `x` FLOAT NOT NULL,
+    `y` FLOAT NOT NULL,
+    `z` FLOAT NOT NULL,
+    `orientation` FLOAT NOT NULL DEFAULT 0,
+    `spawn_radius` FLOAT NOT NULL DEFAULT 5,
+    `enabled` TINYINT UNSIGNED NOT NULL DEFAULT 1,
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

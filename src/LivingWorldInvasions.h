@@ -21,6 +21,39 @@ struct ResponseOriginDefinition
 };
 
 
+struct StageActionDefinition
+{
+    uint32 Id = 0;
+    uint32 StageId = 0;
+    uint16 ActionOrder = 0;
+    uint8 ActionType = 1;
+    uint32 TargetId = 0;
+    uint32 DelaySeconds = 0;
+    bool Enabled = false;
+};
+
+struct SpawnMemberDefinition
+{
+    uint32 Id = 0;
+    uint32 SpawnGroupId = 0;
+    uint32 CreatureEntry = 0;
+    uint16 Count = 1;
+    uint16 LevelOverride = 0;
+};
+
+struct SpawnGroupDefinition
+{
+    uint32 Id = 0;
+    std::string Name;
+    uint16 MapId = 0;
+    float X = 0;
+    float Y = 0;
+    float Z = 0;
+    float Orientation = 0;
+    float SpawnRadius = 5;
+    bool Enabled = false;
+};
+
 struct InvasionStageDefinition
 {
     uint32 Id = 0;
@@ -62,6 +95,9 @@ public:
     [[nodiscard]] std::unordered_map<uint32, ResponseOriginDefinition> const& GetResponseOrigins() const;
     [[nodiscard]] std::unordered_map<uint32, InvasionDefinition> const& GetDefinitions() const;
     [[nodiscard]] std::vector<InvasionStageDefinition> const* GetStages(uint32 invasionId) const;
+    [[nodiscard]] std::vector<StageActionDefinition> const* GetActions(uint32 stageId) const;
+    [[nodiscard]] SpawnGroupDefinition const* GetSpawnGroup(uint32 id) const;
+    [[nodiscard]] std::vector<SpawnMemberDefinition> const* GetSpawnMembers(uint32 id) const;
     [[nodiscard]] std::size_t GetDefinitionCount() const;
 
 private:
@@ -70,6 +106,9 @@ private:
     std::unordered_map<uint32, ResponseOriginDefinition> _responseOrigins;
     std::unordered_map<uint32, InvasionDefinition> _definitions;
     std::unordered_map<uint32, std::vector<InvasionStageDefinition>> _stagesByInvasion;
+    std::unordered_map<uint32, std::vector<StageActionDefinition>> _actionsByStage;
+    std::unordered_map<uint32, SpawnGroupDefinition> _spawnGroups;
+    std::unordered_map<uint32, std::vector<SpawnMemberDefinition>> _spawnMembersByGroup;
 };
 }
 

@@ -1,6 +1,7 @@
 #include "InvasionRuntime.h"
 
 #include "Log.h"
+#include "InvasionSpawnManager.h"
 
 #include <algorithm>
 #include <sstream>
@@ -123,6 +124,17 @@ bool InvasionRuntime::BeginCurrentStage(uint64 now)
 
     _stageStartedAt = now;
     _stageEndsAt = now + std::max<uint32>(1, stage->DurationSeconds);
+
+    if (auto const* actions = sInvasionMgr.GetActions(stage->Id))
+    {
+        for (auto const& action : *actions)
+        {
+            if (action.ActionType == 1)
+            {
+                sInvasionSpawnMgr.SpawnGroup(_runtimeId, action.TargetId);
+            }
+        }
+    }
 
     LOG_INFO("server.loading",
         "[LWI Runtime] Runtime #{} invasion {} entered stage {} ({}) for {} second(s).",

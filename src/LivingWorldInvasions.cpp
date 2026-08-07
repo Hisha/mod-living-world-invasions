@@ -18,6 +18,9 @@ void InvasionMgr::Clear()
     _responseOrigins.clear();
     _definitions.clear();
     _stagesByInvasion.clear();
+    _actionsByStage.clear();
+    _spawnGroups.clear();
+    _spawnMembersByGroup.clear();
 }
 
 void InvasionMgr::LoadDefinitions()
@@ -183,6 +186,57 @@ void InvasionMgr::LoadDefinitions()
 
     LOG_INFO("server.loading", "Living World Invasions: loaded {} enabled stage definition(s) for {} invasion(s).",
         stageCount, _stagesByInvasion.size());
+
+    if (QueryResult result = WorldDatabase.Query("SELECT `id`, `stage_id`, `action_order`, `action_type`, `target_id`, `delay_seconds`, `enabled` FROM `lwi_stage_action` WHERE `enabled` = 1 ORDER BY `stage_id`, `action_order`"))
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            StageActionDefinition action;
+            action.Id = fields[0].Get<uint32>();
+            action.StageId = fields[1].Get<uint32>();
+            action.ActionOrder = fields[2].Get<uint16>();
+            action.ActionType = fields[3].Get<uint8>();
+            action.TargetId = fields[4].Get<uint32>();
+            action.DelaySeconds = fields[5].Get<uint32>();
+            action.Enabled = fields[6].Get<bool>();
+            _actionsByStage[action.StageId].push_back(std::move(action));
+        } while (result->NextRow());
+    }
+
+    if (QueryResult result = WorldDatabase.Query("SELECT `id`, `name`, `map_id`, `x`, `y`, `z`, `orientation`, `spawn_radius`, `enabled` FROM `lwi_spawn_group` WHERE `enabled` = 1"))
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            SpawnGroupDefinition group;
+            group.Id = fields[0].Get<uint32>();
+            group.Name = fields[1].Get<std::string>();
+            group.MapId = fields[2].Get<uint16>();
+            group.X = fields[3].Get<float>();
+            group.Y = fields[4].Get<float>();
+            group.Z = fields[5].Get<float>();
+            group.Orientation = fields[6].Get<float>();
+            group.SpawnRadius = fields[7].Get<float>();
+            group.Enabled = fields[8].Get<bool>();
+            _spawnGroups.emplace(group.Id, std::move(group));
+        } while (result->NextRow());
+    }
+
+    if (QueryResult result = WorldDatabase.Query("SELECT `id`, `spawn_group_id`, `creature_entry`, `count`, `level_override` FROM `lwi_spawn_member` ORDER BY `spawn_group_id`"))
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            SpawnMemberDefinition member;
+            member.Id = fields[0].Get<uint32>();
+            member.SpawnGroupId = fields[1].Get<uint32>();
+            member.CreatureEntry = fields[2].Get<uint32>();
+            member.Count = fields[3].Get<uint16>();
+            member.LevelOverride = fields[4].Get<uint16>();
+            _spawnMembersByGroup[member.SpawnGroupId].push_back(std::move(member));
+        } while (result->NextRow());
+    }
 }
 
 ResponseOriginDefinition const* InvasionMgr::GetResponseOrigin(uint32 responseOriginId) const
@@ -216,5 +270,25 @@ std::vector<InvasionStageDefinition> const* InvasionMgr::GetStages(uint32 invasi
 std::size_t InvasionMgr::GetDefinitionCount() const
 {
     return _definitions.size();
+}
+}
+
+
+namespace lwi
+{
+std::vector<StageActionDefinition> const* InvasionMgr::GetActions(uint32 stageId) const
+{
+    auto it = _actionsByStage.find(stageId);
+    return it != _actionsByStage.end() ? &it->second : nullptr;
+}
+SpawnGroupDefinition const* InvasionMgr::GetSpawnGroup(uint32 id) const
+{
+    auto it = _spawnGroups.find(id);
+    return it != _spawnGroups.end() ? &it->second : nullptr;
+}
+std::vector<SpawnMemberDefinition> const* InvasionMgr::GetSpawnMembers(uint32 id) const
+{
+    auto it = _spawnMembersByGroup.find(id);
+    return it != _spawnMembersByGroup.end() ? &it->second : nullptr;
 }
 }
