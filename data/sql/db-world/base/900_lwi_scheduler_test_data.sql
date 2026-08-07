@@ -1,4 +1,4 @@
--- TEMPORARY scheduler/spawn framework data.
+-- TEMPORARY scheduler/spawn/movement framework data.
 -- This is development test content and is safe to reapply.
 
 -- ===========================================================================
@@ -6,13 +6,22 @@
 -- ===========================================================================
 
 DELETE FROM `lwi_stage_action`
-WHERE `id` IN (10001,10002,10003);
+WHERE `id` IN (10001,10002,10003,10004);
 
 DELETE FROM `lwi_spawn_member`
 WHERE `id` IN (100001,100002,100003,100004);
 
 DELETE FROM `lwi_spawn_group`
 WHERE `id` IN (100,101,102);
+
+DELETE FROM `lwi_movement_node`
+WHERE `path_id` IN (100);
+
+DELETE FROM `lwi_movement_path`
+WHERE `id` IN (100);
+
+DELETE FROM `lwi_movement_profile`
+WHERE `id` IN (100);
 
 DELETE FROM `lwi_invasion_stage`
 WHERE `invasion_id` IN (1,2,3);
@@ -63,9 +72,9 @@ INSERT INTO `lwi_invasion`
     `comment`
 )
 VALUES
-    (1, 'Westfall Scheduler Test', 0, 40, 1, 1, 10, 20, 100, 60, 120, 1, 1, 'Temporary scheduler/spawn test.'),
-    (2, 'Duskwood Scheduler Test', 0, 10, 1, 1, 20, 30, 100, 60, 120, 1, 1, 'Temporary scheduler/spawn test.'),
-    (3, 'Wetlands Scheduler Test', 0, 11, 1, 2, 20, 30, 100, 60, 120, 1, 1, 'Temporary scheduler/spawn test.');
+    (1, 'Westfall Scheduler Test', 0, 40, 1, 1, 10, 20, 100, 60, 120, 1, 1, 'Temporary scheduler/spawn/movement test.'),
+    (2, 'Duskwood Scheduler Test', 0, 10, 1, 1, 20, 30, 100, 60, 120, 1, 1, 'Temporary scheduler test.'),
+    (3, 'Wetlands Scheduler Test', 0, 11, 1, 2, 20, 30, 100, 60, 120, 1, 1, 'Temporary scheduler test.');
 
 -- ===========================================================================
 -- Runtime Stages
@@ -84,7 +93,7 @@ INSERT INTO `lwi_invasion_stage`
     `comment`
 )
 VALUES
-    (1001, 1, 10, 'Scouts',          20, 0, 1, 'Spawn engine test stage.'),
+    (1001, 1, 10, 'Scouts',          20, 0, 1, 'Spawn and movement engine test stage.'),
     (1002, 1, 20, 'Reinforcements',  20, 0, 1, 'Spawn engine test stage.'),
     (1003, 1, 30, 'Lieutenant',      20, 0, 1, 'Spawn engine test stage.'),
 
@@ -150,7 +159,6 @@ VALUES
 -- ===========================================================================
 -- Spawn Members
 -- entity_type: 1 = Creature, 2 = GameObject
--- GameObject 29784 is the Basic Campfire summoned by the WotLK Basic Campfire spell.
 -- ===========================================================================
 
 INSERT INTO `lwi_spawn_member`
@@ -170,8 +178,83 @@ VALUES
     (100003, 102, 1,   441, 1, 0, 'Westfall Defias lieutenant');
 
 -- ===========================================================================
+-- Movement Profile
+-- default_mode: 0 = provider/default, 1 = walk, 2 = run
+-- ===========================================================================
+
+INSERT INTO `lwi_movement_profile`
+(
+    `id`,
+    `name`,
+    `default_mode`,
+    `walk_speed_multiplier`,
+    `run_speed_multiplier`,
+    `stealth_enabled`,
+    `enabled`,
+    `comment`
+)
+VALUES
+(
+    100,
+    'Westfall Scout Test Movement',
+    2,
+    1.0,
+    1.0,
+    0,
+    1,
+    'Temporary run profile used to prove runtime group movement.'
+);
+
+-- ===========================================================================
+-- Movement Path and Nodes
+-- Short route near the current Westfall test spawn so it can complete inside
+-- the 20-second timer stage.
+-- ===========================================================================
+
+INSERT INTO `lwi_movement_path`
+(
+    `id`,
+    `name`,
+    `enabled`,
+    `comment`
+)
+VALUES
+(
+    100,
+    'Westfall Scout Test Route',
+    1,
+    'Temporary short route used to prove runtime group movement.'
+);
+
+INSERT INTO `lwi_movement_node`
+(
+    `id`,
+    `path_id`,
+    `node_order`,
+    `map_id`,
+    `x`,
+    `y`,
+    `z`,
+    `orientation`,
+    `wait_ms`,
+    `profile_override_id`,
+    `enabled`,
+    `comment`
+)
+VALUES
+    (10001, 100, 10, 0, -10186.000, 1801.637, 34.94533, 0, 1500, 0, 1, 'Scout test route node 1'),
+    (10002, 100, 20, 0, -10182.000, 1805.000, 34.94533, 0, 1000, 0, 1, 'Scout test route node 2'),
+    (10003, 100, 30, 0, -10178.000, 1801.637, 34.94533, 0,    0, 0, 1, 'Scout test route final node');
+
+-- ===========================================================================
 -- Stage Actions
 -- action_type: 1 = Spawn Group
+-- action_type: 2 = Start Movement
+--
+-- Start Movement:
+--   target_id  = spawn_group_id
+--   parameter1 = movement_path_id
+--   parameter2 = movement_profile_id
 -- ===========================================================================
 
 INSERT INTO `lwi_stage_action`
@@ -181,38 +264,14 @@ INSERT INTO `lwi_stage_action`
     `action_order`,
     `action_type`,
     `target_id`,
+    `parameter1`,
+    `parameter2`,
     `delay_seconds`,
     `enabled`,
     `comment`
 )
 VALUES
-(
-    10001,
-    1001,
-    1,
-    1,
-    100,
-    0,
-    1,
-    'Spawn Westfall Defias scouts and campfire'
-),
-(
-    10002,
-    1002,
-    1,
-    1,
-    101,
-    0,
-    1,
-    'Spawn Westfall Defias reinforcements'
-),
-(
-    10003,
-    1003,
-    1,
-    1,
-    102,
-    0,
-    1,
-    'Spawn Westfall Defias lieutenant'
-);
+    (10001, 1001, 1, 1, 100,   0,   0, 0, 1, 'Spawn Westfall Defias scouts and campfire'),
+    (10004, 1001, 2, 2, 100, 100, 100, 0, 1, 'Move Westfall Defias scout runtime group along test route'),
+    (10002, 1002, 1, 1, 101,   0,   0, 0, 1, 'Spawn Westfall Defias reinforcements'),
+    (10003, 1003, 1, 1, 102,   0,   0, 0, 1, 'Spawn Westfall Defias lieutenant');

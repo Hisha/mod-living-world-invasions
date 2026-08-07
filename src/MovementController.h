@@ -11,7 +11,8 @@ namespace lwi
 enum class RuntimeMovementState : uint8
 {
     Moving = 0,
-    Waiting = 1
+    Waiting = 1,
+    Completed = 2
 };
 
 struct ActiveRuntimeMovement
@@ -45,7 +46,7 @@ private:
     bool BeginCurrentNode(ActiveRuntimeMovement& movement);
     bool HasGroupReachedCurrentNode(ActiveRuntimeMovement const& movement) const;
     void AdvanceOrComplete(uint64 runtimeGroupId, ActiveRuntimeMovement& movement, uint64 nowMs);
-    void CompleteMovement(uint64 runtimeGroupId, ActiveRuntimeMovement const& movement);
+    void CompleteMovement(uint64 runtimeGroupId, ActiveRuntimeMovement& movement);
 
     std::unordered_map<uint64, ActiveRuntimeMovement> _activeMovements;
     uint32 _updateTimerMs = 0;

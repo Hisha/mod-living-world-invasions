@@ -171,11 +171,21 @@ void MovementController::Update(uint32 diff)
             continue;
         }
 
+        if (movement.State == RuntimeMovementState::Completed)
+        {
+            completed.push_back(runtimeGroupId);
+            continue;
+        }
+
         if (movement.State == RuntimeMovementState::Waiting)
         {
             if (nowMs >= movement.WaitEndsAtMs)
             {
                 AdvanceOrComplete(runtimeGroupId, movement, nowMs);
+                if (movement.State == RuntimeMovementState::Completed)
+                {
+                    completed.push_back(runtimeGroupId);
+                }
             }
             continue;
         }
@@ -205,6 +215,10 @@ void MovementController::Update(uint32 diff)
         else
         {
             AdvanceOrComplete(runtimeGroupId, movement, nowMs);
+            if (movement.State == RuntimeMovementState::Completed)
+            {
+                completed.push_back(runtimeGroupId);
+            }
         }
     }
 
@@ -352,7 +366,7 @@ void MovementController::AdvanceOrComplete(
     auto const* nodes = sInvasionMgr.GetMovementNodes(movement.PathId);
     if (!nodes)
     {
-        _activeMovements.erase(runtimeGroupId);
+        movement.State = RuntimeMovementState::Completed;
         return;
     }
 
@@ -369,18 +383,18 @@ void MovementController::AdvanceOrComplete(
         LOG_ERROR("server.loading",
             "[LWI Movement] Runtime entity group #{} failed to begin the next node on path {}.",
             runtimeGroupId, movement.PathId);
-        _activeMovements.erase(runtimeGroupId);
+        movement.State = RuntimeMovementState::Completed;
     }
 }
 
 void MovementController::CompleteMovement(
     uint64 runtimeGroupId,
-    ActiveRuntimeMovement const& movement)
+    ActiveRuntimeMovement& movement)
 {
     LOG_INFO("server.loading",
         "[LWI Movement] Runtime entity group #{} completed movement path {}.",
         runtimeGroupId, movement.PathId);
 
-    _activeMovements.erase(runtimeGroupId);
+    movement.State = RuntimeMovementState::Completed;
 }
 }

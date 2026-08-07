@@ -28,6 +28,8 @@ struct StageActionDefinition
     uint16 ActionOrder = 0;
     uint8 ActionType = 1;
     uint32 TargetId = 0;
+    uint32 Parameter1 = 0;
+    uint32 Parameter2 = 0;
     uint32 DelaySeconds = 0;
     bool Enabled = false;
 };

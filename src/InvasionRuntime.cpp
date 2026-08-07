@@ -3,6 +3,7 @@
 #include "Log.h"
 #include "InvasionSpawnManager.h"
 #include "MovementController.h"
+#include "RuntimeEntityGroup.h"
 
 #include <algorithm>
 #include <sstream>
@@ -13,6 +14,8 @@ namespace lwi
 namespace
 {
 constexpr uint8 TimerCompletionType = 0;
+constexpr uint8 SpawnGroupActionType = 1;
+constexpr uint8 StartMovementActionType = 2;
 }
 
 InvasionRuntime::InvasionRuntime(uint64 runtimeId, uint32 invasionId,
@@ -133,9 +136,29 @@ bool InvasionRuntime::BeginCurrentStage(uint64 now)
     {
         for (auto const& action : *actions)
         {
-            if (action.ActionType == 1)
+            if (action.ActionType == SpawnGroupActionType)
             {
                 sInvasionSpawnMgr.SpawnGroup(_runtimeId, action.TargetId);
+                continue;
+            }
+
+            if (action.ActionType == StartMovementActionType)
+            {
+                RuntimeEntityGroup* group = sRuntimeEntityGroupMgr.FindLatestGroup(_runtimeId, action.TargetId);
+                if (!group)
+                {
+                    LOG_ERROR("server.loading",
+                        "[LWI Runtime] Runtime #{} cannot start movement action {} because spawn group {} has no runtime entity group.",
+                        _runtimeId, action.Id, action.TargetId);
+                    continue;
+                }
+
+                if (!sMovementController.StartPath(group->Id, action.Parameter1, action.Parameter2))
+                {
+                    LOG_ERROR("server.loading",
+                        "[LWI Runtime] Runtime #{} failed movement action {} for runtime entity group #{} (path {}, profile {}).",
+                        _runtimeId, action.Id, group->Id, action.Parameter1, action.Parameter2);
+                }
             }
         }
     }
