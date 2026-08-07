@@ -16,7 +16,7 @@ enum class InvasionRuntimeState : uint8
     Cooldown = 2
 };
 
-struct InvasionRuntime
+struct SchedulerRuntimeRecord
 {
     uint32 InvasionId = 0;
     InvasionRuntimeState State = InvasionRuntimeState::Available;
@@ -38,7 +38,6 @@ struct SchedulerSettings
     uint32 InitialDelayMaxSeconds = 40;
     uint32 NextDelayMinSeconds = 30;
     uint32 NextDelayMaxSeconds = 60;
-    uint32 TestActiveDurationSeconds = 45;
     uint32 MaxActiveGlobal = 3;
     uint32 DefaultMaxActivePerMap = 2;
     uint32 DefaultMaxActivePerResponseOrigin = 1;
@@ -54,21 +53,22 @@ public:
     void Update(uint32 diff);
     void Reset();
 	
-	[[nodiscard]] std::string BuildStatusReport() const;
+    [[nodiscard]] std::string BuildStatusReport() const;
+    void NotifyInvasionCompleted(uint32 invasionId, uint64 now);
+    void NotifyInvasionStartFailed(uint32 invasionId);
+    [[nodiscard]] bool IsInvasionActive(uint32 invasionId) const;
+    [[nodiscard]] std::vector<uint32> GetActiveInvasionIds() const;
 
 private:
     InvasionScheduler() = default;
 
     void LoadRuntimeState();
     void EnsureRuntimeRows();
-    void RecoverExpiredActiveInvasions(uint64 now);
-    void CompleteExpiredInvasions(uint64 now);
     void EvaluateDueMaps(uint64 now);
     void EvaluateMap(uint16 mapId, uint64 now);
     void ScheduleMap(uint16 mapId, uint64 now, bool initial);
-    void StartTestInvasion(uint32 invasionId, uint64 now);
-    void CompleteTestInvasion(uint32 invasionId, uint64 now);
-    void SaveRuntime(InvasionRuntime const& runtime);
+    bool StartInvasion(uint32 invasionId, uint64 now);
+    void SaveRuntime(SchedulerRuntimeRecord const& runtime);
 
     [[nodiscard]] uint32 GetMapLimit(uint16 mapId) const;
     [[nodiscard]] uint32 GetResponseOriginLimit(uint32 responseOriginId, uint32 sqlDefault) const;
@@ -77,7 +77,7 @@ private:
     [[nodiscard]] uint32 CountActiveForResponseOrigin(uint32 responseOriginId) const;
 
     SchedulerSettings _settings;
-    std::unordered_map<uint32, InvasionRuntime> _runtime;
+    std::unordered_map<uint32, SchedulerRuntimeRecord> _runtime;
     std::unordered_map<uint16, uint64> _nextMapEvaluation;
     uint32 _updateTimerMs = 0;
     bool _initialized = false;

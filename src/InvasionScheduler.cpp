@@ -1,6 +1,7 @@
 #include "InvasionScheduler.h"
 
 #include "LivingWorldInvasions.h"
+#include "InvasionRuntimeManager.h"
 
 #include "Config.h"
 #include "DatabaseEnv.h"
@@ -73,8 +74,6 @@ void InvasionScheduler::Initialize()
     EnsureRuntimeRows();
 
     uint64 const now = UnixTimeNow();
-    RecoverExpiredActiveInvasions(now);
-
     for (auto const& [invasionId, definition] : sInvasionMgr.GetDefinitions())
     {
         (void)invasionId;
@@ -107,7 +106,6 @@ void InvasionScheduler::Update(uint32 diff)
 	    std::max<uint32>(1, _settings.CheckIntervalSeconds) * MillisecondsPerSecond;
 
     uint64 const now = UnixTimeNow();
-    CompleteExpiredInvasions(now);
     EvaluateDueMaps(now);
 }
 
@@ -121,7 +119,7 @@ void InvasionScheduler::LoadRuntimeState()
         {
             Field* fields = result->Fetch();
 
-            InvasionRuntime runtime;
+            SchedulerRuntimeRecord runtime;
             runtime.InvasionId = fields[0].Get<uint32>();
             runtime.State = static_cast<InvasionRuntimeState>(fields[1].Get<uint8>());
             runtime.LastStartedAt = fields[2].Get<uint64>();
@@ -152,39 +150,10 @@ void InvasionScheduler::EnsureRuntimeRows()
             continue;
         }
 
-        InvasionRuntime runtime;
+        SchedulerRuntimeRecord runtime;
         runtime.InvasionId = invasionId;
         _runtime.emplace(invasionId, runtime);
         SaveRuntime(runtime);
-    }
-}
-
-void InvasionScheduler::RecoverExpiredActiveInvasions(uint64 now)
-{
-    for (auto& [invasionId, runtime] : _runtime)
-    {
-        (void)invasionId;
-        if (runtime.State == InvasionRuntimeState::Active && runtime.ActiveUntil <= now)
-        {
-            CompleteTestInvasion(runtime.InvasionId, now);
-        }
-    }
-}
-
-void InvasionScheduler::CompleteExpiredInvasions(uint64 now)
-{
-    std::vector<uint32> expired;
-    for (auto const& [invasionId, runtime] : _runtime)
-    {
-        if (runtime.State == InvasionRuntimeState::Active && runtime.ActiveUntil <= now)
-        {
-            expired.push_back(invasionId);
-        }
-    }
-
-    for (uint32 invasionId : expired)
-    {
-        CompleteTestInvasion(invasionId, now);
     }
 }
 
@@ -239,7 +208,7 @@ void InvasionScheduler::EvaluateMap(uint16 mapId, uint64 now)
             continue;
         }
 
-        InvasionRuntime const& runtime = runtimeIterator->second;
+        SchedulerRuntimeRecord const& runtime = runtimeIterator->second;
         if (runtime.State == InvasionRuntimeState::Active || runtime.NextEligibleAt > now)
         {
             continue;
@@ -289,7 +258,7 @@ void InvasionScheduler::EvaluateMap(uint16 mapId, uint64 now)
         roll -= candidate->SelectionWeight;
     }
 
-    StartTestInvasion(selected->Id, now);
+    StartInvasion(selected->Id, now);
 }
 
 void InvasionScheduler::ScheduleMap(uint16 mapId, uint64 now, bool initial)
@@ -306,32 +275,42 @@ void InvasionScheduler::ScheduleMap(uint16 mapId, uint64 now, bool initial)
     }
 }
 
-void InvasionScheduler::StartTestInvasion(uint32 invasionId, uint64 now)
+bool InvasionScheduler::StartInvasion(uint32 invasionId, uint64 now)
 {
     InvasionDefinition const* definition = sInvasionMgr.GetDefinition(invasionId);
     auto runtimeIterator = _runtime.find(invasionId);
     if (!definition || runtimeIterator == _runtime.end())
     {
-        return;
+        return false;
     }
 
-    InvasionRuntime& runtime = runtimeIterator->second;
+    SchedulerRuntimeRecord& runtime = runtimeIterator->second;
     runtime.State = InvasionRuntimeState::Active;
     runtime.LastStartedAt = now;
     runtime.ActiveSince = now;
-    runtime.ActiveUntil = now + std::max<uint32>(1, _settings.TestActiveDurationSeconds);
+    runtime.ActiveUntil = 0;
     runtime.NextEligibleAt = 0;
     ++runtime.TimesStarted;
     SaveRuntime(runtime);
 
+    if (!sInvasionRuntimeMgr.StartInvasion(invasionId))
+    {
+        LOG_ERROR("server.loading",
+            "[LWI Scheduler] Failed to create a runtime for invasion {} ({}); returning it to available state.",
+            definition->Id, definition->Name);
+        NotifyInvasionStartFailed(invasionId);
+        return false;
+    }
+
     ResponseOriginDefinition const* origin = sInvasionMgr.GetResponseOrigin(definition->ResponseOriginId);
     LOG_INFO("server.loading",
-        "Living World Invasions Scheduler: selected invasion {} ({}) on map {}; response origin {} ({}). Test active duration: {} second(s).",
+        "[LWI Scheduler] Selected invasion {} ({}) on map {}; response origin {} ({}).",
         definition->Id, definition->Name, definition->MapId,
-        origin ? origin->Id : 0, origin ? origin->Name : "unknown", _settings.TestActiveDurationSeconds);
+        origin ? origin->Id : 0, origin ? origin->Name : "unknown");
+    return true;
 }
 
-void InvasionScheduler::CompleteTestInvasion(uint32 invasionId, uint64 now)
+void InvasionScheduler::NotifyInvasionCompleted(uint32 invasionId, uint64 now)
 {
     InvasionDefinition const* definition = sInvasionMgr.GetDefinition(invasionId);
     auto runtimeIterator = _runtime.find(invasionId);
@@ -340,7 +319,7 @@ void InvasionScheduler::CompleteTestInvasion(uint32 invasionId, uint64 now)
         return;
     }
 
-    InvasionRuntime& runtime = runtimeIterator->second;
+    SchedulerRuntimeRecord& runtime = runtimeIterator->second;
     uint32 const cooldown = RandomBetween(definition->MinimumCooldownSeconds, definition->MaximumCooldownSeconds);
 
     runtime.State = InvasionRuntimeState::Cooldown;
@@ -351,11 +330,51 @@ void InvasionScheduler::CompleteTestInvasion(uint32 invasionId, uint64 now)
     ++runtime.TimesCompleted;
     SaveRuntime(runtime);
 
-    LOG_INFO("server.loading", "Living World Invasions Scheduler: test invasion {} ({}) completed and entered cooldown for {} second(s).",
+    LOG_INFO("server.loading",
+        "[LWI Scheduler] Invasion {} ({}) completed and entered cooldown for {} second(s).",
         definition->Id, definition->Name, cooldown);
 }
 
-void InvasionScheduler::SaveRuntime(InvasionRuntime const& runtime)
+void InvasionScheduler::NotifyInvasionStartFailed(uint32 invasionId)
+{
+    auto runtimeIterator = _runtime.find(invasionId);
+    if (runtimeIterator == _runtime.end())
+    {
+        return;
+    }
+
+    SchedulerRuntimeRecord& runtime = runtimeIterator->second;
+    runtime.State = InvasionRuntimeState::Available;
+    runtime.ActiveSince = 0;
+    runtime.ActiveUntil = 0;
+    runtime.NextEligibleAt = 0;
+    if (runtime.TimesStarted > 0)
+    {
+        --runtime.TimesStarted;
+    }
+    SaveRuntime(runtime);
+}
+
+bool InvasionScheduler::IsInvasionActive(uint32 invasionId) const
+{
+    auto iterator = _runtime.find(invasionId);
+    return iterator != _runtime.end() && iterator->second.State == InvasionRuntimeState::Active;
+}
+
+std::vector<uint32> InvasionScheduler::GetActiveInvasionIds() const
+{
+    std::vector<uint32> active;
+    for (auto const& [invasionId, runtime] : _runtime)
+    {
+        if (runtime.State == InvasionRuntimeState::Active)
+        {
+            active.push_back(invasionId);
+        }
+    }
+    return active;
+}
+
+void InvasionScheduler::SaveRuntime(SchedulerRuntimeRecord const& runtime)
 {
     CharacterDatabase.Execute(
         "REPLACE INTO `lwi_invasion_runtime` "
@@ -492,14 +511,15 @@ std::string InvasionScheduler::BuildStatusReport() const
 
             case InvasionRuntimeState::Active:
             {
-                uint64 const remaining =
-                    runtime.ActiveUntil > now
-                        ? runtime.ActiveUntil - now
-                        : 0;
-
                 output << "      State: active\n";
-                output << "      Time remaining: "
-                       << remaining << " second(s)\n";
+                if (InvasionRuntime const* activeRuntime = sInvasionRuntimeMgr.GetRuntimeForInvasion(invasionId))
+                {
+                    output << "      " << activeRuntime->BuildStatusLine(now) << '\n';
+                }
+                else
+                {
+                    output << "      Runtime: not loaded\n";
+                }
                 break;
             }
 

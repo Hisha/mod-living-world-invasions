@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace lwi
 {
@@ -16,6 +17,18 @@ struct ResponseOriginDefinition
     uint16 MapId = 0;
     uint8 Team = 0;
     uint32 MaxActiveDefault = 1;
+    bool Enabled = false;
+};
+
+
+struct InvasionStageDefinition
+{
+    uint32 Id = 0;
+    uint32 InvasionId = 0;
+    uint16 StageOrder = 0;
+    std::string Name;
+    uint32 DurationSeconds = 30;
+    uint8 CompletionType = 0;
     bool Enabled = false;
 };
 
@@ -48,6 +61,7 @@ public:
     [[nodiscard]] InvasionDefinition const* GetDefinition(uint32 invasionId) const;
     [[nodiscard]] std::unordered_map<uint32, ResponseOriginDefinition> const& GetResponseOrigins() const;
     [[nodiscard]] std::unordered_map<uint32, InvasionDefinition> const& GetDefinitions() const;
+    [[nodiscard]] std::vector<InvasionStageDefinition> const* GetStages(uint32 invasionId) const;
     [[nodiscard]] std::size_t GetDefinitionCount() const;
 
 private:
@@ -55,6 +69,7 @@ private:
 
     std::unordered_map<uint32, ResponseOriginDefinition> _responseOrigins;
     std::unordered_map<uint32, InvasionDefinition> _definitions;
+    std::unordered_map<uint32, std::vector<InvasionStageDefinition>> _stagesByInvasion;
 };
 }
 

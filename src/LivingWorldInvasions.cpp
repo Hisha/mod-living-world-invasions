@@ -17,6 +17,7 @@ void InvasionMgr::Clear()
 {
     _responseOrigins.clear();
     _definitions.clear();
+    _stagesByInvasion.clear();
 }
 
 void InvasionMgr::LoadDefinitions()
@@ -121,6 +122,67 @@ void InvasionMgr::LoadDefinitions()
     }
 
     LOG_INFO("server.loading", "Living World Invasions: loaded {} enabled invasion definition(s).", _definitions.size());
+
+    std::size_t stageCount = 0;
+    if (QueryResult result = WorldDatabase.Query(
+        "SELECT `id`, `invasion_id`, `stage_order`, `name`, `duration_seconds`, `completion_type`, `enabled` "
+        "FROM `lwi_invasion_stage` WHERE `enabled` = 1 ORDER BY `invasion_id`, `stage_order`"))
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+
+            InvasionStageDefinition stage;
+            stage.Id = fields[0].Get<uint32>();
+            stage.InvasionId = fields[1].Get<uint32>();
+            stage.StageOrder = fields[2].Get<uint16>();
+            stage.Name = fields[3].Get<std::string>();
+            stage.DurationSeconds = fields[4].Get<uint32>();
+            stage.CompletionType = fields[5].Get<uint8>();
+            stage.Enabled = fields[6].Get<bool>();
+
+            if (!GetDefinition(stage.InvasionId))
+            {
+                LOG_ERROR("server.loading",
+                    "Living World Invasions: stage {} ({}) references missing or disabled invasion {} and was ignored.",
+                    stage.Id, stage.Name, stage.InvasionId);
+                continue;
+            }
+
+            if (stage.DurationSeconds == 0)
+            {
+                LOG_ERROR("server.loading",
+                    "Living World Invasions: stage {} ({}) has duration 0 and was ignored.",
+                    stage.Id, stage.Name);
+                continue;
+            }
+
+            auto& stages = _stagesByInvasion[stage.InvasionId];
+            bool duplicateOrder = false;
+            for (InvasionStageDefinition const& existing : stages)
+            {
+                if (existing.StageOrder == stage.StageOrder || existing.Id == stage.Id)
+                {
+                    duplicateOrder = true;
+                    break;
+                }
+            }
+
+            if (duplicateOrder)
+            {
+                LOG_ERROR("server.loading",
+                    "Living World Invasions: duplicate stage id/order for invasion {} ignored (stage {}).",
+                    stage.InvasionId, stage.Id);
+                continue;
+            }
+
+            stages.push_back(std::move(stage));
+            ++stageCount;
+        } while (result->NextRow());
+    }
+
+    LOG_INFO("server.loading", "Living World Invasions: loaded {} enabled stage definition(s) for {} invasion(s).",
+        stageCount, _stagesByInvasion.size());
 }
 
 ResponseOriginDefinition const* InvasionMgr::GetResponseOrigin(uint32 responseOriginId) const
@@ -143,6 +205,12 @@ std::unordered_map<uint32, ResponseOriginDefinition> const& InvasionMgr::GetResp
 std::unordered_map<uint32, InvasionDefinition> const& InvasionMgr::GetDefinitions() const
 {
     return _definitions;
+}
+
+std::vector<InvasionStageDefinition> const* InvasionMgr::GetStages(uint32 invasionId) const
+{
+    auto const iterator = _stagesByInvasion.find(invasionId);
+    return iterator != _stagesByInvasion.end() ? &iterator->second : nullptr;
 }
 
 std::size_t InvasionMgr::GetDefinitionCount() const

@@ -1,6 +1,7 @@
 #include "Chat.h"
 #include "CommandScript.h"
 #include "InvasionScheduler.h"
+#include "InvasionRuntimeManager.h"
 #include "LivingWorldInvasions.h"
 
 #include "ConfigValueCache.h"
@@ -22,7 +23,6 @@ enum class LwiConfig
     SchedulerInitialDelayMaxSeconds,
     SchedulerNextDelayMinSeconds,
     SchedulerNextDelayMaxSeconds,
-    SchedulerTestActiveDurationSeconds,
     SchedulerMaxActiveGlobal,
     SchedulerDefaultMaxActivePerMap,
     SchedulerDefaultMaxActivePerResponseOrigin,
@@ -45,7 +45,6 @@ public:
         SetConfigValue<uint32>(LwiConfig::SchedulerInitialDelayMaxSeconds, "LWI.Scheduler.InitialDelayMaxSeconds", 40);
         SetConfigValue<uint32>(LwiConfig::SchedulerNextDelayMinSeconds, "LWI.Scheduler.NextDelayMinSeconds", 30);
         SetConfigValue<uint32>(LwiConfig::SchedulerNextDelayMaxSeconds, "LWI.Scheduler.NextDelayMaxSeconds", 60);
-        SetConfigValue<uint32>(LwiConfig::SchedulerTestActiveDurationSeconds, "LWI.Scheduler.TestActiveDurationSeconds", 45);
         SetConfigValue<uint32>(LwiConfig::SchedulerMaxActiveGlobal, "LWI.Scheduler.MaxActiveGlobal", 3);
         SetConfigValue<uint32>(LwiConfig::SchedulerDefaultMaxActivePerMap, "LWI.Scheduler.DefaultMaxActivePerMap", 2);
         SetConfigValue<uint32>(LwiConfig::SchedulerDefaultMaxActivePerResponseOrigin, "LWI.Scheduler.DefaultMaxActivePerResponseOrigin", 1);
@@ -70,6 +69,7 @@ public:
         if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Enabled))
         {
             LOG_INFO("server.loading", "Living World Invasions is disabled.");
+            sInvasionRuntimeMgr.Reset();
             sInvasionScheduler.Reset();
             return;
         }
@@ -84,7 +84,6 @@ public:
         settings.InitialDelayMaxSeconds = lwiConfig.GetConfigValue<uint32>(LwiConfig::SchedulerInitialDelayMaxSeconds);
         settings.NextDelayMinSeconds = lwiConfig.GetConfigValue<uint32>(LwiConfig::SchedulerNextDelayMinSeconds);
         settings.NextDelayMaxSeconds = lwiConfig.GetConfigValue<uint32>(LwiConfig::SchedulerNextDelayMaxSeconds);
-        settings.TestActiveDurationSeconds = lwiConfig.GetConfigValue<uint32>(LwiConfig::SchedulerTestActiveDurationSeconds);
         settings.MaxActiveGlobal = lwiConfig.GetConfigValue<uint32>(LwiConfig::SchedulerMaxActiveGlobal);
         settings.DefaultMaxActivePerMap = lwiConfig.GetConfigValue<uint32>(LwiConfig::SchedulerDefaultMaxActivePerMap);
         settings.DefaultMaxActivePerResponseOrigin = lwiConfig.GetConfigValue<uint32>(LwiConfig::SchedulerDefaultMaxActivePerResponseOrigin);
@@ -103,10 +102,12 @@ public:
 	    }
 
 	    sInvasionScheduler.Initialize();
+    sInvasionRuntimeMgr.Initialize();
 	}
 
     void OnUpdate(uint32 diff) override
     {
+        sInvasionRuntimeMgr.Update(diff);
         sInvasionScheduler.Update(diff);
     }
 };
@@ -146,7 +147,8 @@ private:
     static bool HandleStatusCommand(ChatHandler* handler)
     {
         handler->SendSysMessage(
-            sInvasionScheduler.BuildStatusReport());
+            sInvasionScheduler.BuildStatusReport() +
+            sInvasionRuntimeMgr.BuildStatusReport());
 
         return true;
     }
