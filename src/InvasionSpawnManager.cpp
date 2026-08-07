@@ -3,6 +3,7 @@
 #include "LivingWorldInvasions.h"
 #include "Log.h"
 #include "Map.h"
+#include "MapMgr.h"
 #include "Position.h"
 #include "TemporarySummon.h"
 
