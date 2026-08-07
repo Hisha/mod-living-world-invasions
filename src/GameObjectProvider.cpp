@@ -1,13 +1,12 @@
-#include "CreatureProvider.h"
+#include "GameObjectProvider.h"
 
-#include "Creature.h"
+#include "GameObject.h"
 #include "LivingWorldInvasions.h"
 #include "Log.h"
 #include "Map.h"
 #include "MapMgr.h"
 #include "Position.h"
 #include "Random.h"
-#include "TemporarySummon.h"
 
 #include <cmath>
 
@@ -34,12 +33,12 @@ Position BuildSpawnPosition(SpawnGroupDefinition const& group)
 }
 }
 
-uint8 CreatureProvider::GetType() const
+uint8 GameObjectProvider::GetType() const
 {
-    return static_cast<uint8>(EntityProviderType::Creature);
+    return static_cast<uint8>(EntityProviderType::GameObject);
 }
 
-bool CreatureProvider::Spawn(
+bool GameObjectProvider::Spawn(
     uint64 runtimeId,
     SpawnGroupDefinition const& group,
     SpawnMemberDefinition const& member,
@@ -49,7 +48,7 @@ bool CreatureProvider::Spawn(
     if (!map)
     {
         LOG_ERROR("server.loading",
-            "[LWI Creature] Could not find map {} for spawn group {}.",
+            "[LWI GameObject] Could not find map {} for spawn group {}.",
             group.MapId,
             group.Id);
         return false;
@@ -61,16 +60,20 @@ bool CreatureProvider::Spawn(
     {
         Position position = BuildSpawnPosition(group);
 
-        TempSummon* summon = map->SummonCreature(
+        GameObject* gameObject = map->SummonGameObject(
             member.EntityEntry,
             position,
-            nullptr,
-            0);
+            0.0f,
+            0.0f,
+            0.0f,
+            0.0f,
+            0,
+            true);
 
-        if (!summon)
+        if (!gameObject)
         {
             LOG_ERROR("server.loading",
-                "[LWI Creature] Runtime #{} failed to spawn creature entry {} from member {}.",
+                "[LWI GameObject] Runtime #{} failed to spawn gameobject entry {} from member {}.",
                 runtimeId,
                 member.EntityEntry,
                 member.Id);
@@ -83,15 +86,15 @@ bool CreatureProvider::Spawn(
         entity.GroupId = group.Id;
         entity.MemberId = member.Id;
         entity.Entry = member.EntityEntry;
-        entity.Guid = summon->GetGUID();
+        entity.Guid = gameObject->GetGUID();
         spawnedEntities.push_back(std::move(entity));
 
         LOG_INFO("server.loading",
-            "[LWI Creature] Runtime #{} spawned creature {} from member {} GUID {}.",
+            "[LWI GameObject] Runtime #{} spawned gameobject {} from member {} GUID {}.",
             runtimeId,
             member.EntityEntry,
             member.Id,
-            summon->GetGUID().ToString());
+            gameObject->GetGUID().ToString());
 
         spawnedAny = true;
     }
@@ -99,7 +102,7 @@ bool CreatureProvider::Spawn(
     return spawnedAny;
 }
 
-bool CreatureProvider::Cleanup(RuntimeEntity const& entity)
+bool GameObjectProvider::Cleanup(RuntimeEntity const& entity)
 {
     Map* map = sMapMgr->FindMap(entity.MapId, 0);
     if (!map)
@@ -107,13 +110,13 @@ bool CreatureProvider::Cleanup(RuntimeEntity const& entity)
         return false;
     }
 
-    Creature* creature = map->GetCreature(entity.Guid);
-    if (!creature)
+    GameObject* gameObject = map->GetGameObject(entity.Guid);
+    if (!gameObject)
     {
         return false;
     }
 
-    creature->DespawnOrUnsummon();
+    gameObject->DespawnOrUnsummon();
     return true;
 }
 }

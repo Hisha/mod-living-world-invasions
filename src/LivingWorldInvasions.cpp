@@ -223,7 +223,7 @@ void InvasionMgr::LoadDefinitions()
         } while (result->NextRow());
     }
 
-    if (QueryResult result = WorldDatabase.Query("SELECT `id`, `spawn_group_id`, `creature_entry`, `count`, `level_override` FROM `lwi_spawn_member` ORDER BY `spawn_group_id`"))
+    if (QueryResult result = WorldDatabase.Query("SELECT `id`, `spawn_group_id`, `entity_type`, `entity_entry`, `count`, `level_override`, `comment` FROM `lwi_spawn_member` ORDER BY `spawn_group_id`, `id`"))
     {
         do
         {
@@ -231,9 +231,11 @@ void InvasionMgr::LoadDefinitions()
             SpawnMemberDefinition member;
             member.Id = fields[0].Get<uint32>();
             member.SpawnGroupId = fields[1].Get<uint32>();
-            member.CreatureEntry = fields[2].Get<uint32>();
-            member.Count = fields[3].Get<uint16>();
-            member.LevelOverride = fields[4].Get<uint16>();
+            member.EntityType = fields[2].Get<uint8>();
+            member.EntityEntry = fields[3].Get<uint32>();
+            member.Count = fields[4].Get<uint16>();
+            member.LevelOverride = fields[5].Get<uint16>();
+            member.Comment = fields[6].Get<std::string>();
             _spawnMembersByGroup[member.SpawnGroupId].push_back(std::move(member));
         } while (result->NextRow());
     }

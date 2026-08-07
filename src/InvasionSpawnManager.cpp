@@ -1,6 +1,7 @@
 #include "InvasionSpawnManager.h"
 
 #include "CreatureProvider.h"
+#include "GameObjectProvider.h"
 #include "LivingWorldInvasions.h"
 #include "Log.h"
 
@@ -17,6 +18,7 @@ InvasionSpawnManager& InvasionSpawnManager::Instance()
 InvasionSpawnManager::InvasionSpawnManager()
 {
     RegisterProvider(std::make_unique<CreatureProvider>());
+    RegisterProvider(std::make_unique<GameObjectProvider>());
 }
 
 void InvasionSpawnManager::RegisterProvider(std::unique_ptr<IEntityProvider> provider)
@@ -68,24 +70,22 @@ bool InvasionSpawnManager::SpawnGroup(uint64 runtimeId, uint32 spawnGroupId)
         spawnGroupId,
         group->Name);
 
-    // Provider architecture is introduced before the SQL entity-type column.
-    // All existing spawn members are creatures, so they are dispatched to the
-    // creature provider without changing current database behavior.
-    uint8 entityType = static_cast<uint8>(EntityProviderType::Creature);
-    IEntityProvider* provider = GetProvider(entityType);
-    if (!provider)
-    {
-        LOG_ERROR("server.loading",
-            "[LWI Spawn] No entity provider registered for type {}.",
-            entityType);
-        return false;
-    }
-
     bool spawnedAny = false;
     std::vector<RuntimeEntity>& runtimeEntities = _runtimeEntities[runtimeId];
 
     for (SpawnMemberDefinition const& member : *members)
     {
+        IEntityProvider* provider = GetProvider(member.EntityType);
+        if (!provider)
+        {
+            LOG_ERROR("server.loading",
+                "[LWI Spawn] Runtime #{} spawn member {} uses unsupported entity type {}.",
+                runtimeId,
+                member.Id,
+                member.EntityType);
+            continue;
+        }
+
         if (provider->Spawn(runtimeId, *group, member, runtimeEntities))
         {
             spawnedAny = true;

@@ -1,6 +1,5 @@
 -- TEMPORARY scheduler/spawn framework data.
--- This is a complete development test invasion.
--- Safe to reapply: removes and recreates only test IDs.
+-- This is development test content and is safe to reapply.
 
 -- ===========================================================================
 -- Cleanup existing test data
@@ -10,7 +9,7 @@ DELETE FROM `lwi_stage_action`
 WHERE `id` IN (10001,10002,10003);
 
 DELETE FROM `lwi_spawn_member`
-WHERE `id` IN (100001,100002,100003);
+WHERE `id` IN (100001,100002,100003,100004);
 
 DELETE FROM `lwi_spawn_group`
 WHERE `id` IN (100,101,102);
@@ -23,7 +22,6 @@ WHERE `id` IN (1,2,3);
 
 DELETE FROM `lwi_response_origin`
 WHERE `id` IN (1,2);
-
 
 -- ===========================================================================
 -- Response Origins
@@ -42,7 +40,6 @@ INSERT INTO `lwi_response_origin`
 VALUES
     (1, 'Stormwind', 0, 1, 1, 1, 'Temporary scheduler test origin.'),
     (2, 'Ironforge', 0, 1, 1, 1, 'Temporary scheduler test origin.');
-
 
 -- ===========================================================================
 -- Invasions
@@ -70,11 +67,9 @@ VALUES
     (2, 'Duskwood Scheduler Test', 0, 10, 1, 1, 20, 30, 100, 60, 120, 1, 1, 'Temporary scheduler/spawn test.'),
     (3, 'Wetlands Scheduler Test', 0, 11, 1, 2, 20, 30, 100, 60, 120, 1, 1, 'Temporary scheduler/spawn test.');
 
-
 -- ===========================================================================
 -- Runtime Stages
--- completion_type:
--- 0 = timer
+-- completion_type: 0 = timer
 -- ===========================================================================
 
 INSERT INTO `lwi_invasion_stage`
@@ -100,7 +95,6 @@ VALUES
     (3001, 3, 10, 'Scouts',          20, 0, 1, 'Runtime framework test.'),
     (3002, 3, 20, 'Reinforcements',  20, 0, 1, 'Runtime framework test.'),
     (3003, 3, 30, 'Lieutenant',      20, 0, 1, 'Runtime framework test.');
-
 
 -- ===========================================================================
 -- Spawn Groups
@@ -153,29 +147,31 @@ VALUES
     1
 );
 
-
 -- ===========================================================================
 -- Spawn Members
+-- entity_type: 1 = Creature, 2 = GameObject
+-- GameObject 29784 is the Basic Campfire summoned by the WotLK Basic Campfire spell.
 -- ===========================================================================
 
 INSERT INTO `lwi_spawn_member`
 (
     `id`,
     `spawn_group_id`,
-    `creature_entry`,
+    `entity_type`,
+    `entity_entry`,
     `count`,
-    `level_override`
+    `level_override`,
+    `comment`
 )
 VALUES
-    (100001, 100, 449, 3, 0),
-    (100002, 101, 589, 5, 0),
-    (100003, 102, 441, 1, 0);
-
+    (100001, 100, 1,   449, 3, 0, 'Westfall Defias scouts'),
+    (100004, 100, 2, 29784, 1, 0, 'Basic Campfire - mixed entity provider test'),
+    (100002, 101, 1,   589, 5, 0, 'Westfall Defias reinforcements'),
+    (100003, 102, 1,   441, 1, 0, 'Westfall Defias lieutenant');
 
 -- ===========================================================================
 -- Stage Actions
--- action_type:
--- 1 = Spawn Group
+-- action_type: 1 = Spawn Group
 -- ===========================================================================
 
 INSERT INTO `lwi_stage_action`
@@ -198,7 +194,7 @@ VALUES
     100,
     0,
     1,
-    'Spawn Westfall Defias scouts'
+    'Spawn Westfall Defias scouts and campfire'
 ),
 (
     10002,

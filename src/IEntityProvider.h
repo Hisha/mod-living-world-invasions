@@ -13,7 +13,8 @@ struct SpawnMemberDefinition;
 
 enum class EntityProviderType : uint8
 {
-    Creature = 1
+    Creature = 1,
+    GameObject = 2
 };
 
 struct RuntimeEntity

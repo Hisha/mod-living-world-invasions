@@ -36,9 +36,11 @@ struct SpawnMemberDefinition
 {
     uint32 Id = 0;
     uint32 SpawnGroupId = 0;
-    uint32 CreatureEntry = 0;
+    uint8 EntityType = 1;
+    uint32 EntityEntry = 0;
     uint16 Count = 1;
     uint16 LevelOverride = 0;
+    std::string Comment;
 };
 
 struct SpawnGroupDefinition
