@@ -116,7 +116,13 @@ bool GameObjectProvider::Cleanup(RuntimeEntity const& entity)
         return false;
     }
 
-    gameObject->DespawnOrUnsummon();
+    LOG_INFO("server.loading",
+        "[LWI GameObject] Deleting gameobject entry {} GUID {}.",
+        entity.Entry,
+        entity.Guid.ToString());
+
+    gameObject->Delete();
+
     return true;
 }
 }
