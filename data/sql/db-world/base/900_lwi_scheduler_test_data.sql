@@ -18,7 +18,10 @@ DELETE FROM `lwi_announcement`
 WHERE `id` IN (100);
 
 DELETE FROM `lwi_spawn_member`
-WHERE `id` IN (100001,100002,100003,100004);
+WHERE `id` IN (
+    100001,100002,100003,100004,
+    100005,100006,100007,100008
+);
 
 DELETE FROM `lwi_spawn_group`
 WHERE `id` IN (100,101,102);
