@@ -12,6 +12,8 @@
 #include "Timer.h"
 
 #include <algorithm>
+#include <cmath>
+#include <unordered_map>
 #include <vector>
 
 namespace lwi
@@ -21,6 +23,58 @@ namespace
 constexpr uint32 MovementUpdateIntervalMs = 250;
 constexpr float ArrivalTolerance = 2.0f;
 constexpr uint32 MovementPointBase = 0x4C570000; // "LW" range; runtime-only point ids.
+
+struct FormationOffset
+{
+    float Forward = 0.0f;
+    float Right = 0.0f;
+};
+
+FormationOffset GetFormationOffset(uint8 tacticalRole, uint32 roleSlot)
+{
+    TacticalRole const role = static_cast<TacticalRole>(tacticalRole);
+    float const side = (roleSlot % 2U == 0U ? -1.0f : 1.0f);
+    float const rank = static_cast<float>(roleSlot / 2U);
+
+    switch (role)
+    {
+        case TacticalRole::Commander:
+            return { 0.0f, side * rank * 1.5f };
+        case TacticalRole::Protector:
+            return { 2.5f + rank, side * (1.5f + rank * 0.75f) };
+        case TacticalRole::MeleeDps:
+            return { 4.0f + rank, side * (2.0f + rank * 1.25f) };
+        case TacticalRole::RangedDps:
+            return { -4.0f - rank, side * (2.5f + rank * 1.5f) };
+        case TacticalRole::Healer:
+            return { -6.0f - rank, side * (1.5f + rank) };
+        case TacticalRole::Support:
+            return { -5.0f - rank, side * (4.0f + rank) };
+        case TacticalRole::Default:
+        default:
+            return { 0.0f, 0.0f };
+    }
+}
+
+void BuildFormationDestination(
+    MovementNodeDefinition const& node,
+    uint8 tacticalRole,
+    uint32 roleSlot,
+    float& x,
+    float& y,
+    float& z)
+{
+    FormationOffset const offset = GetFormationOffset(tacticalRole, roleSlot);
+
+    float const forwardX = std::cos(node.Orientation);
+    float const forwardY = std::sin(node.Orientation);
+    float const rightX = -forwardY;
+    float const rightY = forwardX;
+
+    x = node.X + forwardX * offset.Forward + rightX * offset.Right;
+    y = node.Y + forwardY * offset.Forward + rightY * offset.Right;
+    z = node.Z;
+}
 }
 
 MovementController& MovementController::Instance()
@@ -256,6 +310,7 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
         : nullptr;
 
     uint32 moved = 0;
+    std::unordered_map<uint8, uint32> roleSlots;
 
     for (RuntimeEntity const& entity : group->Entities)
     {
@@ -289,14 +344,21 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
             }
         }
 
+        uint32 const roleSlot = roleSlots[entity.TacticalRole]++;
+
+        float targetX = node.X;
+        float targetY = node.Y;
+        float targetZ = node.Z;
+        BuildFormationDestination(node, entity.TacticalRole, roleSlot, targetX, targetY, targetZ);
+
         uint32 pointId = MovementPointBase
             + (static_cast<uint32>(movement.NodeIndex) & 0xFFFFU);
 
         creature->GetMotionMaster()->MovePoint(
             pointId,
-            node.X,
-            node.Y,
-            node.Z);
+            targetX,
+            targetY,
+            targetZ);
 
         ++moved;
     }
@@ -313,7 +375,7 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
     movement.WaitEndsAtMs = 0;
 
     LOG_INFO("server.loading",
-        "[LWI Movement] Runtime entity group #{} moving {} creature(s) to path {} node {} ({:.2f}, {:.2f}, {:.2f}).",
+        "[LWI Movement] Runtime entity group #{} moving {} creature(s) in role-aware formation to path {} node {} ({:.2f}, {:.2f}, {:.2f}).",
         movement.RuntimeGroupId,
         moved,
         movement.PathId,
@@ -337,6 +399,7 @@ bool MovementController::HasGroupReachedCurrentNode(ActiveRuntimeMovement const&
 
     MovementNodeDefinition const& node = (*nodes)[movement.NodeIndex];
     uint32 movable = 0;
+    std::unordered_map<uint8, uint32> roleSlots;
 
     for (RuntimeEntity const& entity : group->Entities)
     {
@@ -359,7 +422,14 @@ bool MovementController::HasGroupReachedCurrentNode(ActiveRuntimeMovement const&
 
         ++movable;
 
-        if (creature->GetDistance(node.X, node.Y, node.Z) > ArrivalTolerance)
+        uint32 const roleSlot = roleSlots[entity.TacticalRole]++;
+
+        float targetX = node.X;
+        float targetY = node.Y;
+        float targetZ = node.Z;
+        BuildFormationDestination(node, entity.TacticalRole, roleSlot, targetX, targetY, targetZ);
+
+        if (creature->GetDistance(targetX, targetY, targetZ) > ArrivalTolerance)
         {
             return false;
         }
