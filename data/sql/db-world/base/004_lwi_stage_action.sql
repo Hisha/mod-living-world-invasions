@@ -2,6 +2,7 @@
 -- action_type 1 = Spawn Group
 -- action_type 2 = Start Movement
 -- action_type 3 = Dialogue
+-- action_type 4 = World Announcement
 --
 -- Start Movement parameter mapping:
 --   target_id  = spawn_group_id whose latest runtime entity group should move
@@ -14,6 +15,12 @@
 --   parameter1 = dialogue_id
 --   parameter2 = speaker spawn_member_id (0 = first available creature)
 --   parameter3 = reserved
+--
+-- World Announcement parameter mapping:
+--   target_id  = announcement_id
+--   parameter1 = scope: 0 global, 1 map, 2 zone, 3 area
+--   parameter2 = scope_id (0 derives map/zone from invasion; area requires explicit id)
+--   parameter3 = faction: 0 everyone, 1 Alliance, 2 Horde
 CREATE TABLE IF NOT EXISTS `lwi_stage_action` (
     `id` INT UNSIGNED NOT NULL,
     `stage_id` INT UNSIGNED NOT NULL,

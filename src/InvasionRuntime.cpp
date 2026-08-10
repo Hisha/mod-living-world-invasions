@@ -1,6 +1,7 @@
 #include "InvasionRuntime.h"
 
 #include "Log.h"
+#include "AnnouncementManager.h"
 #include "DialogueManager.h"
 #include "InvasionSpawnManager.h"
 #include "MovementController.h"
@@ -20,6 +21,7 @@ constexpr uint8 SignalCompletionType = 1;
 constexpr uint8 SpawnGroupActionType = 1;
 constexpr uint8 StartMovementActionType = 2;
 constexpr uint8 DialogueActionType = 3;
+constexpr uint8 WorldAnnouncementActionType = 4;
 }
 
 InvasionRuntime::InvasionRuntime(uint64 runtimeId, uint32 invasionId,
@@ -186,6 +188,28 @@ bool InvasionRuntime::BeginCurrentStage(uint64 now)
                     LOG_ERROR("server.loading",
                         "[LWI Runtime] Runtime #{} failed dialogue action {} (spawn group {}, dialogue {}, speaker member {}).",
                         _runtimeId, action.Id, action.TargetId, action.Parameter1, action.Parameter2);
+                }
+            }
+
+            if (action.ActionType == WorldAnnouncementActionType)
+            {
+                if (!sAnnouncementManager.Execute(
+                    _runtimeId,
+                    _invasionId,
+                    action.TargetId,
+                    action.Parameter1,
+                    action.Parameter2,
+                    action.Parameter3))
+                {
+                    LOG_ERROR("server.loading",
+                        "[LWI Runtime] Runtime #{} failed world announcement action {} "
+                        "(announcement {}, scope {}, scope id {}, faction {}).",
+                        _runtimeId,
+                        action.Id,
+                        action.TargetId,
+                        action.Parameter1,
+                        action.Parameter2,
+                        action.Parameter3);
                 }
             }
         }

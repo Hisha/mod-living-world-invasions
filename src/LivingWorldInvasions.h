@@ -72,6 +72,15 @@ struct DialogueDefinition
     std::string Comment;
 };
 
+struct AnnouncementDefinition
+{
+    uint32 Id = 0;
+    std::string Name;
+    std::string Text;
+    bool Enabled = false;
+    std::string Comment;
+};
+
 struct RuntimeSignalDefinition
 {
     uint32 Id = 0;
@@ -167,6 +176,7 @@ public:
     [[nodiscard]] MovementProfileDefinition const* GetMovementProfile(uint32 id) const;
     [[nodiscard]] RuntimeSignalDefinition const* GetRuntimeSignal(uint32 id) const;
     [[nodiscard]] DialogueDefinition const* GetDialogue(uint32 id) const;
+    [[nodiscard]] AnnouncementDefinition const* GetAnnouncement(uint32 id) const;
 
     [[nodiscard]] std::size_t GetDefinitionCount() const;
     [[nodiscard]] std::size_t GetResponseOriginCount() const;
@@ -179,6 +189,7 @@ public:
     [[nodiscard]] std::size_t GetMovementProfileCount() const;
     [[nodiscard]] std::size_t GetRuntimeSignalCount() const;
     [[nodiscard]] std::size_t GetDialogueCount() const;
+    [[nodiscard]] std::size_t GetAnnouncementCount() const;
 
 private:
     InvasionMgr() = default;
@@ -194,6 +205,7 @@ private:
     std::unordered_map<uint32, MovementProfileDefinition> _movementProfiles;
     std::unordered_map<uint32, RuntimeSignalDefinition> _runtimeSignals;
     std::unordered_map<uint32, DialogueDefinition> _dialogues;
+    std::unordered_map<uint32, AnnouncementDefinition> _announcements;
 };
 }
 

@@ -26,6 +26,7 @@ void InvasionMgr::Clear()
     _movementProfiles.clear();
     _runtimeSignals.clear();
     _dialogues.clear();
+    _announcements.clear();
 }
 
 void InvasionMgr::LoadDefinitions()
@@ -342,6 +343,41 @@ void InvasionMgr::LoadDefinitions()
 
     LOG_INFO("server.loading", "[LWI Dialogue] Loaded {} dialogue definition(s).", _dialogues.size());
 
+
+    if (QueryResult result = WorldDatabase.Query(
+        "SELECT `id`, `name`, `text`, `enabled`, `comment` "
+        "FROM `lwi_announcement` WHERE `enabled` = 1 ORDER BY `id`"))
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            AnnouncementDefinition announcement;
+            announcement.Id = fields[0].Get<uint32>();
+            announcement.Name = fields[1].Get<std::string>();
+            announcement.Text = fields[2].Get<std::string>();
+            announcement.Enabled = fields[3].Get<bool>();
+            if (!fields[4].IsNull())
+                announcement.Comment = fields[4].Get<std::string>();
+
+            if (announcement.Text.empty())
+            {
+                LOG_ERROR("server.loading",
+                    "[LWI Announcement] Announcement {} ({}) has empty text and was ignored.",
+                    announcement.Id, announcement.Name);
+                continue;
+            }
+
+            auto [iterator, inserted] = _announcements.emplace(announcement.Id, std::move(announcement));
+            if (!inserted)
+            {
+                LOG_ERROR("server.loading",
+                    "[LWI Announcement] Duplicate announcement definition id {} ignored.", iterator->first);
+            }
+        } while (result->NextRow());
+    }
+
+    LOG_INFO("server.loading", "[LWI Announcement] Loaded {} announcement definition(s).", _announcements.size());
+
     if (QueryResult result = WorldDatabase.Query(
         "SELECT `id`, `name`, `enabled`, `comment` "
         "FROM `lwi_movement_path` WHERE `enabled` = 1 ORDER BY `id`"))
@@ -506,6 +542,12 @@ DialogueDefinition const* InvasionMgr::GetDialogue(uint32 id) const
     return it != _dialogues.end() ? &it->second : nullptr;
 }
 
+AnnouncementDefinition const* InvasionMgr::GetAnnouncement(uint32 id) const
+{
+    auto it = _announcements.find(id);
+    return it != _announcements.end() ? &it->second : nullptr;
+}
+
 std::size_t InvasionMgr::GetResponseOriginCount() const
 {
     return _responseOrigins.size();
@@ -578,5 +620,10 @@ std::size_t InvasionMgr::GetRuntimeSignalCount() const
 std::size_t InvasionMgr::GetDialogueCount() const
 {
     return _dialogues.size();
+}
+
+std::size_t InvasionMgr::GetAnnouncementCount() const
+{
+    return _announcements.size();
 }
 }
