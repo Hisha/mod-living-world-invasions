@@ -2,9 +2,11 @@
 #define MOD_LIVING_WORLD_INVASIONS_MOVEMENT_CONTROLLER_H
 
 #include "Define.h"
+#include "ObjectGuid.h"
 
 #include <cstddef>
 #include <unordered_map>
+#include <vector>
 
 namespace lwi
 {
@@ -13,6 +15,15 @@ enum class RuntimeMovementState : uint8
     Moving = 0,
     Waiting = 1,
     Completed = 2
+};
+
+struct RuntimeMovementDestination
+{
+    ObjectGuid Guid;
+    uint32 MapId = 0;
+    float X = 0.0f;
+    float Y = 0.0f;
+    float Z = 0.0f;
 };
 
 struct ActiveRuntimeMovement
@@ -25,6 +36,7 @@ struct ActiveRuntimeMovement
     std::size_t NodeIndex = 0;
     RuntimeMovementState State = RuntimeMovementState::Moving;
     uint64 WaitEndsAtMs = 0;
+    std::vector<RuntimeMovementDestination> Destinations;
 };
 
 class MovementController
