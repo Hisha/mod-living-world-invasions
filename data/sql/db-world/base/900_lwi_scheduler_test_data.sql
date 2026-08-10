@@ -169,6 +169,9 @@ VALUES
 
 -- ===========================================================================
 -- Spawn Members
+-- Westfall stage 10 is intentionally a mixed-role movement/formation test:
+--   3x Melee DPS, 1x Protector, 1x Ranged DPS, 1x Healer, 1x Commander.
+-- The GameObject remains in the group but is ignored by creature movement.
 -- entity_type: 1 = Creature, 2 = GameObject
 -- tactical_role:
 --   0 Default, 1 Commander, 2 Protector, 3 Melee DPS,
@@ -188,8 +191,14 @@ INSERT INTO `lwi_spawn_member`
 )
 VALUES
     (100001, 100, 1,   449, 3, 0, 3, 'Westfall Defias scouts - Melee DPS'),
+    (100005, 100, 1,   544, 1, 0, 2, 'Westfall formation test - Protector'),
+    (100006, 100, 1,   589, 1, 0, 4, 'Westfall formation test - Ranged DPS'),
+    (100007, 100, 1,   545, 1, 0, 5, 'Westfall formation test - Healer'),
+    (100008, 100, 1,   441, 1, 0, 1, 'Westfall formation test - Commander'),
     (100004, 100, 2, 29784, 1, 0, 0, 'Basic Campfire - mixed entity provider test'),
     (100002, 101, 1,   589, 5, 0, 4, 'Westfall Defias reinforcements - Ranged DPS'),
+    (101001, 101, 1,   545, 1, 0, 5, 'Westfall healer-role SmartAI compatibility test - Healer'),
+    (101002, 101, 1,   544, 1, 0, 2, 'Westfall healer-role friendly target - Protector'),
     (100003, 102, 1,   441, 1, 0, 1, 'Westfall Defias lieutenant - Commander');
 
 -- ===========================================================================
