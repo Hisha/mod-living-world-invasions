@@ -3,6 +3,7 @@
 -- action_type 2 = Start Movement
 -- action_type 3 = Dialogue
 -- action_type 4 = World Announcement
+-- action_type 5 = Sound
 --
 -- Start Movement parameter mapping:
 --   target_id  = spawn_group_id whose latest runtime entity group should move
@@ -36,3 +37,10 @@ CREATE TABLE IF NOT EXISTS `lwi_stage_action` (
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_lwi_stage_action_order` (`stage_id`, `action_order`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+--
+-- Sound parameter mapping:
+--   target_id  = spawn_group_id
+--   parameter1 = sound_id (SoundEntries.dbc)
+--   parameter2 = source spawn_member_id (0 = first available creature)
+--   parameter3 = playback mode: 0 distance/positional, 1 direct
+

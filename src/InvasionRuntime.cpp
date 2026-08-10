@@ -7,6 +7,7 @@
 #include "MovementController.h"
 #include "RuntimeEntityGroup.h"
 #include "RuntimeSignalManager.h"
+#include "SoundManager.h"
 
 #include <algorithm>
 #include <sstream>
@@ -22,6 +23,7 @@ constexpr uint8 SpawnGroupActionType = 1;
 constexpr uint8 StartMovementActionType = 2;
 constexpr uint8 DialogueActionType = 3;
 constexpr uint8 WorldAnnouncementActionType = 4;
+constexpr uint8 SoundActionType = 5;
 }
 
 InvasionRuntime::InvasionRuntime(uint64 runtimeId, uint32 invasionId,
@@ -204,6 +206,27 @@ bool InvasionRuntime::BeginCurrentStage(uint64 now)
                     LOG_ERROR("server.loading",
                         "[LWI Runtime] Runtime #{} failed world announcement action {} "
                         "(announcement {}, scope {}, scope id {}, faction {}).",
+                        _runtimeId,
+                        action.Id,
+                        action.TargetId,
+                        action.Parameter1,
+                        action.Parameter2,
+                        action.Parameter3);
+                }
+            }
+
+            if (action.ActionType == SoundActionType)
+            {
+                if (!sSoundManager.Execute(
+                    _runtimeId,
+                    action.TargetId,
+                    action.Parameter1,
+                    action.Parameter2,
+                    action.Parameter3))
+                {
+                    LOG_ERROR("server.loading",
+                        "[LWI Runtime] Runtime #{} failed sound action {} "
+                        "(spawn group {}, sound {}, source member {}, mode {}).",
                         _runtimeId,
                         action.Id,
                         action.TargetId,

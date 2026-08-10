@@ -6,7 +6,7 @@
 -- ===========================================================================
 
 DELETE FROM `lwi_stage_action`
-WHERE `id` IN (10001,10002,10003,10004,10005,10006,10007);
+WHERE `id` IN (10001,10002,10003,10004,10005,10006,10007,10008);
 
 DELETE FROM `lwi_runtime_signal`
 WHERE `id` IN (100);
@@ -323,6 +323,7 @@ VALUES
 -- action_type: 2 = Start Movement
 -- action_type: 3 = Dialogue
 -- action_type: 4 = World Announcement
+-- action_type: 5 = Sound
 --
 -- Start Movement:
 --   target_id  = spawn_group_id
@@ -341,6 +342,12 @@ VALUES
 --   parameter1 = scope (0 global, 1 map, 2 zone, 3 area)
 --   parameter2 = scope_id (0 derives map/zone from invasion)
 --   parameter3 = faction (0 everyone, 1 Alliance, 2 Horde)
+--
+-- Sound:
+--   target_id  = spawn_group_id
+--   parameter1 = sound_id
+--   parameter2 = source spawn_member_id (0 = first available creature)
+--   parameter3 = playback mode (0 distance/positional, 1 direct)
 -- ===========================================================================
 
 INSERT INTO `lwi_stage_action`
@@ -360,8 +367,9 @@ INSERT INTO `lwi_stage_action`
 VALUES
     (10007, 1001, 1, 4, 100,   2,      0,   1, 0, 1, 'Alliance-only Westfall zone warning; zone id derives from invasion'),
     (10001, 1001, 2, 1, 100,   0,      0,   0, 0, 1, 'Spawn Westfall Defias scouts and campfire'),
-    (10005, 1001, 3, 3, 100, 100, 100001,   0, 0, 1, 'A scout says a warning before beginning the route'),
-    (10004, 1001, 4, 2, 100, 100,    100, 100, 0, 1, 'Move Westfall Defias scout runtime group and emit ScoutRouteComplete'),
+    (10008, 1001, 3, 5, 100, 847, 100001,   0, 0, 1, 'Temporary positional sound test from a Westfall scout'),
+    (10005, 1001, 4, 3, 100, 100, 100001,   0, 0, 1, 'A scout says a warning before beginning the route'),
+    (10004, 1001, 5, 2, 100, 100,    100, 100, 0, 1, 'Move Westfall Defias scout runtime group and emit ScoutRouteComplete'),
     (10002, 1002, 1, 1, 101,   0,      0,   0, 0, 1, 'Spawn Westfall Defias reinforcements'),
     (10003, 1003, 1, 1, 102,   0,      0,   0, 0, 1, 'Spawn Westfall Defias lieutenant'),
     (10006, 1003, 2, 3, 102, 101, 100003,   0, 0, 1, 'The lieutenant yells after spawning');
