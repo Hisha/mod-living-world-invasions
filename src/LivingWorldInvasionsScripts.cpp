@@ -241,7 +241,7 @@ private:
         if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Enabled))
         {
             handler->SendSysMessage("Living World Invasions is disabled by configuration.");
-            return false;
+            return true;
         }
 
         uint32 const active = sInvasionRuntimeMgr.GetActiveRuntimeCount();
@@ -250,13 +250,13 @@ private:
             handler->PSendSysMessage(
                 "Living World Invasions cannot reload while {} runtime(s) are active. Use .lwi stop and wait for them to finish, or .lwi abort confirm for an emergency stop.",
                 active);
-            return false;
+            return true;
         }
 
         if (sInvasionScheduler.GetControlState() == lwi::SchedulerControlState::Running)
         {
             handler->SendSysMessage("Living World Invasions scheduler is still running. Use .lwi stop before .lwi reload.");
-            return false;
+            return true;
         }
 
         LOG_INFO("server.loading", "[LWI] Definition reload requested.");
