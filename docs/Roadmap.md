@@ -75,7 +75,7 @@
 
 ## Runtime Signals
 
-- [ ] Runtime signal definitions
+- [x] Runtime signal definitions
 - [ ] Emit runtime signals
 - [ ] Wait for runtime signals
 - [ ] Movement-completion signals
@@ -84,13 +84,13 @@
 
 ## Actions
 
-- [ ] Dialogue - Say
-- [ ] Dialogue - Yell
+- [x] Dialogue - Say
+- [x] Dialogue - Yell
 - [ ] Dialogue - Emote
-- [ ] Zone announcements
-- [ ] Faction announcements
-- [ ] World announcements
-- [ ] Sound actions
+- [x] Zone announcements
+- [x] Faction announcements
+- [x] World announcements
+- [x] Sound actions
 - [ ] Spell actions
 
 ## Behavior System

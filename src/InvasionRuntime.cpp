@@ -8,6 +8,7 @@
 #include "RuntimeEntityGroup.h"
 #include "RuntimeSignalManager.h"
 #include "SoundManager.h"
+#include "SpellActionManager.h"
 
 #include <algorithm>
 #include <sstream>
@@ -24,6 +25,7 @@ constexpr uint8 StartMovementActionType = 2;
 constexpr uint8 DialogueActionType = 3;
 constexpr uint8 WorldAnnouncementActionType = 4;
 constexpr uint8 SoundActionType = 5;
+constexpr uint8 SpellActionType = 6;
 }
 
 InvasionRuntime::InvasionRuntime(uint64 runtimeId, uint32 invasionId,
@@ -227,6 +229,27 @@ bool InvasionRuntime::BeginCurrentStage(uint64 now)
                     LOG_ERROR("server.loading",
                         "[LWI Runtime] Runtime #{} failed sound action {} "
                         "(spawn group {}, sound {}, source member {}, mode {}).",
+                        _runtimeId,
+                        action.Id,
+                        action.TargetId,
+                        action.Parameter1,
+                        action.Parameter2,
+                        action.Parameter3);
+                }
+            }
+
+            if (action.ActionType == SpellActionType)
+            {
+                if (!sSpellActionManager.ExecuteSelfCast(
+                    _runtimeId,
+                    action.TargetId,
+                    action.Parameter1,
+                    action.Parameter2,
+                    action.Parameter3))
+                {
+                    LOG_ERROR("server.loading",
+                        "[LWI Runtime] Runtime #{} failed spell action {} "
+                        "(spawn group {}, spell {}, caster member {}, target mode {}).",
                         _runtimeId,
                         action.Id,
                         action.TargetId,

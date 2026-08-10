@@ -6,7 +6,7 @@
 -- ===========================================================================
 
 DELETE FROM `lwi_stage_action`
-WHERE `id` IN (10001,10002,10003,10004,10005,10006,10007,10008);
+WHERE `id` IN (10001,10002,10003,10004,10005,10006,10007,10008,10009);
 
 DELETE FROM `lwi_runtime_signal`
 WHERE `id` IN (100);
@@ -324,6 +324,7 @@ VALUES
 -- action_type: 3 = Dialogue
 -- action_type: 4 = World Announcement
 -- action_type: 5 = Sound
+-- action_type: 6 = Spell
 --
 -- Start Movement:
 --   target_id  = spawn_group_id
@@ -348,6 +349,12 @@ VALUES
 --   parameter1 = sound_id
 --   parameter2 = source spawn_member_id (0 = first available creature)
 --   parameter3 = playback mode (0 distance/positional, 1 direct)
+--
+-- Spell (v1):
+--   target_id  = caster spawn_group_id
+--   parameter1 = spell_id
+--   parameter2 = caster spawn_member_id (0 = first available creature)
+--   parameter3 = target mode (0 self)
 -- ===========================================================================
 
 INSERT INTO `lwi_stage_action`
@@ -372,4 +379,5 @@ VALUES
     (10004, 1001, 5, 2, 100, 100,    100, 100, 0, 1, 'Move Westfall Defias scout runtime group and emit ScoutRouteComplete'),
     (10002, 1002, 1, 1, 101,   0,      0,   0, 0, 1, 'Spawn Westfall Defias reinforcements'),
     (10003, 1003, 1, 1, 102,   0,      0,   0, 0, 1, 'Spawn Westfall Defias lieutenant'),
-    (10006, 1003, 2, 3, 102, 101, 100003,   0, 0, 1, 'The lieutenant yells after spawning');
+    (10009, 1003, 2, 6, 102, 1459, 100003,   0, 0, 1, 'Temporary scripted self-cast test: Arcane Intellect rank 1'),
+    (10006, 1003, 3, 3, 102, 101, 100003,   0, 0, 1, 'The lieutenant yells after spawning');

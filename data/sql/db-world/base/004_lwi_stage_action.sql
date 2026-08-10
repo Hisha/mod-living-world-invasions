@@ -4,6 +4,7 @@
 -- action_type 3 = Dialogue
 -- action_type 4 = World Announcement
 -- action_type 5 = Sound
+-- action_type 6 = Spell (scripted event cast)
 --
 -- Start Movement parameter mapping:
 --   target_id  = spawn_group_id whose latest runtime entity group should move
@@ -43,4 +44,13 @@ CREATE TABLE IF NOT EXISTS `lwi_stage_action` (
 --   parameter1 = sound_id (SoundEntries.dbc)
 --   parameter2 = source spawn_member_id (0 = first available creature)
 --   parameter3 = playback mode: 0 distance/positional, 1 direct
+--
+-- Spell parameter mapping (v1):
+--   target_id  = caster spawn_group_id
+--   parameter1 = spell_id
+--   parameter2 = caster spawn_member_id (0 = first available creature)
+--   parameter3 = target mode: 0 self
+--
+-- Spell Actions are explicit invasion-scripted casts only. Native creature
+-- combat spells, automatic self-buffs, rotations, CreatureAI and SmartAI remain unchanged.
 
