@@ -24,6 +24,7 @@ struct RuntimeEntity
     uint32 GroupId = 0;
     uint32 MemberId = 0;
     uint32 Entry = 0;
+    uint8 TacticalRole = 0;
     ObjectGuid Guid;
 };
 

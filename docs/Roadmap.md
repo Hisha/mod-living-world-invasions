@@ -76,11 +76,11 @@
 ## Runtime Signals
 
 - [x] Runtime signal definitions
-- [ ] Emit runtime signals
-- [ ] Wait for runtime signals
-- [ ] Movement-completion signals
-- [ ] Entity-death signals
-- [ ] Objective-completion signals
+- [x] Emit runtime signals
+- [x] Wait for runtime signals
+- [x] Movement-completion signals
+- [x] Entity-death signals
+- [x] Objective-completion signals
 
 ## Actions
 
@@ -91,7 +91,7 @@
 - [x] Faction announcements
 - [x] World announcements
 - [x] Sound actions
-- [ ] Spell actions
+- [x] Spell actions
 
 ## Behavior System
 

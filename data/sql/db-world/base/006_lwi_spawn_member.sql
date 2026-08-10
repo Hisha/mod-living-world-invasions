@@ -2,6 +2,14 @@
 -- entity_type values implemented by the engine:
 --   1 = Creature
 --   2 = GameObject
+-- tactical_role values:
+--   0 = Default
+--   1 = Commander
+--   2 = Protector (Tank / Protector)
+--   3 = Melee DPS
+--   4 = Ranged DPS
+--   5 = Healer
+--   6 = Support
 CREATE TABLE IF NOT EXISTS `lwi_spawn_member` (
     `id` INT UNSIGNED NOT NULL,
     `spawn_group_id` INT UNSIGNED NOT NULL,
@@ -9,6 +17,7 @@ CREATE TABLE IF NOT EXISTS `lwi_spawn_member` (
     `entity_entry` INT UNSIGNED NOT NULL,
     `count` SMALLINT UNSIGNED NOT NULL DEFAULT 1,
     `level_override` SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+    `tactical_role` TINYINT UNSIGNED NOT NULL DEFAULT 0,
     `comment` VARCHAR(255) NULL DEFAULT NULL,
     PRIMARY KEY (`id`),
     KEY `idx_lwi_spawn_member_group` (`spawn_group_id`),

@@ -170,6 +170,9 @@ VALUES
 -- ===========================================================================
 -- Spawn Members
 -- entity_type: 1 = Creature, 2 = GameObject
+-- tactical_role:
+--   0 Default, 1 Commander, 2 Protector, 3 Melee DPS,
+--   4 Ranged DPS, 5 Healer, 6 Support
 -- ===========================================================================
 
 INSERT INTO `lwi_spawn_member`
@@ -180,13 +183,14 @@ INSERT INTO `lwi_spawn_member`
     `entity_entry`,
     `count`,
     `level_override`,
+    `tactical_role`,
     `comment`
 )
 VALUES
-    (100001, 100, 1,   449, 3, 0, 'Westfall Defias scouts'),
-    (100004, 100, 2, 29784, 1, 0, 'Basic Campfire - mixed entity provider test'),
-    (100002, 101, 1,   589, 5, 0, 'Westfall Defias reinforcements'),
-    (100003, 102, 1,   441, 1, 0, 'Westfall Defias lieutenant');
+    (100001, 100, 1,   449, 3, 0, 3, 'Westfall Defias scouts - Melee DPS'),
+    (100004, 100, 2, 29784, 1, 0, 0, 'Basic Campfire - mixed entity provider test'),
+    (100002, 101, 1,   589, 5, 0, 4, 'Westfall Defias reinforcements - Ranged DPS'),
+    (100003, 102, 1,   441, 1, 0, 1, 'Westfall Defias lieutenant - Commander');
 
 -- ===========================================================================
 -- Runtime Signals

@@ -35,6 +35,17 @@ struct StageActionDefinition
     bool Enabled = false;
 };
 
+enum class TacticalRole : uint8
+{
+    Default = 0,
+    Commander = 1,
+    Protector = 2,
+    MeleeDps = 3,
+    RangedDps = 4,
+    Healer = 5,
+    Support = 6
+};
+
 struct SpawnMemberDefinition
 {
     uint32 Id = 0;
@@ -43,6 +54,7 @@ struct SpawnMemberDefinition
     uint32 EntityEntry = 0;
     uint16 Count = 1;
     uint16 LevelOverride = 0;
+    TacticalRole Role = TacticalRole::Default;
     std::string Comment;
 };
 

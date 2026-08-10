@@ -257,7 +257,7 @@ void InvasionMgr::LoadDefinitions()
         } while (result->NextRow());
     }
 
-    if (QueryResult result = WorldDatabase.Query("SELECT `id`, `spawn_group_id`, `entity_type`, `entity_entry`, `count`, `level_override`, `comment` FROM `lwi_spawn_member` ORDER BY `spawn_group_id`, `id`"))
+    if (QueryResult result = WorldDatabase.Query("SELECT `id`, `spawn_group_id`, `entity_type`, `entity_entry`, `count`, `level_override`, `tactical_role`, `comment` FROM `lwi_spawn_member` ORDER BY `spawn_group_id`, `id`"))
     {
         do
         {
@@ -269,7 +269,22 @@ void InvasionMgr::LoadDefinitions()
             member.EntityEntry = fields[3].Get<uint32>();
             member.Count = fields[4].Get<uint16>();
             member.LevelOverride = fields[5].Get<uint16>();
-            member.Comment = fields[6].Get<std::string>();
+
+            uint8 const tacticalRole = fields[6].Get<uint8>();
+            if (tacticalRole > static_cast<uint8>(TacticalRole::Support))
+            {
+                LOG_ERROR("server.loading",
+                    "[LWI Role] Spawn member {} has invalid tactical role {}; using Default.",
+                    member.Id,
+                    tacticalRole);
+                member.Role = TacticalRole::Default;
+            }
+            else
+            {
+                member.Role = static_cast<TacticalRole>(tacticalRole);
+            }
+
+            member.Comment = fields[7].Get<std::string>();
             _spawnMembersByGroup[member.SpawnGroupId].push_back(std::move(member));
         } while (result->NextRow());
     }

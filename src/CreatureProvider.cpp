@@ -32,6 +32,29 @@ Position BuildSpawnPosition(SpawnGroupDefinition const& group)
 
     return position;
 }
+
+char const* TacticalRoleName(TacticalRole role)
+{
+    switch (role)
+    {
+        case TacticalRole::Default:
+            return "Default";
+        case TacticalRole::Commander:
+            return "Commander";
+        case TacticalRole::Protector:
+            return "Protector";
+        case TacticalRole::MeleeDps:
+            return "MeleeDps";
+        case TacticalRole::RangedDps:
+            return "RangedDps";
+        case TacticalRole::Healer:
+            return "Healer";
+        case TacticalRole::Support:
+            return "Support";
+        default:
+            return "Unknown";
+    }
+}
 }
 
 uint8 CreatureProvider::GetType() const
@@ -83,14 +106,17 @@ bool CreatureProvider::Spawn(
         entity.GroupId = group.Id;
         entity.MemberId = member.Id;
         entity.Entry = member.EntityEntry;
+        entity.TacticalRole = static_cast<uint8>(member.Role);
         entity.Guid = summon->GetGUID();
         spawnedEntities.push_back(std::move(entity));
 
         LOG_INFO("server.loading",
-            "[LWI Creature] Runtime #{} spawned creature {} from member {} GUID {}.",
+            "[LWI Creature] Runtime #{} spawned creature {} from member {} role {} ({}) GUID {}.",
             runtimeId,
             member.EntityEntry,
             member.Id,
+            static_cast<uint32>(member.Role),
+            TacticalRoleName(member.Role),
             summon->GetGUID().ToString());
 
         spawnedAny = true;
