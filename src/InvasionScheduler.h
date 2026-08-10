@@ -65,6 +65,7 @@ public:
     void Drain();
 
     [[nodiscard]] SchedulerControlState GetControlState() const;
+    [[nodiscard]] bool TriggerInvasion(uint32 invasionId);
     [[nodiscard]] std::string BuildStatusReport() const;
     void NotifyInvasionCompleted(uint32 invasionId, uint64 now);
     void NotifyInvasionStartFailed(uint32 invasionId);

@@ -20,7 +20,9 @@ public:
 
     bool StartInvasion(uint32 invasionId);
     bool AdvanceRuntime(uint64 runtimeId);
+    void AbortAll();
 
+    [[nodiscard]] uint32 GetActiveRuntimeCount() const;
     [[nodiscard]] InvasionRuntime const* GetRuntimeForInvasion(uint32 invasionId) const;
     [[nodiscard]] InvasionRuntime const* GetRuntime(uint64 runtimeId) const;
     [[nodiscard]] std::string BuildStatusReport() const;

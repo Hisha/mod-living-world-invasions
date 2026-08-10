@@ -81,6 +81,24 @@ SchedulerControlState InvasionScheduler::GetControlState() const
     return _controlState;
 }
 
+
+bool InvasionScheduler::TriggerInvasion(uint32 invasionId)
+{
+    if (!_initialized || !_settings.Enabled || _controlState != SchedulerControlState::Running)
+    {
+        return false;
+    }
+
+    if (!sInvasionMgr.GetDefinition(invasionId) || IsInvasionActive(invasionId))
+    {
+        return false;
+    }
+
+    uint64 const now = UnixTimeNow();
+    LOG_INFO("server.loading", "[LWI Scheduler] Debug trigger requested for invasion {}.", invasionId);
+    return StartInvasion(invasionId, now);
+}
+
 void InvasionScheduler::Reset()
 {
     _runtime.clear();

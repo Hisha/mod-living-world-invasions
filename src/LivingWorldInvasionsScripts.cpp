@@ -123,6 +123,22 @@ public:
 
     ChatCommandTable GetCommands() const override
     {
+        static ChatCommandTable abortCommandTable =
+        {
+            {
+                "confirm",
+                HandleAbortConfirmCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::Yes
+            },
+            {
+                "",
+                HandleAbortCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::Yes
+            }
+        };
+
         static ChatCommandTable lwiCommandTable =
         {
             {
@@ -134,6 +150,28 @@ public:
             {
                 "signals",
                 HandleSignalsCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::Yes
+            },
+            {
+                "start",
+                HandleStartCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::Yes
+            },
+            {
+                "stop",
+                HandleStopCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::Yes
+            },
+            {
+                "abort",
+                abortCommandTable
+            },
+            {
+                "trigger",
+                HandleTriggerCommand,
                 rbac::RBAC_PERM_COMMAND_SERVER_INFO,
                 Console::Yes
             }
@@ -163,6 +201,79 @@ private:
     static bool HandleSignalsCommand(ChatHandler* handler)
     {
         handler->SendSysMessage(sRuntimeSignalMgr.BuildStatusReport());
+        return true;
+    }
+
+
+    static bool HandleStartCommand(ChatHandler* handler)
+    {
+        sInvasionScheduler.Resume();
+        handler->SendSysMessage("Living World Invasions scheduler started.");
+        return true;
+    }
+
+    static bool HandleStopCommand(ChatHandler* handler)
+    {
+        sInvasionScheduler.Drain();
+
+        uint32 const active = sInvasionRuntimeMgr.GetActiveRuntimeCount();
+        handler->PSendSysMessage(
+            "Living World Invasions scheduler stopped. {} active runtime(s) will continue to completion.",
+            active);
+        return true;
+    }
+
+    static bool HandleAbortCommand(ChatHandler* handler)
+    {
+        uint32 const active = sInvasionRuntimeMgr.GetActiveRuntimeCount();
+
+        handler->PSendSysMessage(
+            "WARNING: This will immediately terminate {} active Living World Invasions runtime(s) and clean up their entities.",
+            active);
+        handler->SendSysMessage("Use .lwi abort confirm to continue.");
+        return true;
+    }
+
+    static bool HandleAbortConfirmCommand(ChatHandler* handler)
+    {
+        sInvasionScheduler.Drain();
+
+        uint32 const active = sInvasionRuntimeMgr.GetActiveRuntimeCount();
+        sInvasionRuntimeMgr.AbortAll();
+
+        handler->PSendSysMessage(
+            "Living World Invasions emergency abort completed. {} runtime(s) were targeted. Scheduler remains stopped.",
+            active);
+        return true;
+    }
+
+    static bool HandleTriggerCommand(ChatHandler* handler, uint32 invasionId)
+    {
+        if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Debug))
+        {
+            handler->SendSysMessage("Living World Invasions debug commands are disabled. Set LWI.Debug = 1 to use .lwi trigger.");
+            return false;
+        }
+
+        if (!sInvasionMgr.GetDefinition(invasionId))
+        {
+            handler->PSendSysMessage("Living World Invasions invasion {} does not exist or is disabled.", invasionId);
+            return false;
+        }
+
+        if (sInvasionScheduler.GetControlState() != lwi::SchedulerControlState::Running)
+        {
+            handler->SendSysMessage("Living World Invasions scheduler is stopped. Use .lwi start before triggering an invasion.");
+            return false;
+        }
+
+        if (!sInvasionScheduler.TriggerInvasion(invasionId))
+        {
+            handler->PSendSysMessage("Living World Invasions could not trigger invasion {}. It may already be active or the scheduler may be unavailable.", invasionId);
+            return false;
+        }
+
+        handler->PSendSysMessage("Living World Invasions manually triggered invasion {}.", invasionId);
         return true;
     }
 };

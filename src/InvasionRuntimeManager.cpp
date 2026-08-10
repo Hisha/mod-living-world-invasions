@@ -3,6 +3,7 @@
 #include "InvasionScheduler.h"
 #include "LivingWorldInvasions.h"
 #include "MovementController.h"
+#include "InvasionSpawnManager.h"
 #include "RuntimeSignalManager.h"
 
 #include "DatabaseEnv.h"
@@ -140,6 +141,61 @@ bool InvasionRuntimeManager::AdvanceRuntime(uint64 runtimeId)
 
     SaveRuntime(iterator->second);
     return true;
+}
+
+void InvasionRuntimeManager::AbortAll()
+{
+    if (_runtimes.empty())
+    {
+        LOG_INFO("server.loading", "[LWI Runtime] Abort requested with no active runtimes.");
+        return;
+    }
+
+    std::vector<uint64> runtimeIds;
+    runtimeIds.reserve(_runtimes.size());
+
+    for (auto const& [runtimeId, runtime] : _runtimes)
+    {
+        (void)runtime;
+        runtimeIds.push_back(runtimeId);
+    }
+
+    uint32 aborted = 0;
+
+    for (uint64 runtimeId : runtimeIds)
+    {
+        auto iterator = _runtimes.find(runtimeId);
+        if (iterator == _runtimes.end())
+        {
+            continue;
+        }
+
+        uint32 const invasionId = iterator->second.GetInvasionId();
+
+        LOG_INFO("server.loading",
+            "[LWI Runtime] Emergency abort of runtime #{} for invasion {}.",
+            runtimeId, invasionId);
+
+        sMovementController.CancelRuntime(runtimeId);
+        sInvasionSpawnMgr.CleanupRuntime(runtimeId);
+        sRuntimeSignalMgr.ClearRuntime(runtimeId);
+        DeleteRuntime(runtimeId);
+
+        _runtimeByInvasion.erase(invasionId);
+        _runtimes.erase(iterator);
+
+        // Return the scheduler record to Available instead of treating an
+        // emergency abort as a successful invasion completion.
+        sInvasionScheduler.NotifyInvasionStartFailed(invasionId);
+        ++aborted;
+    }
+
+    LOG_INFO("server.loading", "[LWI Runtime] Emergency abort completed for {} runtime(s).", aborted);
+}
+
+uint32 InvasionRuntimeManager::GetActiveRuntimeCount() const
+{
+    return static_cast<uint32>(_runtimes.size());
 }
 
 void InvasionRuntimeManager::LoadActiveRuntimes(uint64 now)
