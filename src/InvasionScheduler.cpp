@@ -52,12 +52,42 @@ void InvasionScheduler::Configure(SchedulerSettings settings)
     _settings = settings;
 }
 
+void InvasionScheduler::Pause()
+{
+    _controlState = SchedulerControlState::Paused;
+
+    LOG_INFO("server.loading",
+        "[LWI Scheduler] Scheduler paused. Existing invasions will continue.");
+}
+
+void InvasionScheduler::Resume()
+{
+    _controlState = SchedulerControlState::Running;
+
+    LOG_INFO("server.loading",
+        "[LWI Scheduler] Scheduler resumed.");
+}
+
+void InvasionScheduler::Drain()
+{
+    _controlState = SchedulerControlState::Draining;
+
+    LOG_INFO("server.loading",
+        "[LWI Scheduler] Scheduler draining. Waiting for active invasions to complete.");
+}
+
+SchedulerControlState InvasionScheduler::GetControlState() const
+{
+    return _controlState;
+}
+
 void InvasionScheduler::Reset()
 {
     _runtime.clear();
     _nextMapEvaluation.clear();
     _updateTimerMs = 0;
     _initialized = false;
+    _controlState = SchedulerControlState::Running;
 }
 
 void InvasionScheduler::Initialize()
@@ -173,6 +203,11 @@ void InvasionScheduler::EvaluateDueMaps(uint64 now)
 
 void InvasionScheduler::EvaluateMap(uint16 mapId, uint64 now)
 {
+    if (_controlState != SchedulerControlState::Running)
+    {
+        return;
+    }
+
     if (_settings.MaxActiveGlobal != 0 && CountActiveGlobal() >= _settings.MaxActiveGlobal)
     {
         if (_settings.Debug)
@@ -449,6 +484,22 @@ std::string InvasionScheduler::BuildStatusReport() const
     output << "--------------------------------\n";
     output << "Enabled: " << (_settings.Enabled ? "yes" : "no") << '\n';
     output << "Initialized: " << (_initialized ? "yes" : "no") << '\n';
+    output << "Control state: ";
+    switch (_controlState)
+    {
+        case SchedulerControlState::Running:
+            output << "running\n";
+            break;
+        case SchedulerControlState::Paused:
+            output << "paused\n";
+            break;
+        case SchedulerControlState::Draining:
+            output << "draining\n";
+            break;
+        default:
+            output << "unknown\n";
+            break;
+    }
     output << "Runtime records: " << _runtime.size() << '\n';
     output << "Active globally: " << CountActiveGlobal();
 

@@ -16,6 +16,13 @@ enum class InvasionRuntimeState : uint8
     Cooldown = 2
 };
 
+enum class SchedulerControlState : uint8
+{
+    Running = 0,
+    Paused = 1,
+    Draining = 2
+};
+
 struct SchedulerRuntimeRecord
 {
     uint32 InvasionId = 0;
@@ -52,7 +59,12 @@ public:
     void Initialize();
     void Update(uint32 diff);
     void Reset();
-	
+
+    void Pause();
+    void Resume();
+    void Drain();
+
+    [[nodiscard]] SchedulerControlState GetControlState() const;
     [[nodiscard]] std::string BuildStatusReport() const;
     void NotifyInvasionCompleted(uint32 invasionId, uint64 now);
     void NotifyInvasionStartFailed(uint32 invasionId);
@@ -77,6 +89,7 @@ private:
     [[nodiscard]] uint32 CountActiveForResponseOrigin(uint32 responseOriginId) const;
 
     SchedulerSettings _settings;
+    SchedulerControlState _controlState = SchedulerControlState::Running;
     std::unordered_map<uint32, SchedulerRuntimeRecord> _runtime;
     std::unordered_map<uint16, uint64> _nextMapEvaluation;
     uint32 _updateTimerMs = 0;
