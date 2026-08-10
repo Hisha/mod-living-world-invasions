@@ -166,7 +166,18 @@ public:
     [[nodiscard]] MovementProfileDefinition const* GetMovementProfile(uint32 id) const;
     [[nodiscard]] RuntimeSignalDefinition const* GetRuntimeSignal(uint32 id) const;
     [[nodiscard]] DialogueDefinition const* GetDialogue(uint32 id) const;
+
     [[nodiscard]] std::size_t GetDefinitionCount() const;
+    [[nodiscard]] std::size_t GetResponseOriginCount() const;
+    [[nodiscard]] std::size_t GetStageCount() const;
+    [[nodiscard]] std::size_t GetActionCount() const;
+    [[nodiscard]] std::size_t GetSpawnGroupCount() const;
+    [[nodiscard]] std::size_t GetSpawnMemberCount() const;
+    [[nodiscard]] std::size_t GetMovementPathCount() const;
+    [[nodiscard]] std::size_t GetMovementNodeCount() const;
+    [[nodiscard]] std::size_t GetMovementProfileCount() const;
+    [[nodiscard]] std::size_t GetRuntimeSignalCount() const;
+    [[nodiscard]] std::size_t GetDialogueCount() const;
 
 private:
     InvasionMgr() = default;

@@ -497,4 +497,78 @@ DialogueDefinition const* InvasionMgr::GetDialogue(uint32 id) const
     auto it = _dialogues.find(id);
     return it != _dialogues.end() ? &it->second : nullptr;
 }
+
+std::size_t InvasionMgr::GetResponseOriginCount() const
+{
+    return _responseOrigins.size();
+}
+
+std::size_t InvasionMgr::GetStageCount() const
+{
+    std::size_t count = 0;
+    for (auto const& [invasionId, stages] : _stagesByInvasion)
+    {
+        (void)invasionId;
+        count += stages.size();
+    }
+    return count;
+}
+
+std::size_t InvasionMgr::GetActionCount() const
+{
+    std::size_t count = 0;
+    for (auto const& [stageId, actions] : _actionsByStage)
+    {
+        (void)stageId;
+        count += actions.size();
+    }
+    return count;
+}
+
+std::size_t InvasionMgr::GetSpawnGroupCount() const
+{
+    return _spawnGroups.size();
+}
+
+std::size_t InvasionMgr::GetSpawnMemberCount() const
+{
+    std::size_t count = 0;
+    for (auto const& [groupId, members] : _spawnMembersByGroup)
+    {
+        (void)groupId;
+        count += members.size();
+    }
+    return count;
+}
+
+std::size_t InvasionMgr::GetMovementPathCount() const
+{
+    return _movementPaths.size();
+}
+
+std::size_t InvasionMgr::GetMovementNodeCount() const
+{
+    std::size_t count = 0;
+    for (auto const& [pathId, nodes] : _movementNodesByPath)
+    {
+        (void)pathId;
+        count += nodes.size();
+    }
+    return count;
+}
+
+std::size_t InvasionMgr::GetMovementProfileCount() const
+{
+    return _movementProfiles.size();
+}
+
+std::size_t InvasionMgr::GetRuntimeSignalCount() const
+{
+    return _runtimeSignals.size();
+}
+
+std::size_t InvasionMgr::GetDialogueCount() const
+{
+    return _dialogues.size();
+}
 }

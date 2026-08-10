@@ -2,6 +2,7 @@
 #include "CommandScript.h"
 #include "InvasionScheduler.h"
 #include "InvasionRuntimeManager.h"
+#include "InvasionSpawnManager.h"
 #include "LivingWorldInvasions.h"
 #include "RuntimeSignalManager.h"
 
@@ -166,6 +167,18 @@ public:
                 Console::Yes
             },
             {
+                "reload",
+                HandleReloadCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::Yes
+            },
+            {
+                "version",
+                HandleVersionCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::Yes
+            },
+            {
                 "abort",
                 abortCommandTable
             },
@@ -220,6 +233,94 @@ private:
         handler->PSendSysMessage(
             "Living World Invasions scheduler stopped. {} active runtime(s) will continue to completion.",
             active);
+        return true;
+    }
+
+    static bool HandleReloadCommand(ChatHandler* handler)
+    {
+        if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Enabled))
+        {
+            handler->SendSysMessage("Living World Invasions is disabled by configuration.");
+            return false;
+        }
+
+        uint32 const active = sInvasionRuntimeMgr.GetActiveRuntimeCount();
+        if (active != 0)
+        {
+            handler->PSendSysMessage(
+                "Living World Invasions cannot reload while {} runtime(s) are active. Use .lwi stop and wait for them to finish, or .lwi abort confirm for an emergency stop.",
+                active);
+            return false;
+        }
+
+        if (sInvasionScheduler.GetControlState() == lwi::SchedulerControlState::Running)
+        {
+            handler->SendSysMessage("Living World Invasions scheduler is still running. Use .lwi stop before .lwi reload.");
+            return false;
+        }
+
+        LOG_INFO("server.loading", "[LWI] Definition reload requested.");
+
+        // There are no active runtimes at this point, so it is safe to drop
+        // all transient runtime state before rebuilding definition caches.
+        sInvasionRuntimeMgr.Reset();
+        sInvasionSpawnMgr.Reset();
+        sInvasionScheduler.Reset();
+
+        sInvasionMgr.LoadDefinitions();
+
+        // Rebuild scheduler/runtime state from the newly loaded definitions.
+        // Initialize() returns the scheduler to Running when it is enabled in config.
+        sInvasionScheduler.Initialize();
+        sInvasionRuntimeMgr.Initialize();
+
+        handler->PSendSysMessage(
+            "Living World Invasions reloaded: {} invasion(s), {} stage(s), {} action(s), {} spawn group(s), {} movement path(s), {} dialogue(s), {} signal(s). Scheduler restarted.",
+            sInvasionMgr.GetDefinitionCount(),
+            sInvasionMgr.GetStageCount(),
+            sInvasionMgr.GetActionCount(),
+            sInvasionMgr.GetSpawnGroupCount(),
+            sInvasionMgr.GetMovementPathCount(),
+            sInvasionMgr.GetDialogueCount(),
+            sInvasionMgr.GetRuntimeSignalCount());
+
+        LOG_INFO("server.loading", "[LWI] Definition reload completed successfully.");
+        return true;
+    }
+
+    static bool HandleVersionCommand(ChatHandler* handler)
+    {
+        char const* schedulerState = "unknown";
+        switch (sInvasionScheduler.GetControlState())
+        {
+            case lwi::SchedulerControlState::Running:
+                schedulerState = "running";
+                break;
+            case lwi::SchedulerControlState::Paused:
+                schedulerState = "paused";
+                break;
+            case lwi::SchedulerControlState::Draining:
+                schedulerState = "draining";
+                break;
+        }
+
+        handler->SendSysMessage("Living World Invasions");
+        handler->SendSysMessage("Version: 0.2.1-dev");
+        handler->PSendSysMessage("Scheduler: {}", schedulerState);
+        handler->PSendSysMessage("Debug: {}", lwiConfig.GetConfigValue<bool>(LwiConfig::Debug) ? "enabled" : "disabled");
+        handler->PSendSysMessage("Active runtimes: {}", sInvasionRuntimeMgr.GetActiveRuntimeCount());
+        handler->SendSysMessage("Loaded definitions:");
+        handler->PSendSysMessage("  Response origins: {}", sInvasionMgr.GetResponseOriginCount());
+        handler->PSendSysMessage("  Invasions: {}", sInvasionMgr.GetDefinitionCount());
+        handler->PSendSysMessage("  Stages: {}", sInvasionMgr.GetStageCount());
+        handler->PSendSysMessage("  Actions: {}", sInvasionMgr.GetActionCount());
+        handler->PSendSysMessage("  Spawn groups: {}", sInvasionMgr.GetSpawnGroupCount());
+        handler->PSendSysMessage("  Spawn members: {}", sInvasionMgr.GetSpawnMemberCount());
+        handler->PSendSysMessage("  Movement paths: {}", sInvasionMgr.GetMovementPathCount());
+        handler->PSendSysMessage("  Movement nodes: {}", sInvasionMgr.GetMovementNodeCount());
+        handler->PSendSysMessage("  Movement profiles: {}", sInvasionMgr.GetMovementProfileCount());
+        handler->PSendSysMessage("  Dialogues: {}", sInvasionMgr.GetDialogueCount());
+        handler->PSendSysMessage("  Runtime signals: {}", sInvasionMgr.GetRuntimeSignalCount());
         return true;
     }
 
