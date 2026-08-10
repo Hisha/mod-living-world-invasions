@@ -46,10 +46,10 @@ bool MatchesFaction(Player const* player, AnnouncementFaction faction)
     {
         case AnnouncementFaction::Everyone:
             return true;
-        case AnnouncementFaction::Alliance:
-            return player->GetTeam() == ALLIANCE;
-        case AnnouncementFaction::Horde:
-            return player->GetTeam() == HORDE;
+		case AnnouncementFaction::Alliance:
+			return player->GetTeamId() == TEAM_ALLIANCE;
+		case AnnouncementFaction::Horde:
+			return player->GetTeamId() == TEAM_HORDE;
         default:
             return false;
     }
@@ -189,17 +189,17 @@ bool AnnouncementManager::Execute(uint64 runtimeId, uint32 invasionId, uint32 an
             continue;
         }
 
-        WorldPacket data;
-        ChatHandler::BuildChatPacket(
-            data,
-            CHAT_MSG_SYSTEM,
-            LANG_UNIVERSAL,
-            ObjectGuid::Empty,
-            ObjectGuid::Empty,
-            announcement->Text);
+		WorldPacket data;
+		ChatHandler::BuildChatPacket(
+		    data,
+		    CHAT_MSG_SYSTEM,
+		    LANG_UNIVERSAL,
+		    nullptr,
+		    nullptr,
+		    announcement->Text);
 
-        player->SendDirectMessage(&data);
-        ++recipients;
+		player->SendDirectMessage(&data);
+		++recipients;
     }
 
     LOG_INFO("server.loading",
