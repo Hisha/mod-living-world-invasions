@@ -197,8 +197,6 @@ VALUES
     (100008, 100, 1,   441, 1, 0, 1, 'Westfall formation test - Commander'),
     (100004, 100, 2, 29784, 1, 0, 0, 'Basic Campfire - mixed entity provider test'),
     (100002, 101, 1,   589, 5, 0, 4, 'Westfall Defias reinforcements - Ranged DPS'),
-    (101001, 101, 1,   545, 1, 0, 5, 'Westfall healer-role SmartAI compatibility test - Healer'),
-    (101002, 101, 1,   544, 1, 0, 2, 'Westfall healer-role friendly target - Protector'),
     (100003, 102, 1,   441, 1, 0, 1, 'Westfall Defias lieutenant - Commander');
 
 -- ===========================================================================
