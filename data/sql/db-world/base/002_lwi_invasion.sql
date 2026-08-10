@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS `lwi_invasion` (
     `selection_weight` INT UNSIGNED NOT NULL DEFAULT 100,
     `minimum_cooldown_seconds` INT UNSIGNED NOT NULL DEFAULT 86400,
     `maximum_cooldown_seconds` INT UNSIGNED NOT NULL DEFAULT 604800,
+    `maximum_runtime_seconds` INT UNSIGNED NOT NULL DEFAULT 1800 COMMENT 'Hard safety limit for one runtime; must be greater than 0',
     `allow_random_start` TINYINT UNSIGNED NOT NULL DEFAULT 1,
     `enabled` TINYINT UNSIGNED NOT NULL DEFAULT 0,
     `comment` VARCHAR(255) NULL DEFAULT NULL,
@@ -23,5 +24,6 @@ CREATE TABLE IF NOT EXISTS `lwi_invasion` (
     KEY `idx_lwi_invasion_response_origin` (`response_origin_id`),
     KEY `idx_lwi_invasion_random_selection` (`enabled`, `allow_random_start`, `map_id`),
     CONSTRAINT `chk_lwi_invasion_level_range` CHECK (`recommended_min_level` <= `recommended_max_level`),
-    CONSTRAINT `chk_lwi_invasion_cooldown_range` CHECK (`minimum_cooldown_seconds` <= `maximum_cooldown_seconds`)
+    CONSTRAINT `chk_lwi_invasion_cooldown_range` CHECK (`minimum_cooldown_seconds` <= `maximum_cooldown_seconds`),
+    CONSTRAINT `chk_lwi_invasion_max_runtime` CHECK (`maximum_runtime_seconds` > 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

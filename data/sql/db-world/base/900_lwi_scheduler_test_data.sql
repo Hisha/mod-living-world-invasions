@@ -73,14 +73,15 @@ INSERT INTO `lwi_invasion`
     `selection_weight`,
     `minimum_cooldown_seconds`,
     `maximum_cooldown_seconds`,
+    `maximum_runtime_seconds`,
     `allow_random_start`,
     `enabled`,
     `comment`
 )
 VALUES
-    (1, 'Westfall Scheduler Test', 0, 40, 1, 1, 10, 20, 100, 60, 120, 1, 1, 'Temporary scheduler/spawn/movement test.'),
-    (2, 'Duskwood Scheduler Test', 0, 10, 1, 1, 20, 30, 100, 60, 120, 1, 1, 'Temporary scheduler test.'),
-    (3, 'Wetlands Scheduler Test', 0, 11, 1, 2, 20, 30, 100, 60, 120, 1, 1, 'Temporary scheduler test.');
+    (1, 'Westfall Scheduler Test', 0, 40, 1, 1, 10, 20, 100, 60, 120, 300, 1, 1, 'Temporary scheduler/spawn/movement test.'),
+    (2, 'Duskwood Scheduler Test', 0, 10, 1, 1, 20, 30, 100, 60, 120, 300, 1, 1, 'Temporary scheduler test.'),
+    (3, 'Wetlands Scheduler Test', 0, 11, 1, 2, 20, 30, 100, 60, 120, 300, 1, 1, 'Temporary scheduler test.');
 
 -- ===========================================================================
 -- Runtime Stages

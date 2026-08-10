@@ -61,7 +61,7 @@ void InvasionMgr::LoadDefinitions()
     if (QueryResult result = WorldDatabase.Query(
         "SELECT `id`, `name`, `map_id`, `zone_id`, `team`, `response_origin_id`, "
         "`recommended_min_level`, `recommended_max_level`, `selection_weight`, "
-        "`minimum_cooldown_seconds`, `maximum_cooldown_seconds`, `allow_random_start`, `enabled` "
+        "`minimum_cooldown_seconds`, `maximum_cooldown_seconds`, `maximum_runtime_seconds`, `allow_random_start`, `enabled` "
         "FROM `lwi_invasion` WHERE `enabled` = 1 ORDER BY `id`"))
     {
         do
@@ -80,8 +80,9 @@ void InvasionMgr::LoadDefinitions()
             definition.SelectionWeight = fields[8].Get<uint32>();
             definition.MinimumCooldownSeconds = fields[9].Get<uint32>();
             definition.MaximumCooldownSeconds = fields[10].Get<uint32>();
-            definition.AllowRandomStart = fields[11].Get<bool>();
-            definition.Enabled = fields[12].Get<bool>();
+            definition.MaximumRuntimeSeconds = fields[11].Get<uint32>();
+            definition.AllowRandomStart = fields[12].Get<bool>();
+            definition.Enabled = fields[13].Get<bool>();
 
             ResponseOriginDefinition const* origin = GetResponseOrigin(definition.ResponseOriginId);
             if (!origin)
@@ -110,6 +111,13 @@ void InvasionMgr::LoadDefinitions()
             if (definition.MinimumCooldownSeconds > definition.MaximumCooldownSeconds)
             {
                 LOG_ERROR("server.loading", "Living World Invasions: invasion {} ({}) has minimum cooldown greater than maximum cooldown and was ignored.",
+                    definition.Id, definition.Name);
+                continue;
+            }
+
+            if (definition.MaximumRuntimeSeconds == 0)
+            {
+                LOG_ERROR("server.loading", "Living World Invasions: invasion {} ({}) has maximum runtime 0 and was ignored.",
                     definition.Id, definition.Name);
                 continue;
             }

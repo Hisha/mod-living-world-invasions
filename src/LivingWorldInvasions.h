@@ -141,6 +141,7 @@ struct InvasionDefinition
     uint32 SelectionWeight = 100;
     uint32 MinimumCooldownSeconds = 86400;
     uint32 MaximumCooldownSeconds = 604800;
+    uint32 MaximumRuntimeSeconds = 1800;
     bool AllowRandomStart = true;
     bool Enabled = false;
 };

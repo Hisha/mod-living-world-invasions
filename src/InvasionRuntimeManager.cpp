@@ -74,9 +74,20 @@ void InvasionRuntimeManager::Update(uint32 diff)
     _updateTimerMs = UpdateIntervalMs;
     uint64 const now = UnixTimeNow();
     std::vector<uint64> completed;
+    std::vector<uint64> timedOut;
 
     for (auto& [runtimeId, runtime] : _runtimes)
     {
+        InvasionDefinition const* definition = sInvasionMgr.GetDefinition(runtime.GetInvasionId());
+        if (definition &&
+            definition->MaximumRuntimeSeconds != 0 &&
+            runtime.GetStartedAt() != 0 &&
+            now >= runtime.GetStartedAt() + definition->MaximumRuntimeSeconds)
+        {
+            timedOut.push_back(runtimeId);
+            continue;
+        }
+
         if (runtime.Update(now))
         {
             completed.push_back(runtimeId);
@@ -90,6 +101,11 @@ void InvasionRuntimeManager::Update(uint32 diff)
     for (uint64 runtimeId : completed)
     {
         CompleteRuntime(runtimeId, now);
+    }
+
+    for (uint64 runtimeId : timedOut)
+    {
+        TimeoutRuntime(runtimeId, now);
     }
 }
 
@@ -292,6 +308,35 @@ void InvasionRuntimeManager::CompleteRuntime(uint64 runtimeId, uint64 now)
     sInvasionScheduler.NotifyInvasionCompleted(invasionId, now);
 }
 
+void InvasionRuntimeManager::TimeoutRuntime(uint64 runtimeId, uint64 now)
+{
+    auto iterator = _runtimes.find(runtimeId);
+    if (iterator == _runtimes.end())
+    {
+        return;
+    }
+
+    uint32 const invasionId = iterator->second.GetInvasionId();
+    InvasionDefinition const* definition = sInvasionMgr.GetDefinition(invasionId);
+
+    LOG_ERROR("server.loading",
+        "[LWI Runtime] Runtime #{} for invasion {} ({}) exceeded its maximum lifetime of {} second(s). Forcing cleanup.",
+        runtimeId,
+        invasionId,
+        definition ? definition->Name : "unknown",
+        definition ? definition->MaximumRuntimeSeconds : 0);
+
+    sMovementController.CancelRuntime(runtimeId);
+    sInvasionSpawnMgr.CleanupRuntime(runtimeId);
+    sRuntimeSignalMgr.ClearRuntime(runtimeId);
+    DeleteRuntime(runtimeId);
+
+    _runtimeByInvasion.erase(invasionId);
+    _runtimes.erase(iterator);
+
+    sInvasionScheduler.NotifyInvasionTimedOut(invasionId, now);
+}
+
 uint64 InvasionRuntimeManager::GenerateRuntimeId(uint64 now)
 {
     ++_runtimeSequence;
@@ -325,7 +370,19 @@ std::string InvasionRuntimeManager::BuildStatusReport() const
     for (auto const& [runtimeId, runtime] : _runtimes)
     {
         (void)runtimeId;
-        output << "  " << runtime.BuildStatusLine(now) << '\n';
+        output << "  " << runtime.BuildStatusLine(now);
+
+        if (InvasionDefinition const* definition = sInvasionMgr.GetDefinition(runtime.GetInvasionId()))
+        {
+            if (definition->MaximumRuntimeSeconds != 0 && runtime.GetStartedAt() != 0)
+            {
+                uint64 const deadline = runtime.GetStartedAt() + definition->MaximumRuntimeSeconds;
+                uint64 const remaining = deadline > now ? deadline - now : 0;
+                output << ", hard timeout in " << remaining << "s";
+            }
+        }
+
+        output << '\n';
     }
 
     return output.str();

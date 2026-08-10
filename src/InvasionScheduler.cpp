@@ -341,7 +341,7 @@ bool InvasionScheduler::StartInvasion(uint32 invasionId, uint64 now)
     runtime.State = InvasionRuntimeState::Active;
     runtime.LastStartedAt = now;
     runtime.ActiveSince = now;
-    runtime.ActiveUntil = 0;
+    runtime.ActiveUntil = now + definition->MaximumRuntimeSeconds;
     runtime.NextEligibleAt = 0;
     ++runtime.TimesStarted;
     SaveRuntime(runtime);
@@ -385,6 +385,30 @@ void InvasionScheduler::NotifyInvasionCompleted(uint32 invasionId, uint64 now)
 
     LOG_INFO("server.loading",
         "[LWI Scheduler] Invasion {} ({}) completed and entered cooldown for {} second(s).",
+        definition->Id, definition->Name, cooldown);
+}
+
+void InvasionScheduler::NotifyInvasionTimedOut(uint32 invasionId, uint64 now)
+{
+    InvasionDefinition const* definition = sInvasionMgr.GetDefinition(invasionId);
+    auto runtimeIterator = _runtime.find(invasionId);
+    if (!definition || runtimeIterator == _runtime.end())
+    {
+        return;
+    }
+
+    SchedulerRuntimeRecord& runtime = runtimeIterator->second;
+    uint32 const cooldown = RandomBetween(definition->MinimumCooldownSeconds, definition->MaximumCooldownSeconds);
+
+    runtime.State = InvasionRuntimeState::Cooldown;
+    runtime.LastCompletedAt = now;
+    runtime.NextEligibleAt = now + cooldown;
+    runtime.ActiveSince = 0;
+    runtime.ActiveUntil = 0;
+    SaveRuntime(runtime);
+
+    LOG_ERROR("server.loading",
+        "[LWI Scheduler] Invasion {} ({}) exceeded its maximum runtime and entered cooldown for {} second(s).",
         definition->Id, definition->Name, cooldown);
 }
 
@@ -584,6 +608,13 @@ std::string InvasionScheduler::BuildStatusReport() const
                 if (InvasionRuntime const* activeRuntime = sInvasionRuntimeMgr.GetRuntimeForInvasion(invasionId))
                 {
                     output << "      " << activeRuntime->BuildStatusLine(now) << '\n';
+                    if (runtime.ActiveUntil != 0)
+                    {
+                        uint64 const timeoutRemaining =
+                            runtime.ActiveUntil > now ? runtime.ActiveUntil - now : 0;
+                        output << "      Hard timeout remaining: "
+                               << timeoutRemaining << " second(s)\n";
+                    }
                 }
                 else
                 {

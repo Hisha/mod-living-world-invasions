@@ -34,6 +34,7 @@ private:
     void SaveRuntime(InvasionRuntime const& runtime);
     void DeleteRuntime(uint64 runtimeId);
     void CompleteRuntime(uint64 runtimeId, uint64 now);
+    void TimeoutRuntime(uint64 runtimeId, uint64 now);
     uint64 GenerateRuntimeId(uint64 now);
 
     std::unordered_map<uint64, InvasionRuntime> _runtimes;
