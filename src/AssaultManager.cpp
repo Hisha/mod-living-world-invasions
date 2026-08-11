@@ -3,6 +3,8 @@
 #include "Creature.h"
 #include "CreatureAI.h"
 #include "Log.h"
+#include "GridNotifiers.h"
+#include "CellImpl.h"
 #include "Map.h"
 #include "MapMgr.h"
 #include "RuntimeEntityGroup.h"
@@ -34,7 +36,8 @@ bool AssaultManager::Start(
     uint64 runtimeId,
     uint32 spawnGroupId,
     uint32 radiusYards,
-    uint32 reacquireIntervalMs)
+    uint32 reacquireIntervalMs,
+    uint32 targetPolicy)
 {
     RuntimeEntityGroup* group = sRuntimeEntityGroupMgr.FindLatestGroup(runtimeId, spawnGroupId);
     if (!group)
@@ -57,16 +60,18 @@ bool AssaultManager::Start(
         ? DefaultReacquireIntervalMs
         : std::max<uint32>(MinimumReacquireIntervalMs, reacquireIntervalMs);
     assault.ReacquireTimerMs = 0;
+    assault.TargetPolicy = targetPolicy;
 
     _activeAssaults[group->Id] = assault;
 
     LOG_INFO("server.loading",
         "[LWI Assault] Runtime #{} runtime entity group #{} started assault behavior "
-        "with {:.1f} yard search radius and {} ms reacquire interval.",
+        "with {:.1f} yard search radius, {} ms reacquire interval, target policy {}.",
         runtimeId,
         group->Id,
         assault.SearchRadius,
-        assault.ReacquireIntervalMs);
+        assault.ReacquireIntervalMs,
+        assault.TargetPolicy);
 
     TryAcquireTargets(_activeAssaults[group->Id]);
     return true;
@@ -140,19 +145,96 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
             continue;
         }
 
-        Unit* target = creature->SelectNearestTarget(assault.SearchRadius);
-        if (!target || !target->IsAlive() || target == creature)
+        Creature* target = nullptr;
+        float bestDistance = assault.SearchRadius + 1.0f;
+        bool targetIsServiceNpc = false;
+
+        std::list<Creature*> nearbyCreatures;
+        Acore::AnyCreatureInObjectRangeCheck check(creature, assault.SearchRadius);
+        Acore::CreatureListSearcher<Acore::AnyCreatureInObjectRangeCheck> searcher(creature, nearbyCreatures, check);
+        Cell::VisitAllObjects(creature, searcher, assault.SearchRadius);
+
+        for (Creature* candidate : nearbyCreatures)
+        {
+            if (!candidate || candidate == creature || !candidate->IsAlive())
+            {
+                continue;
+            }
+
+            bool const normallyHostile = creature->IsValidAttackTarget(candidate);
+            uint32 const npcFlags = candidate->GetCreatureTemplate()->npcflag;
+
+            // parameter3 is an assault target-policy bitmask:
+            //   bit 0 (1) = quest givers
+            //   bit 1 (2) = vendors
+            //   bit 2 (4) = flight masters
+            bool const allowedQuestGiver =
+                (assault.TargetPolicy & 1u) != 0 &&
+                (npcFlags & UNIT_NPC_FLAG_QUESTGIVER) != 0;
+            bool const allowedVendor =
+                (assault.TargetPolicy & 2u) != 0 &&
+                (npcFlags & UNIT_NPC_FLAG_VENDOR) != 0;
+            bool const allowedFlightMaster =
+                (assault.TargetPolicy & 4u) != 0 &&
+                (npcFlags & UNIT_NPC_FLAG_FLIGHTMASTER) != 0;
+
+            bool const allowedServiceNpc =
+                allowedQuestGiver || allowedVendor || allowedFlightMaster;
+
+            if (!normallyHostile && !allowedServiceNpc)
+            {
+                continue;
+            }
+
+            // Never select an NPC that the core marks as non-attackable.
+            if (candidate->HasUnitFlag(UNIT_FLAG_NON_ATTACKABLE) ||
+                candidate->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE))
+            {
+                continue;
+            }
+
+            float const distance = creature->GetDistance(candidate);
+
+            // Prefer ordinary hostile defenders over passive service NPCs.
+            // Among targets in the same class, take the nearest.
+            if (target)
+            {
+                if (!targetIsServiceNpc && allowedServiceNpc && !normallyHostile)
+                {
+                    continue;
+                }
+
+                if (targetIsServiceNpc && normallyHostile)
+                {
+                    // Hostile defender outranks the current passive service target.
+                }
+                else if (distance >= bestDistance)
+                {
+                    continue;
+                }
+            }
+
+            target = candidate;
+            bestDistance = distance;
+            targetIsServiceNpc = allowedServiceNpc && !normallyHostile;
+        }
+
+        if (!target)
         {
             continue;
         }
 
-        // SelectNearestTarget uses AzerothCore hostility/attackability rules, but
-        // unlike passive proximity aggro this explicitly tells the invasion AI
-        // to begin combat. This allows an invader to initiate against valid
-        // settlement NPCs such as vendors or quest givers that do not themselves
-        // proactively aggro the invasion force.
         if (creature->AI())
         {
+            // For explicitly permitted passive service NPCs, force the combat
+            // relationship from the invader side before handing control to AI.
+            if (targetIsServiceNpc)
+            {
+                creature->SetInCombatWith(target);
+                target->SetInCombatWith(creature);
+                creature->Attack(target, true);
+            }
+
             creature->AI()->AttackStart(target);
 
             if (creature->GetVictim() == target || creature->IsInCombat())
@@ -161,12 +243,13 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
                 ++newlyEngaged;
 
                 LOG_INFO("server.loading",
-                    "[LWI Assault] Runtime #{} creature {} member {} engaged target {} GUID {}.",
+                    "[LWI Assault] Runtime #{} creature {} member {} engaged target {} GUID {}{}.",
                     assault.RuntimeId,
                     entity.Entry,
                     entity.MemberId,
                     target->GetEntry(),
-                    target->GetGUID().ToString());
+                    target->GetGUID().ToString(),
+                    targetIsServiceNpc ? " via explicit service-NPC assault policy" : "");
             }
         }
     }

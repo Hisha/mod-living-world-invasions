@@ -14,6 +14,7 @@ struct ActiveAssault
     uint32 SpawnGroupId = 0;
     float SearchRadius = 40.0f;
     uint32 ReacquireIntervalMs = 2000;
+    uint32 TargetPolicy = 0;
     uint32 ReacquireTimerMs = 0;
 };
 
@@ -25,7 +26,7 @@ public:
     void Reset();
     void Update(uint32 diff);
 
-    bool Start(uint64 runtimeId, uint32 spawnGroupId, uint32 radiusYards, uint32 reacquireIntervalMs);
+    bool Start(uint64 runtimeId, uint32 spawnGroupId, uint32 radiusYards, uint32 reacquireIntervalMs, uint32 targetPolicy);
     void CancelRuntime(uint64 runtimeId);
 
 private:

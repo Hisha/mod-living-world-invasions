@@ -355,7 +355,7 @@ VALUES
 --   target_id  = spawn_group_id
 --   parameter1 = dialogue_id
 --   parameter2 = speaker spawn_member_id (0 = first available creature)
---   parameter3 = reserved
+--   parameter3 = target policy bitmask: 1 quest givers, 2 vendors, 4 flight masters
 --
 -- World Announcement:
 --   target_id  = announcement_id
@@ -373,7 +373,7 @@ VALUES
 --   target_id  = spawn_group_id
 --   parameter1 = search radius in yards (0 = 40)
 --   parameter2 = reacquire interval in milliseconds (0 = 2000)
---   parameter3 = reserved
+--   parameter3 = target policy bitmask: 1 quest givers, 2 vendors, 4 flight masters
 --
 -- Spell (v1):
 --   target_id  = caster spawn_group_id
