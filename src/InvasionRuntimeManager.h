@@ -20,6 +20,7 @@ public:
 
     bool StartInvasion(uint32 invasionId);
     bool AdvanceRuntime(uint64 runtimeId);
+    bool FailRuntime(uint64 runtimeId, char const* reason);
     void AbortAll();
 
     [[nodiscard]] uint32 GetActiveRuntimeCount() const;

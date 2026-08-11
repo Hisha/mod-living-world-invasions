@@ -412,6 +412,34 @@ void InvasionScheduler::NotifyInvasionTimedOut(uint32 invasionId, uint64 now)
         definition->Id, definition->Name, cooldown);
 }
 
+void InvasionScheduler::NotifyInvasionFailed(uint32 invasionId, uint64 now)
+{
+    InvasionDefinition const* definition = sInvasionMgr.GetDefinition(invasionId);
+    auto runtimeIterator = _runtime.find(invasionId);
+    if (!definition || runtimeIterator == _runtime.end())
+    {
+        return;
+    }
+
+    SchedulerRuntimeRecord& runtime = runtimeIterator->second;
+    uint32 const cooldown = RandomBetween(
+        definition->MinimumCooldownSeconds,
+        definition->MaximumCooldownSeconds);
+
+    runtime.State = InvasionRuntimeState::Cooldown;
+    runtime.NextEligibleAt = now + cooldown;
+    runtime.ActiveSince = 0;
+    runtime.ActiveUntil = 0;
+    SaveRuntime(runtime);
+
+    LOG_INFO("server.loading",
+        "[LWI Scheduler] Invasion {} ({}) failed because its active force was defeated "
+        "and entered cooldown for {} second(s).",
+        definition->Id,
+        definition->Name,
+        cooldown);
+}
+
 void InvasionScheduler::NotifyInvasionStartFailed(uint32 invasionId)
 {
     auto runtimeIterator = _runtime.find(invasionId);

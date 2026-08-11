@@ -159,6 +159,37 @@ bool InvasionRuntimeManager::AdvanceRuntime(uint64 runtimeId)
     return true;
 }
 
+bool InvasionRuntimeManager::FailRuntime(uint64 runtimeId, char const* reason)
+{
+    auto iterator = _runtimes.find(runtimeId);
+    if (iterator == _runtimes.end())
+    {
+        return false;
+    }
+
+    uint64 const now = UnixTimeNow();
+    uint32 const invasionId = iterator->second.GetInvasionId();
+    InvasionDefinition const* definition = sInvasionMgr.GetDefinition(invasionId);
+
+    LOG_INFO("server.loading",
+        "[LWI Runtime] Runtime #{} for invasion {} ({}) failed: {}.",
+        runtimeId,
+        invasionId,
+        definition ? definition->Name : "unknown",
+        reason ? reason : "unspecified failure");
+
+    sMovementController.CancelRuntime(runtimeId);
+    sInvasionSpawnMgr.CleanupRuntime(runtimeId);
+    sRuntimeSignalMgr.ClearRuntime(runtimeId);
+    DeleteRuntime(runtimeId);
+
+    _runtimeByInvasion.erase(invasionId);
+    _runtimes.erase(iterator);
+
+    sInvasionScheduler.NotifyInvasionFailed(invasionId, now);
+    return true;
+}
+
 void InvasionRuntimeManager::AbortAll()
 {
     if (_runtimes.empty())

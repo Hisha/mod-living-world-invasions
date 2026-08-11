@@ -3,6 +3,7 @@
 #include "Creature.h"
 #include "IEntityProvider.h"
 #include "LivingWorldInvasions.h"
+#include "InvasionRuntimeManager.h"
 #include "Log.h"
 #include "Map.h"
 #include "MapMgr.h"
@@ -229,6 +230,7 @@ void MovementController::Update(uint32 diff)
     _updateTimerMs = MovementUpdateIntervalMs;
     uint64 const nowMs = static_cast<uint64>(getMSTime());
     std::vector<uint64> completed;
+    std::vector<uint64> defeatedRuntimes;
 
     for (auto& [runtimeGroupId, movement] : _activeMovements)
     {
@@ -236,6 +238,40 @@ void MovementController::Update(uint32 diff)
         if (!group || group->State != RuntimeEntityGroupState::Active)
         {
             completed.push_back(runtimeGroupId);
+            continue;
+        }
+
+        uint32 livingCreatures = 0;
+        for (RuntimeEntity const& entity : group->Entities)
+        {
+            if (entity.EntityType != static_cast<uint8>(EntityProviderType::Creature))
+            {
+                continue;
+            }
+
+            Map* map = sMapMgr->FindMap(entity.MapId, 0);
+            if (!map)
+            {
+                continue;
+            }
+
+            Creature* creature = map->GetCreature(entity.Guid);
+            if (creature && creature->IsAlive())
+            {
+                ++livingCreatures;
+            }
+        }
+
+        if (livingCreatures == 0)
+        {
+            LOG_INFO("server.loading",
+                "[LWI Movement] Runtime entity group #{} was defeated while following path {}. "
+                "No living creature entities remain.",
+                runtimeGroupId,
+                movement.PathId);
+
+            completed.push_back(runtimeGroupId);
+            defeatedRuntimes.push_back(movement.RuntimeId);
             continue;
         }
 
@@ -310,6 +346,16 @@ void MovementController::Update(uint32 diff)
     for (uint64 runtimeGroupId : completed)
     {
         _activeMovements.erase(runtimeGroupId);
+    }
+
+    std::sort(defeatedRuntimes.begin(), defeatedRuntimes.end());
+    defeatedRuntimes.erase(
+        std::unique(defeatedRuntimes.begin(), defeatedRuntimes.end()),
+        defeatedRuntimes.end());
+
+    for (uint64 runtimeId : defeatedRuntimes)
+    {
+        sInvasionRuntimeMgr.FailRuntime(runtimeId, "active movement force defeated");
     }
 }
 

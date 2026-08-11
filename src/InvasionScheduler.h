@@ -69,6 +69,7 @@ public:
     [[nodiscard]] std::string BuildStatusReport() const;
     void NotifyInvasionCompleted(uint32 invasionId, uint64 now);
     void NotifyInvasionTimedOut(uint32 invasionId, uint64 now);
+    void NotifyInvasionFailed(uint32 invasionId, uint64 now);
     void NotifyInvasionStartFailed(uint32 invasionId);
     [[nodiscard]] bool IsInvasionActive(uint32 invasionId) const;
     [[nodiscard]] std::vector<uint32> GetActiveInvasionIds() const;
