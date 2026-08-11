@@ -292,8 +292,8 @@ VALUES
 
 -- ===========================================================================
 -- Movement Path and Nodes
--- Short route near the current Westfall test spawn so it can complete inside
--- the 20-second timer stage.
+-- Long Westfall framework-test route ending at Sentinel Hill.
+-- Intermediate nodes keep MMAP path calculations road/terrain friendly.
 -- ===========================================================================
 
 INSERT INTO `lwi_movement_path`
@@ -308,7 +308,7 @@ VALUES
     100,
     'Westfall Scout Test Route',
     1,
-    'Temporary short route used to prove runtime group movement.'
+    'Long Westfall framework-test route used to prove MMAP movement and final-objective arrival.'
 );
 
 INSERT INTO `lwi_movement_node`

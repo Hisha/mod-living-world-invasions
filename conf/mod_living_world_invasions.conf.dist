@@ -4,14 +4,13 @@ LWI.Enable = 1
 LWI.Playerbots.Enable = 0
 LWI.Debug = 1
 
-# Log-only scheduler test settings. These deliberately use seconds so the framework can be observed quickly.
+# Scheduler timing settings. Development defaults are intentionally short for observation/testing.
 LWI.Scheduler.Enable = 1
 LWI.Scheduler.CheckIntervalSeconds = 5
 LWI.Scheduler.InitialDelayMinSeconds = 20
 LWI.Scheduler.InitialDelayMaxSeconds = 40
 LWI.Scheduler.NextDelayMinSeconds = 30
 LWI.Scheduler.NextDelayMaxSeconds = 60
-LWI.Scheduler.TestActiveDurationSeconds = 45
 
 # A value of 0 means unlimited.
 LWI.Scheduler.MaxActiveGlobal = 3
