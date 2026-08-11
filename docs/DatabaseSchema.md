@@ -141,3 +141,18 @@ Stores announcement text. Delivery scope and faction are supplied by the stage a
 `times_started` counts accepted starts. `times_completed` counts successful all-stage completions. A force-wipe failure enters cooldown but does not increment successful completion.
 
 `lwi_active_runtime` stores runtime ID, invasion ID, current stage, stage timestamps, and overall start time. Runtime world entities themselves are not persisted in this table.
+
+## Stage action type 7: Start Assault
+
+`Start Assault` turns the latest runtime entity group for a spawn group into an
+active assault force.
+
+- `target_id`: spawn group id
+- `parameter1`: target search radius in yards (`0` = 40)
+- `parameter2`: reacquire interval milliseconds (`0` = 2000, minimum 500)
+- `parameter3`: reserved
+
+Target selection still respects AzerothCore hostility and attackability. LWI
+forces the *invader* to initiate combat by calling its AI `AttackStart`, which
+avoids requiring the target NPC to be the side that proximity-aggros first.
+No faction-template database rows are modified.

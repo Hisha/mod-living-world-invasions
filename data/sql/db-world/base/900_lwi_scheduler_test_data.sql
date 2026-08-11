@@ -292,8 +292,8 @@ VALUES
 
 -- ===========================================================================
 -- Movement Path and Nodes
--- Long Westfall framework-test route ending at Sentinel Hill.
--- Intermediate nodes keep MMAP path calculations road/terrain friendly.
+-- Short route near the current Westfall test spawn so it can complete inside
+-- the 20-second timer stage.
 -- ===========================================================================
 
 INSERT INTO `lwi_movement_path`
@@ -308,7 +308,7 @@ VALUES
     100,
     'Westfall Scout Test Route',
     1,
-    'Long Westfall framework-test route used to prove MMAP movement and final-objective arrival.'
+    'Temporary short route used to prove runtime group movement.'
 );
 
 INSERT INTO `lwi_movement_node`
@@ -343,6 +343,7 @@ VALUES
 -- action_type: 4 = World Announcement
 -- action_type: 5 = Sound
 -- action_type: 6 = Spell
+-- action_type: 7 = Start Assault
 --
 -- Start Movement:
 --   target_id  = spawn_group_id
@@ -367,6 +368,12 @@ VALUES
 --   parameter1 = sound_id
 --   parameter2 = source spawn_member_id (0 = first available creature)
 --   parameter3 = playback mode (0 distance/positional, 1 direct)
+--
+-- Start Assault:
+--   target_id  = spawn_group_id
+--   parameter1 = search radius in yards (0 = 40)
+--   parameter2 = reacquire interval in milliseconds (0 = 2000)
+--   parameter3 = reserved
 --
 -- Spell (v1):
 --   target_id  = caster spawn_group_id

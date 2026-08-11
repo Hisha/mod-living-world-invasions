@@ -231,3 +231,41 @@ stage action(s)
 ```
 
 The exact physical order of independent definitions is flexible, but stage actions should be added only after their referenced IDs are known.
+
+## Assaulting a settlement
+
+Use stage action type `7` (`Start Assault`) when a spawned invasion group has
+reached an objective and should actively initiate combat instead of waiting for
+normal proximity aggro.
+
+Mapping:
+
+| Field | Meaning |
+|---|---|
+| `target_id` | Spawn group whose latest runtime entity group becomes the assault force |
+| `parameter1` | Search radius in yards; `0` uses 40 yards |
+| `parameter2` | Reacquire interval in milliseconds; `0` uses 2000 ms; minimum 500 ms |
+| `parameter3` | Reserved |
+
+Example:
+
+```sql
+INSERT INTO lwi_stage_action
+(id, stage_id, action_order, action_type, target_id,
+ parameter1, parameter2, parameter3, delay_seconds, enabled, comment)
+VALUES
+(20050, 2002, 10, 7, 200, 60, 2000, 0, 0, 1,
+ 'Defias assault Sentinel Hill after arrival');
+```
+
+The assault action does **not** replace AzerothCore combat AI. It periodically
+looks for the nearest target AzerothCore considers hostile and attackable and
+explicitly calls `AttackStart` from the invader side. Once combat starts,
+CreatureAI/SmartAI and normal AzerothCore combat behavior take over.
+
+This is particularly useful for settlement NPCs such as vendors, quest givers,
+and similar civilians that may not proactively proximity-aggro the invasion
+force. It does not globally modify faction templates or NPC definitions.
+
+The behavior remains active for that runtime group until the invasion runtime
+ends, fails, times out, or is aborted.

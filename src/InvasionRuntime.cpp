@@ -2,6 +2,7 @@
 
 #include "Log.h"
 #include "AnnouncementManager.h"
+#include "AssaultManager.h"
 #include "DialogueManager.h"
 #include "InvasionSpawnManager.h"
 #include "MovementController.h"
@@ -26,6 +27,7 @@ constexpr uint8 DialogueActionType = 3;
 constexpr uint8 WorldAnnouncementActionType = 4;
 constexpr uint8 SoundActionType = 5;
 constexpr uint8 SpellActionType = 6;
+constexpr uint8 StartAssaultActionType = 7;
 }
 
 InvasionRuntime::InvasionRuntime(uint64 runtimeId, uint32 invasionId,
@@ -135,6 +137,7 @@ bool InvasionRuntime::Advance(uint64 now)
             _runtimeId, _invasionId);
 
         sMovementController.CancelRuntime(_runtimeId);
+        sAssaultManager.CancelRuntime(_runtimeId);
         sInvasionSpawnMgr.CleanupRuntime(_runtimeId);
         return true;
     }
@@ -256,6 +259,25 @@ bool InvasionRuntime::BeginCurrentStage(uint64 now)
                         action.Parameter1,
                         action.Parameter2,
                         action.Parameter3);
+                }
+            }
+
+            if (action.ActionType == StartAssaultActionType)
+            {
+                if (!sAssaultManager.Start(
+                    _runtimeId,
+                    action.TargetId,
+                    action.Parameter1,
+                    action.Parameter2))
+                {
+                    LOG_ERROR("server.loading",
+                        "[LWI Runtime] Runtime #{} failed assault action {} "
+                        "(spawn group {}, radius {}, reacquire interval {}).",
+                        _runtimeId,
+                        action.Id,
+                        action.TargetId,
+                        action.Parameter1,
+                        action.Parameter2);
                 }
             }
         }

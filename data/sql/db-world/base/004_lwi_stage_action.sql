@@ -5,6 +5,7 @@
 -- action_type 4 = World Announcement
 -- action_type 5 = Sound
 -- action_type 6 = Spell (scripted event cast)
+-- action_type 7 = Start Assault
 --
 -- Start Movement parameter mapping:
 --   target_id  = spawn_group_id whose latest runtime entity group should move
@@ -54,3 +55,15 @@ CREATE TABLE IF NOT EXISTS `lwi_stage_action` (
 -- Spell Actions are explicit invasion-scripted casts only. Native creature
 -- combat spells, automatic self-buffs, rotations, CreatureAI and SmartAI remain unchanged.
 
+
+-- Start Assault parameter mapping:
+--   target_id  = spawn_group_id whose latest runtime entity group should assault
+--   parameter1 = search radius in yards (0 = 40)
+--   parameter2 = target reacquire interval in milliseconds (0 = 2000; minimum 500)
+--   parameter3 = reserved
+--
+-- Assault uses AzerothCore hostility/attackability rules to select a target,
+-- then explicitly calls the invader AI AttackStart. This lets invasion NPCs
+-- initiate combat against valid settlement NPCs that may not proximity-aggro
+-- the invaders themselves. Native combat AI/SmartAI controls the fight after
+-- engagement begins.
