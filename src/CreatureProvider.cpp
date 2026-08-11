@@ -9,6 +9,7 @@
 #include "Random.h"
 #include "TemporarySummon.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace lwi
@@ -98,6 +99,29 @@ bool CreatureProvider::Spawn(
                 member.EntityEntry,
                 member.Id);
             continue;
+        }
+
+        if (member.LevelOverride > 0)
+        {
+            uint8 const requestedLevel = static_cast<uint8>(std::min<uint16>(member.LevelOverride, 255));
+            summon->SetLevel(requestedLevel);
+
+            // Recalculate level-dependent creature stats after changing the level.
+            // Without this, the displayed level can change while health/mana/damage
+            // remain based on the original creature-template level.
+            summon->UpdateAllStats();
+            summon->SetFullHealth();
+            if (summon->GetMaxPower(POWER_MANA) > 0)
+            {
+                summon->SetPower(POWER_MANA, summon->GetMaxPower(POWER_MANA));
+            }
+
+            LOG_INFO("server.loading",
+                "[LWI Creature] Runtime #{} applied level override {} to creature {} from member {}.",
+                runtimeId,
+                static_cast<uint32>(requestedLevel),
+                member.EntityEntry,
+                member.Id);
         }
 
         RuntimeEntity entity;
