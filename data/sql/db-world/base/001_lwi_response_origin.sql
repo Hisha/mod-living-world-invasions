@@ -12,3 +12,38 @@ CREATE TABLE IF NOT EXISTS `lwi_response_origin` (
     KEY `idx_lwi_response_origin_map` (`map_id`),
     KEY `idx_lwi_response_origin_enabled` (`enabled`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ===========================================================================
+-- Response Origins Clear Data
+-- ===========================================================================
+
+DELETE FROM `lwi_response_origin`
+WHERE `id` IN (1,2,3,4,5,6,7,8);
+
+-- ===========================================================================
+-- Response Origins Defaults
+-- ===========================================================================
+
+INSERT INTO `lwi_response_origin`
+(
+    `id`,
+    `name`,
+    `map_id`,
+    `team`,
+    `max_active_default`,
+    `enabled`,
+    `comment`
+)
+VALUES
+    (1, 'Stormwind', 0, 1, 1, 1, 'Stormwind Response Settings.'),
+    (2, 'Ironforge', 0, 1, 1, 1, 'Ironforge Response Settings.'),
+    (3, 'Darnassus', 0, 1, 1, 1, 'Darnassus Response Settings.'),
+    (4, 'The Exodar', 0, 1, 1, 1, 'The Exodar Response Settings.'),
+    (5, 'Orgrimmar', 0, 1, 1, 1, 'Orgrimmar Response Settings.'),
+    (6, 'Undercity', 0, 1, 1, 1, 'Undercity Response Settings.'),
+    (7, 'Thunder Bluff', 0, 1, 1, 1, 'Thunder Bluff Response Settings.'),
+    (8, 'Silvermoon City', 0, 1, 1, 1, 'Silvermoon City Response Settings.');
+    
+    
+    
+    
