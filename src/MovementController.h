@@ -37,6 +37,7 @@ struct ActiveRuntimeMovement
     std::size_t NodeIndex = 0;
     RuntimeMovementState State = RuntimeMovementState::Moving;
     uint64 WaitEndsAtMs = 0;
+    uint64 ArrivalGraceStartedAtMs = 0;
     std::vector<RuntimeMovementDestination> Destinations;
 };
 
@@ -59,7 +60,7 @@ private:
 
     bool BeginCurrentNode(ActiveRuntimeMovement& movement);
     void ResumeInterruptedCreatures(ActiveRuntimeMovement& movement);
-    bool HasGroupReachedCurrentNode(ActiveRuntimeMovement const& movement) const;
+    bool HasGroupReachedCurrentNode(ActiveRuntimeMovement& movement, uint64 nowMs);
     void AdvanceOrComplete(uint64 runtimeGroupId, ActiveRuntimeMovement& movement, uint64 nowMs);
     void CompleteMovement(uint64 runtimeGroupId, ActiveRuntimeMovement& movement);
 

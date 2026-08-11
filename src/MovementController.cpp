@@ -23,6 +23,9 @@ namespace
 {
 constexpr uint32 MovementUpdateIntervalMs = 250;
 constexpr float ArrivalTolerance = 2.0f;
+constexpr float FormationArrivalTolerance = 10.0f;
+constexpr uint32 FormationArrivalPercent = 75;
+constexpr uint32 FormationArrivalGraceMs = 3000;
 
 struct FormationOffset
 {
@@ -271,7 +274,7 @@ void MovementController::Update(uint32 diff)
 
         ResumeInterruptedCreatures(movement);
 
-        if (!HasGroupReachedCurrentNode(movement))
+        if (!HasGroupReachedCurrentNode(movement, nowMs))
         {
             continue;
         }
@@ -329,6 +332,7 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
     uint32 moved = 0;
     std::unordered_map<uint8, uint32> roleSlots;
     movement.Destinations.clear();
+    movement.ArrivalGraceStartedAtMs = 0;
 
     for (RuntimeEntity const& entity : group->Entities)
     {
@@ -547,14 +551,20 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
     }
 }
 
-bool MovementController::HasGroupReachedCurrentNode(ActiveRuntimeMovement const& movement) const
+bool MovementController::HasGroupReachedCurrentNode(
+    ActiveRuntimeMovement& movement,
+    uint64 nowMs)
 {
     if (movement.Destinations.empty())
     {
+        movement.ArrivalGraceStartedAtMs = 0;
         return false;
     }
 
-    uint32 movable = 0;
+    uint32 living = 0;
+    uint32 exactArrivals = 0;
+    uint32 formationArrivals = 0;
+    bool anyInCombat = false;
 
     for (RuntimeMovementDestination const& destination : movement.Destinations)
     {
@@ -567,18 +577,98 @@ bool MovementController::HasGroupReachedCurrentNode(ActiveRuntimeMovement const&
         Creature* creature = map->GetCreature(destination.Guid);
         if (!creature || !creature->IsAlive())
         {
+            // Dead members no longer hold the formation at a movement node.
             continue;
         }
 
-        ++movable;
+        ++living;
 
-        if (creature->GetDistance(destination.X, destination.Y, destination.Z) > ArrivalTolerance)
+        if (creature->IsInCombat())
         {
-            return false;
+            anyInCombat = true;
+        }
+
+        float const distance = creature->GetDistance(
+            destination.X,
+            destination.Y,
+            destination.Z);
+
+        if (distance <= ArrivalTolerance)
+        {
+            ++exactArrivals;
+            ++formationArrivals;
+        }
+        else if (distance <= FormationArrivalTolerance)
+        {
+            ++formationArrivals;
         }
     }
 
-    return movable > 0;
+    if (living == 0)
+    {
+        movement.ArrivalGraceStartedAtMs = 0;
+        return false;
+    }
+
+    // Ideal case: every surviving creature reached its exact MMAP endpoint.
+    if (exactArrivals == living)
+    {
+        movement.ArrivalGraceStartedAtMs = 0;
+        return true;
+    }
+
+    // Never advance a formation while one of its survivors is still fighting.
+    if (anyInCombat)
+    {
+        movement.ArrivalGraceStartedAtMs = 0;
+        return false;
+    }
+
+    // After combat/casualties, exact formation slots can become imperfect.
+    // If at least 75% of the surviving formation is within 10 yards of its
+    // assigned endpoint, give the remainder a brief regroup window and then
+    // allow the strategic movement node to complete.
+    uint32 const requiredArrivals =
+        std::max<uint32>(1, (living * FormationArrivalPercent + 99) / 100);
+
+    if (formationArrivals < requiredArrivals)
+    {
+        movement.ArrivalGraceStartedAtMs = 0;
+        return false;
+    }
+
+    if (movement.ArrivalGraceStartedAtMs == 0)
+    {
+        movement.ArrivalGraceStartedAtMs = nowMs;
+
+        LOG_INFO("server.loading",
+            "[LWI Movement] Runtime entity group #{} has {}/{} surviving creature(s) within {:.1f} yards "
+            "of their path {} node formation destinations; starting {} ms regroup grace.",
+            movement.RuntimeGroupId,
+            formationArrivals,
+            living,
+            FormationArrivalTolerance,
+            movement.PathId,
+            FormationArrivalGraceMs);
+
+        return false;
+    }
+
+    if (nowMs - movement.ArrivalGraceStartedAtMs < FormationArrivalGraceMs)
+    {
+        return false;
+    }
+
+    LOG_INFO("server.loading",
+        "[LWI Movement] Runtime entity group #{} accepted formation arrival at path {} node with "
+        "{}/{} surviving creature(s) in position after regroup grace.",
+        movement.RuntimeGroupId,
+        movement.PathId,
+        formationArrivals,
+        living);
+
+    movement.ArrivalGraceStartedAtMs = 0;
+    return true;
 }
 
 void MovementController::AdvanceOrComplete(
