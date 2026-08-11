@@ -3,8 +3,6 @@
 #include "Creature.h"
 #include "CreatureAI.h"
 #include "Log.h"
-#include "GridNotifiers.h"
-#include "CellImpl.h"
 #include "Map.h"
 #include "MapMgr.h"
 #include "RuntimeEntityGroup.h"
@@ -149,19 +147,42 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
         float bestDistance = assault.SearchRadius + 1.0f;
         bool targetIsServiceNpc = false;
 
-        std::list<Creature*> nearbyCreatures;
-        Acore::AnyCreatureInObjectRangeCheck check(creature, assault.SearchRadius);
-        Acore::CreatureListSearcher<Acore::AnyCreatureInObjectRangeCheck> searcher(creature, nearbyCreatures, check);
-        Cell::VisitAllObjects(creature, searcher, assault.SearchRadius);
-
-        for (Creature* candidate : nearbyCreatures)
+        // Keep the core's normal hostile acquisition path for defenders that
+        // already participate in AzerothCore faction combat.
+        if (Unit* hostile = creature->SelectNearestTarget(assault.SearchRadius))
         {
+            target = hostile->ToCreature();
+            if (target)
+            {
+                bestDistance = creature->GetDistance(target);
+            }
+        }
+
+        // Service NPCs such as quest givers/vendors/flight masters can be
+        // passive toward the invasion even when they are intended assault
+        // targets.  Scan the map's normal spawned-creature store explicitly
+        // instead of relying on grid notifier helpers whose API differs across
+        // AzerothCore revisions.
+        for (auto const& [spawnId, candidate] : map->GetCreatureBySpawnIdStore())
+        {
+            (void)spawnId;
+
             if (!candidate || candidate == creature || !candidate->IsAlive())
             {
                 continue;
             }
 
-            bool const normallyHostile = creature->IsValidAttackTarget(candidate);
+            if (candidate->GetMap() != map)
+            {
+                continue;
+            }
+
+            float const distance = creature->GetDistance(candidate);
+            if (distance > assault.SearchRadius)
+            {
+                continue;
+            }
+
             uint32 const npcFlags = candidate->GetCreatureTemplate()->npcflag;
 
             // parameter3 is an assault target-policy bitmask:
@@ -178,45 +199,33 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
                 (assault.TargetPolicy & 4u) != 0 &&
                 (npcFlags & UNIT_NPC_FLAG_FLIGHTMASTER) != 0;
 
-            bool const allowedServiceNpc =
-                allowedQuestGiver || allowedVendor || allowedFlightMaster;
-
-            if (!normallyHostile && !allowedServiceNpc)
+            if (!allowedQuestGiver && !allowedVendor && !allowedFlightMaster)
             {
                 continue;
             }
 
-            // Never select an NPC that the core marks as non-attackable.
             if (candidate->HasUnitFlag(UNIT_FLAG_NON_ATTACKABLE) ||
                 candidate->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE))
             {
                 continue;
             }
 
-            float const distance = creature->GetDistance(candidate);
-
-            // Prefer ordinary hostile defenders over passive service NPCs.
-            // Among targets in the same class, take the nearest.
-            if (target)
+            // Ordinary hostile defenders keep priority.  A service NPC is used
+            // when no normal hostile target is available.  Among service NPCs,
+            // choose the nearest.
+            if (target && !targetIsServiceNpc)
             {
-                if (!targetIsServiceNpc && allowedServiceNpc && !normallyHostile)
-                {
-                    continue;
-                }
+                continue;
+            }
 
-                if (targetIsServiceNpc && normallyHostile)
-                {
-                    // Hostile defender outranks the current passive service target.
-                }
-                else if (distance >= bestDistance)
-                {
-                    continue;
-                }
+            if (targetIsServiceNpc && distance >= bestDistance)
+            {
+                continue;
             }
 
             target = candidate;
             bestDistance = distance;
-            targetIsServiceNpc = allowedServiceNpc && !normallyHostile;
+            targetIsServiceNpc = true;
         }
 
         if (!target)
