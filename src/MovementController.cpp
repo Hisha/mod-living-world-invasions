@@ -26,6 +26,7 @@ constexpr float ArrivalTolerance = 2.0f;
 constexpr float FormationArrivalTolerance = 10.0f;
 constexpr uint32 FormationArrivalPercent = 75;
 constexpr uint32 FormationArrivalGraceMs = 3000;
+constexpr float FinalObjectiveArrivalRadius = 20.0f;
 
 struct FormationOffset
 {
@@ -561,9 +562,20 @@ bool MovementController::HasGroupReachedCurrentNode(
         return false;
     }
 
+    auto const* nodes = sInvasionMgr.GetMovementNodes(movement.PathId);
+    if (!nodes || movement.NodeIndex >= nodes->size())
+    {
+        movement.ArrivalGraceStartedAtMs = 0;
+        return false;
+    }
+
+    MovementNodeDefinition const& node = (*nodes)[movement.NodeIndex];
+    bool const isFinalNode = movement.NodeIndex + 1 >= nodes->size();
+
     uint32 living = 0;
     uint32 exactArrivals = 0;
     uint32 formationArrivals = 0;
+    uint32 objectiveArrivals = 0;
     bool anyInCombat = false;
 
     for (RuntimeMovementDestination const& destination : movement.Destinations)
@@ -577,7 +589,6 @@ bool MovementController::HasGroupReachedCurrentNode(
         Creature* creature = map->GetCreature(destination.Guid);
         if (!creature || !creature->IsAlive())
         {
-            // Dead members no longer hold the formation at a movement node.
             continue;
         }
 
@@ -588,19 +599,24 @@ bool MovementController::HasGroupReachedCurrentNode(
             anyInCombat = true;
         }
 
-        float const distance = creature->GetDistance(
+        float const formationDistance = creature->GetDistance(
             destination.X,
             destination.Y,
             destination.Z);
 
-        if (distance <= ArrivalTolerance)
+        if (formationDistance <= ArrivalTolerance)
         {
             ++exactArrivals;
             ++formationArrivals;
         }
-        else if (distance <= FormationArrivalTolerance)
+        else if (formationDistance <= FormationArrivalTolerance)
         {
             ++formationArrivals;
+        }
+
+        if (creature->GetDistance(node.X, node.Y, node.Z) <= FinalObjectiveArrivalRadius)
+        {
+            ++objectiveArrivals;
         }
     }
 
@@ -610,26 +626,48 @@ bool MovementController::HasGroupReachedCurrentNode(
         return false;
     }
 
-    // Ideal case: every surviving creature reached its exact MMAP endpoint.
-    if (exactArrivals == living)
+    uint32 const requiredArrivals =
+        std::max<uint32>(1, (living * FormationArrivalPercent + 99) / 100);
+
+    // The final strategic node is an objective area, not another parade-ground
+    // formation check. Once enough surviving members reach the objective radius,
+    // the route is complete even if they are already fighting defenders.
+    if (isFinalNode && objectiveArrivals >= requiredArrivals)
+    {
+        LOG_INFO("server.loading",
+            "[LWI Movement] Runtime entity group #{} reached final objective for path {} node {}: "
+            "{}/{} surviving creature(s) within {:.1f} yards. Combat does not block final arrival.",
+            movement.RuntimeGroupId,
+            movement.PathId,
+            node.NodeOrder,
+            objectiveArrivals,
+            living,
+            FinalObjectiveArrivalRadius);
+
+        movement.ArrivalGraceStartedAtMs = 0;
+        return true;
+    }
+
+    // Ideal intermediate-node case: every survivor reached its exact endpoint.
+    if (!isFinalNode && exactArrivals == living)
     {
         movement.ArrivalGraceStartedAtMs = 0;
         return true;
     }
 
-    // Never advance a formation while one of its survivors is still fighting.
-    if (anyInCombat)
+    // Intermediate travel nodes should not advance while survivors are fighting.
+    if (!isFinalNode && anyInCombat)
     {
         movement.ArrivalGraceStartedAtMs = 0;
         return false;
     }
 
-    // After combat/casualties, exact formation slots can become imperfect.
-    // If at least 75% of the surviving formation is within 10 yards of its
-    // assigned endpoint, give the remainder a brief regroup window and then
-    // allow the strategic movement node to complete.
-    uint32 const requiredArrivals =
-        std::max<uint32>(1, (living * FormationArrivalPercent + 99) / 100);
+    // Final node has not yet reached the objective threshold.
+    if (isFinalNode)
+    {
+        movement.ArrivalGraceStartedAtMs = 0;
+        return false;
+    }
 
     if (formationArrivals < requiredArrivals)
     {
