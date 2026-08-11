@@ -22,7 +22,7 @@ INSERT INTO lwi_invasion_stage(id,invasion_id,stage_order,name,duration_seconds,
 INSERT INTO lwi_invasion_stage(id,invasion_id,stage_order,name,duration_seconds,completion_type,completion_target_id,enabled,comment) VALUES(1002,1,20,'Defias Establish Control',600,0,0,1,'Defias establish control of Sentinel Hill');
 INSERT INTO lwi_invasion_stage(id,invasion_id,stage_order,name,duration_seconds,completion_type,completion_target_id,enabled,comment) VALUES(1003,1,30,'Defias Leadership Arrives',600,0,0,1,'Defias Leadership arrives at Sentinel Hill');
 INSERT INTO lwi_invasion_stage(id,invasion_id,stage_order,name,duration_seconds,completion_type,completion_target_id,enabled,comment) VALUES(1004,1,40,'Stormwind Response',600,0,0,1,'Stormwind response forces heads to Sentinel Hill');
-INSERT INTO lwi_invasion_stage(id,invasion_id,stage_order,name,duration_seconds,completion_type,completion_target_id,enabled,comment) VALUES(1005,1,10,'Stormwind vs Defias',0,1,200,1,'Final battle to destroy the Defias at Sentinel Hill');
+INSERT INTO lwi_invasion_stage(id,invasion_id,stage_order,name,duration_seconds,completion_type,completion_target_id,enabled,comment) VALUES(1005,1,50,'Stormwind vs Defias',0,1,200,1,'Final battle to destroy the Defias at Sentinel Hill');
 
 -- lwi_stage_action():
 
