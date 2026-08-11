@@ -1,5 +1,5 @@
 -- lwi_invasion table(Name the invasion):
-INSERT INTO lwi_invasion(name,map_id,zone_id,team,response_origin_id, recommended_min_level,recommended_max_level,selection_weight,minimum_cooldown_seconds,maximum_cooldown_seconds,maximum_runtime_seconds,allow_random_start,enabled,comment) VALUES ('Defias Westfall Invasion',0,40,1,1,10,20,100,79200,115200,3600,1,1,'Defias attack/control Sentinel Hill');
+INSERT INTO lwi_invasion(name,map_id,zone_id,team,response_origin_id, recommended_min_level,recommended_max_level,selection_weight,minimum_cooldown_seconds,maximum_cooldown_seconds,maximum_runtime_seconds,allow_random_start,enabled,comment) VALUES ('Defias Westfall Invasion',0,40,1,1,10,20,100,79200,115200,3600,1,0,'Defias attack/control Sentinel Hill');
 
 -- lwi_invasion_stage(The stages of the invasion):
 INSERT INTO lwi_invasion_stage(id,invasion_id,stage_order,name,duration_seconds,completion_type,completion_target_id,enabled,comment) VALUES(1001,1,10,'Defias Scouts',600,0,0,1,'Defias Scouts invade Sentinel Hill');
