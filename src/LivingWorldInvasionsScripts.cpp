@@ -4,6 +4,7 @@
 #include "InvasionRuntimeManager.h"
 #include "InvasionSpawnManager.h"
 #include "LivingWorldInvasions.h"
+#include "LwiCreatureTemplateManager.h"
 #include "RuntimeSignalManager.h"
 
 #include "ConfigValueCache.h"
@@ -74,6 +75,22 @@ public:
             sInvasionRuntimeMgr.Reset();
             sInvasionScheduler.Reset();
             return;
+        }
+
+        // On initial world startup this hook runs before ObjectMgr loads
+        // creature_template. Materialize LWI-owned derived templates now so the
+        // normal AzerothCore creature-template loader sees them on this startup.
+        //
+        // A config reload occurs after ObjectMgr is already populated; do not
+        // rebuild generated creature entries in that case. Template-definition
+        // changes therefore intentionally require a worldserver restart.
+        if (!reload)
+        {
+            if (!sLwiCreatureTemplateMgr.MaterializeStartupTemplates())
+            {
+                LOG_ERROR("server.loading",
+                    "Living World Invasions failed to materialize derived creature templates.");
+            }
         }
 
         sInvasionMgr.LoadDefinitions();
@@ -316,6 +333,7 @@ private:
         handler->PSendSysMessage("  Actions: {}", sInvasionMgr.GetActionCount());
         handler->PSendSysMessage("  Spawn groups: {}", sInvasionMgr.GetSpawnGroupCount());
         handler->PSendSysMessage("  Spawn members: {}", sInvasionMgr.GetSpawnMemberCount());
+        handler->PSendSysMessage("  Dynamic creature templates: {}", sLwiCreatureTemplateMgr.GetMappedTemplateCount());
         handler->PSendSysMessage("  Movement paths: {}", sInvasionMgr.GetMovementPathCount());
         handler->PSendSysMessage("  Movement nodes: {}", sInvasionMgr.GetMovementNodeCount());
         handler->PSendSysMessage("  Movement profiles: {}", sInvasionMgr.GetMovementProfileCount());

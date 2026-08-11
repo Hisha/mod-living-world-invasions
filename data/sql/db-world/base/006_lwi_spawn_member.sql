@@ -15,11 +15,13 @@ CREATE TABLE IF NOT EXISTS `lwi_spawn_member` (
     `spawn_group_id` INT UNSIGNED NOT NULL,
     `entity_type` TINYINT UNSIGNED NOT NULL DEFAULT 1,
     `entity_entry` INT UNSIGNED NOT NULL,
+    `lwi_template_id` INT UNSIGNED NULL DEFAULT NULL,
     `count` SMALLINT UNSIGNED NOT NULL DEFAULT 1,
     `level_override` SMALLINT UNSIGNED NOT NULL DEFAULT 0,
     `tactical_role` TINYINT UNSIGNED NOT NULL DEFAULT 0,
     `comment` VARCHAR(255) NULL DEFAULT NULL,
     PRIMARY KEY (`id`),
     KEY `idx_lwi_spawn_member_group` (`spawn_group_id`),
-    KEY `idx_lwi_spawn_member_type` (`entity_type`)
+    KEY `idx_lwi_spawn_member_type` (`entity_type`),
+    KEY `idx_lwi_spawn_member_lwi_template` (`lwi_template_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -257,7 +257,7 @@ void InvasionMgr::LoadDefinitions()
         } while (result->NextRow());
     }
 
-    if (QueryResult result = WorldDatabase.Query("SELECT `id`, `spawn_group_id`, `entity_type`, `entity_entry`, `count`, `level_override`, `tactical_role`, `comment` FROM `lwi_spawn_member` ORDER BY `spawn_group_id`, `id`"))
+    if (QueryResult result = WorldDatabase.Query("SELECT `id`, `spawn_group_id`, `entity_type`, `entity_entry`, `lwi_template_id`, `count`, `level_override`, `tactical_role`, `comment` FROM `lwi_spawn_member` ORDER BY `spawn_group_id`, `id`"))
     {
         do
         {
@@ -267,10 +267,14 @@ void InvasionMgr::LoadDefinitions()
             member.SpawnGroupId = fields[1].Get<uint32>();
             member.EntityType = fields[2].Get<uint8>();
             member.EntityEntry = fields[3].Get<uint32>();
-            member.Count = fields[4].Get<uint16>();
-            member.LevelOverride = fields[5].Get<uint16>();
+            if (!fields[4].IsNull())
+            {
+                member.LwiTemplateId = fields[4].Get<uint32>();
+            }
+            member.Count = fields[5].Get<uint16>();
+            member.LevelOverride = fields[6].Get<uint16>();
 
-            uint8 const tacticalRole = fields[6].Get<uint8>();
+            uint8 const tacticalRole = fields[7].Get<uint8>();
             if (tacticalRole > static_cast<uint8>(TacticalRole::Support))
             {
                 LOG_ERROR("server.loading",
@@ -284,7 +288,7 @@ void InvasionMgr::LoadDefinitions()
                 member.Role = static_cast<TacticalRole>(tacticalRole);
             }
 
-            member.Comment = fields[7].Get<std::string>();
+            member.Comment = fields[8].Get<std::string>();
             _spawnMembersByGroup[member.SpawnGroupId].push_back(std::move(member));
         } while (result->NextRow());
     }

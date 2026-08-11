@@ -2,6 +2,7 @@
 
 #include "Creature.h"
 #include "LivingWorldInvasions.h"
+#include "LwiCreatureTemplateManager.h"
 #include "Log.h"
 #include "Map.h"
 #include "MapMgr.h"
@@ -79,6 +80,31 @@ bool CreatureProvider::Spawn(
         return false;
     }
 
+    uint32 creatureEntry = member.EntityEntry;
+
+    if (member.LwiTemplateId != 0)
+    {
+        creatureEntry = sLwiCreatureTemplateMgr.ResolveEntry(member.LwiTemplateId);
+        if (creatureEntry == 0)
+        {
+            LOG_ERROR("server.loading",
+                "[LWI Creature] Runtime #{} spawn member {} references unresolved LWI creature template {}.",
+                runtimeId,
+                member.Id,
+                member.LwiTemplateId);
+            return false;
+        }
+    }
+
+    if (creatureEntry == 0)
+    {
+        LOG_ERROR("server.loading",
+            "[LWI Creature] Runtime #{} spawn member {} has neither a creature entry nor an LWI creature template.",
+            runtimeId,
+            member.Id);
+        return false;
+    }
+
     bool spawnedAny = false;
 
     for (uint32 i = 0; i < member.Count; ++i)
@@ -86,7 +112,7 @@ bool CreatureProvider::Spawn(
         Position position = BuildSpawnPosition(group);
 
         TempSummon* summon = map->SummonCreature(
-            member.EntityEntry,
+            creatureEntry,
             position,
             nullptr,
             0);
@@ -96,7 +122,7 @@ bool CreatureProvider::Spawn(
             LOG_ERROR("server.loading",
                 "[LWI Creature] Runtime #{} failed to spawn creature entry {} from member {}.",
                 runtimeId,
-                member.EntityEntry,
+                creatureEntry,
                 member.Id);
             continue;
         }
@@ -120,7 +146,7 @@ bool CreatureProvider::Spawn(
                 "[LWI Creature] Runtime #{} applied level override {} to creature {} from member {}.",
                 runtimeId,
                 static_cast<uint32>(requestedLevel),
-                member.EntityEntry,
+                creatureEntry,
                 member.Id);
         }
 
@@ -129,7 +155,7 @@ bool CreatureProvider::Spawn(
         entity.MapId = group.MapId;
         entity.GroupId = group.Id;
         entity.MemberId = member.Id;
-        entity.Entry = member.EntityEntry;
+        entity.Entry = creatureEntry;
         entity.TacticalRole = static_cast<uint8>(member.Role);
         entity.Guid = summon->GetGUID();
         spawnedEntities.push_back(std::move(entity));
@@ -137,7 +163,7 @@ bool CreatureProvider::Spawn(
         LOG_INFO("server.loading",
             "[LWI Creature] Runtime #{} spawned creature {} from member {} role {} ({}) GUID {}.",
             runtimeId,
-            member.EntityEntry,
+            creatureEntry,
             member.Id,
             static_cast<uint32>(member.Role),
             TacticalRoleName(member.Role),
