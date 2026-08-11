@@ -130,16 +130,17 @@ bool GroupDefeatWatcher::IsSpawnGroupDefeated(uint64 runtimeId, uint32 spawnGrou
 {
     bool foundAnyRuntimeGroup = false;
 
-    for (RuntimeEntityGroup const& group : sRuntimeEntityGroupMgr.GetGroupsForRuntime(runtimeId))
+    for (uint64 runtimeGroupId : sRuntimeEntityGroupMgr.GetGroupsForRuntime(runtimeId))
     {
-        if (group.SpawnGroupId != spawnGroupId)
+        RuntimeEntityGroup const* group = sRuntimeEntityGroupMgr.GetGroup(runtimeGroupId);
+        if (!group || group->SpawnGroupId != spawnGroupId)
         {
             continue;
         }
 
         foundAnyRuntimeGroup = true;
 
-        for (RuntimeEntity const& entity : group.Entities)
+        for (RuntimeEntity const& entity : group->Entities)
         {
             if (entity.EntityType != static_cast<uint8>(EntityProviderType::Creature))
             {
