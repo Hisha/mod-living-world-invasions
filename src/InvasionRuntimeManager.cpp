@@ -2,6 +2,7 @@
 
 #include "InvasionScheduler.h"
 #include "AssaultManager.h"
+#include "GroupDefeatWatcher.h"
 #include "LivingWorldInvasions.h"
 #include "MovementController.h"
 #include "InvasionSpawnManager.h"
@@ -38,6 +39,7 @@ void InvasionRuntimeManager::Reset()
 {
     sMovementController.Reset();
     sAssaultManager.Reset();
+    sGroupDefeatWatcher.Reset();
     sRuntimeSignalMgr.Reset();
     _runtimes.clear();
     _runtimeByInvasion.clear();
@@ -67,6 +69,7 @@ void InvasionRuntimeManager::Update(uint32 diff)
 
     sMovementController.Update(diff);
     sAssaultManager.Update(diff);
+    sGroupDefeatWatcher.Update(diff);
 
     if (_updateTimerMs > diff)
     {
@@ -183,6 +186,7 @@ bool InvasionRuntimeManager::FailRuntime(uint64 runtimeId, char const* reason)
 
     sMovementController.CancelRuntime(runtimeId);
     sAssaultManager.CancelRuntime(runtimeId);
+    sGroupDefeatWatcher.CancelRuntime(runtimeId);
     sInvasionSpawnMgr.CleanupRuntime(runtimeId);
     sRuntimeSignalMgr.ClearRuntime(runtimeId);
     DeleteRuntime(runtimeId);
@@ -229,6 +233,7 @@ void InvasionRuntimeManager::AbortAll()
 
         sMovementController.CancelRuntime(runtimeId);
         sAssaultManager.CancelRuntime(runtimeId);
+        sGroupDefeatWatcher.CancelRuntime(runtimeId);
         sInvasionSpawnMgr.CleanupRuntime(runtimeId);
         sRuntimeSignalMgr.ClearRuntime(runtimeId);
         DeleteRuntime(runtimeId);
@@ -364,6 +369,7 @@ void InvasionRuntimeManager::TimeoutRuntime(uint64 runtimeId, uint64 now)
 
     sMovementController.CancelRuntime(runtimeId);
     sAssaultManager.CancelRuntime(runtimeId);
+    sGroupDefeatWatcher.CancelRuntime(runtimeId);
     sInvasionSpawnMgr.CleanupRuntime(runtimeId);
     sRuntimeSignalMgr.ClearRuntime(runtimeId);
     DeleteRuntime(runtimeId);

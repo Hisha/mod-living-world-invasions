@@ -6,6 +6,7 @@
 -- action_type 5 = Sound
 -- action_type 6 = Spell (scripted event cast)
 -- action_type 7 = Start Assault
+-- action_type 8 = Watch Group Defeat
 --
 -- Start Movement parameter mapping:
 --   target_id  = spawn_group_id whose latest runtime entity group should move
@@ -67,3 +68,12 @@ CREATE TABLE IF NOT EXISTS `lwi_stage_action` (
 -- initiate combat against valid settlement NPCs that may not proximity-aggro
 -- the invaders themselves. Native combat AI/SmartAI controls the fight after
 -- engagement begins.
+
+-- Watch Group Defeat parameter mapping:
+--   target_id  = spawn_group_id to watch
+--   parameter1 = runtime signal id to emit
+--   parameter2 = mode: 0 = ANY watched group defeated, 1 = ALL watched groups defeated
+--   parameter3 = reserved
+--
+-- Multiple action_type 8 rows in the same runtime may register multiple spawn
+-- groups into the same watch. They must use the same signal id and mode.
