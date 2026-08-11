@@ -24,6 +24,7 @@ struct RuntimeMovementDestination
     float X = 0.0f;
     float Y = 0.0f;
     float Z = 0.0f;
+    bool WasInCombat = false;
 };
 
 struct ActiveRuntimeMovement
@@ -57,6 +58,7 @@ private:
     MovementController() = default;
 
     bool BeginCurrentNode(ActiveRuntimeMovement& movement);
+    void ResumeInterruptedCreatures(ActiveRuntimeMovement& movement);
     bool HasGroupReachedCurrentNode(ActiveRuntimeMovement const& movement) const;
     void AdvanceOrComplete(uint64 runtimeGroupId, ActiveRuntimeMovement& movement, uint64 nowMs);
     void CompleteMovement(uint64 runtimeGroupId, ActiveRuntimeMovement& movement);

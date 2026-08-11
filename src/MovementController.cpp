@@ -254,6 +254,23 @@ void MovementController::Update(uint32 diff)
             continue;
         }
 
+        for (RuntimeMovementDestination& destination : movement.Destinations)
+        {
+            Map* map = sMapMgr->FindMap(destination.MapId, 0);
+            if (!map)
+            {
+                continue;
+            }
+
+            Creature* creature = map->GetCreature(destination.Guid);
+            if (creature && creature->IsAlive() && creature->IsInCombat())
+            {
+                destination.WasInCombat = true;
+            }
+        }
+
+        ResumeInterruptedCreatures(movement);
+
         if (!HasGroupReachedCurrentNode(movement))
         {
             continue;
@@ -436,6 +453,98 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
         node.Z);
 
     return true;
+}
+
+void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movement)
+{
+    auto const* nodes = sInvasionMgr.GetMovementNodes(movement.PathId);
+    if (!nodes || movement.NodeIndex >= nodes->size())
+    {
+        return;
+    }
+
+    MovementNodeDefinition const& node = (*nodes)[movement.NodeIndex];
+
+    for (RuntimeMovementDestination& destination : movement.Destinations)
+    {
+        Map* map = sMapMgr->FindMap(destination.MapId, 0);
+        if (!map)
+        {
+            continue;
+        }
+
+        Creature* creature = map->GetCreature(destination.Guid);
+        if (!creature || !creature->IsAlive() || creature->IsInCombat())
+        {
+            continue;
+        }
+
+        if (creature->GetDistance(destination.X, destination.Y, destination.Z) <= ArrivalTolerance)
+        {
+            destination.WasInCombat = false;
+            continue;
+        }
+
+        // Only resume a creature that this controller actually observed in combat.
+        // This prevents us from continually replacing normal movement while the
+        // original MMAP spline is still active.
+        if (!destination.WasInCombat)
+        {
+            continue;
+        }
+
+        PathGenerator path(creature);
+        bool const pathFound = path.CalculatePath(
+            destination.X,
+            destination.Y,
+            destination.Z,
+            false);
+
+        if (!pathFound || (path.GetPathType() & PATHFIND_NOPATH))
+        {
+            LOG_ERROR("server.loading",
+                "[LWI Movement] Runtime entity group #{} creature {} could not resume MMAP movement "
+                "toward path {} node {} after combat.",
+                movement.RuntimeGroupId,
+                creature->GetEntry(),
+                movement.PathId,
+                node.NodeOrder);
+            destination.WasInCombat = false;
+            continue;
+        }
+
+        Movement::PointsArray pathPoints = path.GetPath();
+        if (pathPoints.size() < 2)
+        {
+            LOG_ERROR("server.loading",
+                "[LWI Movement] Runtime entity group #{} creature {} produced an unusable MMAP path "
+                "while resuming path {} node {} after combat.",
+                movement.RuntimeGroupId,
+                creature->GetEntry(),
+                movement.PathId,
+                node.NodeOrder);
+            destination.WasInCombat = false;
+            continue;
+        }
+
+        G3D::Vector3 const& actualEnd = pathPoints.back();
+        destination.X = actualEnd.x;
+        destination.Y = actualEnd.y;
+        destination.Z = actualEnd.z;
+        destination.WasInCombat = false;
+
+        creature->GetMotionMaster()->MoveSplinePath(
+            &pathPoints,
+            FORCED_MOVEMENT_NONE);
+
+        LOG_INFO("server.loading",
+            "[LWI Movement] Runtime entity group #{} creature {} resumed MMAP movement toward "
+            "path {} node {} after combat.",
+            movement.RuntimeGroupId,
+            creature->GetEntry(),
+            movement.PathId,
+            node.NodeOrder);
+    }
 }
 
 bool MovementController::HasGroupReachedCurrentNode(ActiveRuntimeMovement const& movement) const
