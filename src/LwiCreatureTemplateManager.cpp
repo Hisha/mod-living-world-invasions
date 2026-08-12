@@ -1,6 +1,8 @@
 #include "LwiCreatureTemplateManager.h"
 
 #include "DatabaseEnv.h"
+#include "Field.h"
+#include "QueryResult.h"
 #include "Log.h"
 
 #include <limits>
