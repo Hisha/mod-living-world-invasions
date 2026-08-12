@@ -82,6 +82,11 @@ bool LwiCreatureTemplateManager::RetireInactiveMappings()
 
         sql.str("");
         sql.clear();
+        sql << "DELETE FROM `creature_equip_template` WHERE `CreatureID` = " << allocatedEntry;
+        ExecuteSql(sql.str());
+
+        sql.str("");
+        sql.clear();
         sql << "DELETE FROM `creature_template` WHERE `entry` = " << allocatedEntry;
         ExecuteSql(sql.str());
 
@@ -170,6 +175,11 @@ bool LwiCreatureTemplateManager::MaterializeEnabledDefinitions()
 
         cleanup.str("");
         cleanup.clear();
+        cleanup << "DELETE FROM `creature_equip_template` WHERE `CreatureID` = " << allocatedEntry;
+        ExecuteSql(cleanup.str());
+
+        cleanup.str("");
+        cleanup.clear();
         cleanup << "DELETE FROM `creature_template` WHERE `entry` = " << allocatedEntry;
         ExecuteSql(cleanup.str());
 
@@ -248,6 +258,10 @@ bool LwiCreatureTemplateManager::MaterializeDefinition(uint32 lwiTemplateId, uin
     //   - no SmartAI/ScriptName inheritance
     //   - no permanent movement path
     //
+    // We DO inherit:
+    //   - creature_template_model
+    //   - creature_equip_template
+    //
     // Level remains a spawn-time LWI concern via level_override.
     std::ostringstream sql;
     sql <<
@@ -310,6 +324,28 @@ bool LwiCreatureTemplateManager::MaterializeDefinition(uint32 lwiTemplateId, uin
         "WHERE `id` = " << lwiTemplateId << ")";
 
     ExecuteSql(models.str());
+
+    if (!WorldDatabase.Query(
+        ("SELECT 1 FROM `creature_template_model` WHERE `CreatureID` = " +
+         std::to_string(allocatedEntry) + " LIMIT 1").c_str()))
+    {
+        LOG_ERROR("server.loading",
+            "[LWI Template] Logical template {} generated creature entry {} but no creature_template_model rows were copied.",
+            lwiTemplateId,
+            allocatedEntry);
+        return false;
+    }
+
+    std::ostringstream equipment;
+    equipment <<
+        "INSERT INTO `creature_equip_template` "
+        "(`CreatureID`,`ID`,`ItemID1`,`ItemID2`,`ItemID3`,`VerifiedBuild`) "
+        "SELECT " << allocatedEntry << ",`ID`,`ItemID1`,`ItemID2`,`ItemID3`,`VerifiedBuild` "
+        "FROM `creature_equip_template` "
+        "WHERE `CreatureID` = (SELECT `base_creature_entry` FROM `lwi_creature_template` "
+        "WHERE `id` = " << lwiTemplateId << ")";
+
+    ExecuteSql(equipment.str());
 
     LOG_INFO("server.loading",
         "[LWI Template] Materialized logical template {} as creature entry {}.",
