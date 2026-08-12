@@ -304,7 +304,7 @@ bool LwiCreatureTemplateManager::MaterializeDefinition(uint32 lwiTemplateId, uin
     models <<
         "INSERT INTO `creature_template_model` "
         "(`CreatureID`,`Idx`,`CreatureDisplayID`,`DisplayScale`,`Probability`,`VerifiedBuild`) "
-        "SELECT " << allocatedEntry << ",`Idx`,`CreatureDisplayID`,`DisplayScale`,`Probability`,-1 "
+        "SELECT " << allocatedEntry << ",`Idx`,`CreatureDisplayID`,`DisplayScale`,`Probability`,`VerifiedBuild` "
         "FROM `creature_template_model` "
         "WHERE `CreatureID` = (SELECT `base_creature_entry` FROM `lwi_creature_template` "
         "WHERE `id` = " << lwiTemplateId << ")";
