@@ -287,7 +287,7 @@ bool LwiCreatureTemplateManager::MaterializeDefinition(uint32 lwiTemplateId, uin
         "COALESCE(d.`mana_modifier_override`, b.`ManaModifier`),"
         "COALESCE(d.`armor_modifier_override`, b.`ArmorModifier`),"
         "b.`ExperienceModifier`,"
-        "0,0,b.`RegenHealth`,b.`CreatureImmunitiesId`,b.`flags_extra`,'',-1 "
+        "0,0,b.`RegenHealth`,b.`CreatureImmunitiesId`,b.`flags_extra`,'',b.`VerifiedBuild` "
         "FROM `lwi_creature_template` d "
         "JOIN `creature_template` b ON b.`entry` = d.`base_creature_entry` "
         "WHERE d.`id` = " << lwiTemplateId << " AND d.`enabled` = 1";
