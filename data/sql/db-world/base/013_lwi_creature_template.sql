@@ -45,12 +45,3 @@ CREATE TABLE IF NOT EXISTS `lwi_creature_template_map` (
     PRIMARY KEY (`lwi_template_id`),
     UNIQUE KEY `uq_lwi_creature_template_allocated_entry` (`allocated_entry`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Existing installs already have lwi_spawn_member. New installs will also run
--- this safely because MariaDB supports ADD COLUMN IF NOT EXISTS.
-ALTER TABLE `lwi_spawn_member`
-    ADD COLUMN `lwi_template_id` INT UNSIGNED NULL DEFAULT NULL
-    AFTER `entity_entry`;
-
-ALTER TABLE `lwi_spawn_member`
-    ADD KEY `idx_lwi_spawn_member_lwi_template` (`lwi_template_id`);
