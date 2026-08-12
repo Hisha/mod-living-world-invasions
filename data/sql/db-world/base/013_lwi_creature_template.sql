@@ -49,8 +49,8 @@ CREATE TABLE IF NOT EXISTS `lwi_creature_template_map` (
 -- Existing installs already have lwi_spawn_member. New installs will also run
 -- this safely because MariaDB supports ADD COLUMN IF NOT EXISTS.
 ALTER TABLE `lwi_spawn_member`
-    ADD COLUMN IF NOT EXISTS `lwi_template_id` INT UNSIGNED NULL DEFAULT NULL
+    ADD COLUMN `lwi_template_id` INT UNSIGNED NULL DEFAULT NULL
     AFTER `entity_entry`;
 
 ALTER TABLE `lwi_spawn_member`
-    ADD KEY IF NOT EXISTS `idx_lwi_spawn_member_lwi_template` (`lwi_template_id`);
+    ADD KEY `idx_lwi_spawn_member_lwi_template` (`lwi_template_id`);
