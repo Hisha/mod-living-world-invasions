@@ -210,15 +210,9 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
                 continue;
             }
 
-            // Ordinary hostile defenders keep priority.  A service NPC is used
-            // when no normal hostile target is available.  Among service NPCs,
-            // choose the nearest.
-            if (target && !targetIsServiceNpc)
-            {
-                continue;
-            }
-
-            if (targetIsServiceNpc && distance >= bestDistance)
+            // Explicit service-NPC targets compete normally with ordinary
+            // hostile defenders. Whichever valid assault target is nearest wins.
+            if (distance >= bestDistance)
             {
                 continue;
             }
