@@ -8,6 +8,9 @@
 #include "RuntimeSignalManager.h"
 
 #include "ConfigValueCache.h"
+#include "DatabaseEnv.h"
+#include "Field.h"
+#include "QueryResult.h"
 #include "Log.h"
 #include "ScriptMgr.h"
 
@@ -184,6 +187,18 @@ public:
                 Console::Yes
             },
             {
+                "enable",
+                HandleEnableCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::Yes
+            },
+            {
+                "disable",
+                HandleDisableCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::Yes
+            },
+            {
                 "reload",
                 HandleReloadCommand,
                 rbac::RBAC_PERM_COMMAND_SERVER_INFO,
@@ -250,6 +265,83 @@ private:
         handler->PSendSysMessage(
             "Living World Invasions scheduler stopped. {} active runtime(s) will continue to completion.",
             active);
+        return true;
+    }
+
+    static bool HandleEnableCommand(ChatHandler* handler, uint32 invasionId)
+    {
+        QueryResult result = WorldDatabase.Query(
+            "SELECT `name`, `enabled` FROM `lwi_invasion` WHERE `id` = {}",
+            invasionId);
+
+        if (!result)
+        {
+            handler->PSendSysMessage(
+                "Living World Invasions invasion {} does not exist.",
+                invasionId);
+            return false;
+        }
+
+        Field* fields = result->Fetch();
+        std::string const name = fields[0].Get<std::string>();
+        bool const enabled = fields[1].Get<uint8>() != 0;
+
+        if (enabled)
+        {
+            handler->PSendSysMessage(
+                "Living World Invasions invasion {} ({}) is already enabled.",
+                invasionId,
+                name);
+            return true;
+        }
+
+        WorldDatabase.Execute(
+            "UPDATE `lwi_invasion` SET `enabled` = 1 WHERE `id` = {}",
+            invasionId);
+
+        handler->PSendSysMessage(
+            "Living World Invasions invasion {} ({}) enabled in the database. Use .lwi reload to apply the change.",
+            invasionId,
+            name);
+        return true;
+    }
+
+    static bool HandleDisableCommand(ChatHandler* handler, uint32 invasionId)
+    {
+        QueryResult result = WorldDatabase.Query(
+            "SELECT `name`, `enabled` FROM `lwi_invasion` WHERE `id` = {}",
+            invasionId);
+
+        if (!result)
+        {
+            handler->PSendSysMessage(
+                "Living World Invasions invasion {} does not exist.",
+                invasionId);
+            return false;
+        }
+
+        Field* fields = result->Fetch();
+        std::string const name = fields[0].Get<std::string>();
+        bool const enabled = fields[1].Get<uint8>() != 0;
+
+        if (!enabled)
+        {
+            handler->PSendSysMessage(
+                "Living World Invasions invasion {} ({}) is already disabled.",
+                invasionId,
+                name);
+            return true;
+        }
+
+        WorldDatabase.Execute(
+            "UPDATE `lwi_invasion` SET `enabled` = 0 WHERE `id` = {}",
+            invasionId);
+
+        handler->PSendSysMessage(
+            "Living World Invasions invasion {} ({}) disabled in the database. "
+            "Any currently active runtime is unaffected. Use .lwi stop/.lwi abort as needed, then .lwi reload to apply the definition change.",
+            invasionId,
+            name);
         return true;
     }
 
