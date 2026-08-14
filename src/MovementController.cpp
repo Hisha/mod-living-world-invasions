@@ -525,7 +525,15 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
         }
 
         Creature* creature = map->GetCreature(destination.Guid);
-        if (!creature || !creature->IsAlive() || creature->IsInCombat())
+        if (!creature || !creature->IsAlive())
+        {
+            continue;
+        }
+
+        // Combat/assault owns this creature's movement while it is actively in
+        // combat OR still has an assigned victim. Do not replace AI/chase
+        // movement with the invasion route until both states are clear.
+        if (creature->IsInCombat() || creature->GetVictim())
         {
             continue;
         }
@@ -543,6 +551,18 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
         {
             continue;
         }
+
+        LOG_INFO("server.loading",
+            "[LWI Movement] Runtime entity group #{} creature {} eligible to resume path {} node {}: "
+            "inCombat={}, hasVictim={}, wasInCombat={}, distance={:.2f}.",
+            movement.RuntimeGroupId,
+            creature->GetEntry(),
+            movement.PathId,
+            node.NodeOrder,
+            creature->IsInCombat(),
+            creature->GetVictim() != nullptr,
+            destination.WasInCombat,
+            creature->GetDistance(destination.X, destination.Y, destination.Z));
 
         PathGenerator path(creature);
         bool const pathFound = path.CalculatePath(
