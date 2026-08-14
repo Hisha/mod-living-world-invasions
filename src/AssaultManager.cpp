@@ -8,6 +8,7 @@
 #include "RuntimeEntityGroup.h"
 
 #include <algorithm>
+#include <limits>
 #include <vector>
 
 namespace lwi
@@ -89,54 +90,148 @@ void AssaultManager::Reset()
     _activeAssaults.clear();
 }
 
-bool AssaultManager::EnsureServiceNpcAttackable(uint64 runtimeId, Creature* target)
+bool AssaultManager::EnsureServiceNpcAttackable(
+    uint64 runtimeId,
+    Creature* attacker,
+    Creature* target,
+    float searchRadius)
 {
-    if (!target)
+    if (!attacker || !target)
     {
         return false;
     }
+
+    TemporaryNpcCombatOverride* existingOverride = nullptr;
 
     for (TemporaryNpcCombatOverride& overrideData : _temporaryNpcOverrides)
     {
         if (overrideData.MapId == target->GetMapId() && overrideData.Guid == target->GetGUID())
         {
             overrideData.RuntimeIds.insert(runtimeId);
-            return !target->IsImmuneToNPC();
+            existingOverride = &overrideData;
+            break;
         }
     }
 
-    if (!target->IsImmuneToNPC())
+    if (!existingOverride)
     {
-        return true;
+        TemporaryNpcCombatOverride overrideData;
+        overrideData.Guid = target->GetGUID();
+        overrideData.MapId = target->GetMapId();
+        overrideData.WasImmuneToNpc = target->IsImmuneToNPC();
+        overrideData.OriginalFaction = target->GetFaction();
+        overrideData.TemporaryFaction = target->GetFaction();
+        overrideData.RuntimeIds.insert(runtimeId);
+
+        _temporaryNpcOverrides.push_back(std::move(overrideData));
+        existingOverride = &_temporaryNpcOverrides.back();
     }
-
-    TemporaryNpcCombatOverride overrideData;
-    overrideData.Guid = target->GetGUID();
-    overrideData.MapId = target->GetMapId();
-    overrideData.WasImmuneToNpc = true;
-    overrideData.RuntimeIds.insert(runtimeId);
-
-    target->SetImmuneToNPC(false);
 
     if (target->IsImmuneToNPC())
     {
-        LOG_ERROR("server.loading",
-            "[LWI Assault] Runtime #{} failed to remove NPC immunity from service target {} GUID {}.",
+        target->SetImmuneToNPC(false);
+
+        LOG_INFO("server.loading",
+            "[LWI Assault] Runtime #{} temporarily removed UNIT_FLAG_IMMUNE_TO_NPC from service target {} GUID {}.",
             runtimeId,
             target->GetEntry(),
             target->GetGUID().ToString());
-        return false;
     }
 
-    _temporaryNpcOverrides.push_back(std::move(overrideData));
+    // Some service NPCs remain neutral to the invasion even after NPC immunity
+    // is removed. Rather than hard-code a faction, borrow the faction template
+    // of a nearby normal defender that this attacker can already attack.
+    //
+    // That preserves the area's normal defender allegiance (including player
+    // friendliness) while making only this live service-NPC instance a proper
+    // participant in the invasion.
+    if (!attacker->IsValidAttackTarget(target))
+    {
+        Map* map = target->GetMap();
+        Creature* factionDonor = nullptr;
+        float bestDonorDistance = searchRadius + 1.0f;
 
-    LOG_INFO("server.loading",
-        "[LWI Assault] Runtime #{} temporarily removed UNIT_FLAG_IMMUNE_TO_NPC from service target {} GUID {}.",
-        runtimeId,
-        target->GetEntry(),
-        target->GetGUID().ToString());
+        if (map)
+        {
+            for (auto const& [spawnId, candidate] : map->GetCreatureBySpawnIdStore())
+            {
+                (void)spawnId;
 
-    return true;
+                if (!candidate ||
+                    candidate == attacker ||
+                    candidate == target ||
+                    !candidate->IsAlive() ||
+                    candidate->GetMap() != map)
+                {
+                    continue;
+                }
+
+                float const distance = target->GetDistance(candidate);
+                if (distance > searchRadius || distance >= bestDonorDistance)
+                {
+                    continue;
+                }
+
+                if (!attacker->IsValidAttackTarget(candidate))
+                {
+                    continue;
+                }
+
+                factionDonor = candidate;
+                bestDonorDistance = distance;
+            }
+        }
+
+        if (factionDonor)
+        {
+            uint32 const donorFaction = factionDonor->GetFaction();
+
+            if (target->GetFaction() != donorFaction)
+            {
+                target->SetFaction(donorFaction);
+                existingOverride->TemporaryFaction = donorFaction;
+                existingOverride->FactionChanged = true;
+
+                LOG_INFO("server.loading",
+                    "[LWI Assault] Runtime #{} temporarily changed service target {} GUID {} faction {} -> {} "
+                    "using nearby hostile defender {} GUID {} as faction donor.",
+                    runtimeId,
+                    target->GetEntry(),
+                    target->GetGUID().ToString(),
+                    existingOverride->OriginalFaction,
+                    donorFaction,
+                    factionDonor->GetEntry(),
+                    factionDonor->GetGUID().ToString());
+            }
+        }
+        else
+        {
+            LOG_WARN("server.loading",
+                "[LWI Assault] Runtime #{} service target {} GUID {} is still not a valid attack target after "
+                "NPC-immunity removal, and no nearby normal hostile defender was available as a faction donor.",
+                runtimeId,
+                target->GetEntry(),
+                target->GetGUID().ToString());
+        }
+    }
+
+    bool const valid = attacker->IsValidAttackTarget(target);
+
+    if (!valid)
+    {
+        LOG_WARN("server.loading",
+            "[LWI Assault] Runtime #{} service target {} GUID {} remains invalid for attacker {} after temporary override; "
+            "attackerReaction={}, targetReaction={}, targetFaction={}.",
+            runtimeId,
+            target->GetEntry(),
+            target->GetGUID().ToString(),
+            attacker->GetEntry(),
+            static_cast<uint32>(attacker->GetReactionTo(target)),
+            static_cast<uint32>(target->GetReactionTo(attacker)),
+            target->GetFaction());
+    }
+
+    return valid;
 }
 
 void AssaultManager::RestoreOverride(TemporaryNpcCombatOverride const& overrideData)
@@ -155,15 +250,18 @@ void AssaultManager::RestoreOverride(TemporaryNpcCombatOverride const& overrideD
 
     target->CombatStop(true);
 
-    if (overrideData.WasImmuneToNpc)
+    if (overrideData.FactionChanged && target->GetFaction() != overrideData.OriginalFaction)
     {
-        target->SetImmuneToNPC(true);
+        target->SetFaction(overrideData.OriginalFaction);
     }
 
+    target->SetImmuneToNPC(overrideData.WasImmuneToNpc);
+
     LOG_INFO("server.loading",
-        "[LWI Assault] Restored service target {} GUID {} NPC immunity state to {}.",
+        "[LWI Assault] Restored service target {} GUID {} to faction {} and NPC immunity state {}.",
         target->GetEntry(),
         target->GetGUID().ToString(),
+        overrideData.OriginalFaction,
         overrideData.WasImmuneToNpc);
 }
 
@@ -280,6 +378,80 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
     uint32 engaged = 0;
     uint32 newlyEngaged = 0;
 
+    // Track how many LWI attackers in this runtime are already assigned to each
+    // creature. Target selection prefers the least-contested target first, then
+    // the nearest target. This prevents the entire invasion from dog-piling a
+    // single quest giver while other valid defenders stand untouched.
+    std::vector<std::pair<ObjectGuid, uint32>> targetAssignments;
+
+    auto getAssignmentCount = [&targetAssignments](ObjectGuid guid) -> uint32
+    {
+        for (auto const& [assignedGuid, count] : targetAssignments)
+        {
+            if (assignedGuid == guid)
+            {
+                return count;
+            }
+        }
+
+        return 0;
+    };
+
+    auto incrementAssignment = [&targetAssignments](ObjectGuid guid)
+    {
+        for (auto& [assignedGuid, count] : targetAssignments)
+        {
+            if (assignedGuid == guid)
+            {
+                ++count;
+                return;
+            }
+        }
+
+        targetAssignments.emplace_back(guid, 1u);
+    };
+
+    // Count existing victims across every active assault group belonging to this
+    // runtime so separate LWI spawn groups distribute themselves together.
+    for (auto const& [otherRuntimeGroupId, otherAssault] : _activeAssaults)
+    {
+        if (otherAssault.RuntimeId != assault.RuntimeId)
+        {
+            continue;
+        }
+
+        RuntimeEntityGroup* otherGroup = sRuntimeEntityGroupMgr.GetGroup(otherRuntimeGroupId);
+        if (!otherGroup)
+        {
+            continue;
+        }
+
+        for (RuntimeEntity const& otherEntity : otherGroup->Entities)
+        {
+            if (otherEntity.EntityType != static_cast<uint8>(EntityProviderType::Creature))
+            {
+                continue;
+            }
+
+            Map* otherMap = sMapMgr->FindMap(otherEntity.MapId, 0);
+            if (!otherMap)
+            {
+                continue;
+            }
+
+            Creature* otherCreature = otherMap->GetCreature(otherEntity.Guid);
+            if (!otherCreature || !otherCreature->IsAlive())
+            {
+                continue;
+            }
+
+            if (Unit* victim = otherCreature->GetVictim())
+            {
+                incrementAssignment(victim->GetGUID());
+            }
+        }
+    }
+
     for (RuntimeEntity const& entity : group->Entities)
     {
         if (entity.EntityType != static_cast<uint8>(EntityProviderType::Creature))
@@ -329,6 +501,7 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
 
         Creature* target = nullptr;
         float bestDistance = assault.SearchRadius + 1.0f;
+        uint32 bestAssignmentCount = std::numeric_limits<uint32>::max();
         bool targetIsServiceNpc = false;
 
         // Keep the core's normal hostile acquisition path for defenders that
@@ -339,6 +512,7 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
             if (target)
             {
                 bestDistance = creature->GetDistance(target);
+                bestAssignmentCount = getAssignmentCount(target->GetGUID());
             }
         }
 
@@ -394,15 +568,27 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
                 continue;
             }
 
-            // Explicit service-NPC targets compete normally with ordinary
-            // hostile defenders. Whichever valid assault target is nearest wins.
-            if (distance >= bestDistance)
+            uint32 const assignmentCount = getAssignmentCount(candidate->GetGUID());
+
+            // Prefer the target with fewer LWI attackers already assigned.
+            // Distance breaks ties so the assault still looks geographically
+            // natural instead of sending creatures across town unnecessarily.
+            if (target)
             {
-                continue;
+                if (assignmentCount > bestAssignmentCount)
+                {
+                    continue;
+                }
+
+                if (assignmentCount == bestAssignmentCount && distance >= bestDistance)
+                {
+                    continue;
+                }
             }
 
             target = candidate;
             bestDistance = distance;
+            bestAssignmentCount = assignmentCount;
             targetIsServiceNpc = true;
         }
 
@@ -415,7 +601,11 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
         {
             if (targetIsServiceNpc)
             {
-                if (!EnsureServiceNpcAttackable(assault.RuntimeId, target))
+                if (!EnsureServiceNpcAttackable(
+                        assault.RuntimeId,
+                        creature,
+                        target,
+                        assault.SearchRadius))
                 {
                     LOG_WARN("server.loading",
                         "[LWI Assault] Runtime #{} creature {} member {} could not make service target {} GUID {} attackable by NPCs.",
@@ -460,6 +650,7 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
             {
                 ++engaged;
                 ++newlyEngaged;
+                incrementAssignment(target->GetGUID());
 
                 LOG_INFO("server.loading",
                     "[LWI Assault] Runtime #{} creature {} member {} SUCCESSFULLY engaged target {} GUID {}{}.",

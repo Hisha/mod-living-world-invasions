@@ -17,6 +17,9 @@ struct TemporaryNpcCombatOverride
     ObjectGuid Guid;
     uint32 MapId = 0;
     bool WasImmuneToNpc = false;
+    uint32 OriginalFaction = 0;
+    uint32 TemporaryFaction = 0;
+    bool FactionChanged = false;
     std::unordered_set<uint64> RuntimeIds;
 };
 
@@ -45,7 +48,7 @@ public:
 private:
     bool TryAcquireTargets(ActiveAssault& assault);
 
-    bool EnsureServiceNpcAttackable(uint64 runtimeId, Creature* target);
+    bool EnsureServiceNpcAttackable(uint64 runtimeId, Creature* attacker, Creature* target, float searchRadius);
     void ReleaseRuntimeOverrides(uint64 runtimeId);
     void RestoreAllOverrides();
     void RestoreOverride(TemporaryNpcCombatOverride const& overrideData);
