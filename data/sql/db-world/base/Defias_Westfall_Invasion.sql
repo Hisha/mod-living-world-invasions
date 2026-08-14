@@ -11,6 +11,12 @@ DELETE FROM lwi_invasion_stage
 WHERE id IN (1001,1002,1003,1004,1005,1006);
 
 -- ===========================================================================
+-- lwi_stage_action Clear Data
+-- ===========================================================================
+DELETE FROM lwi_stage_action
+WHERE id IN (10001);
+
+-- ===========================================================================
 -- lwi_spawn_group Clear Data
 -- ===========================================================================
 DELETE FROM lwi_spawn_group
@@ -29,6 +35,18 @@ DELETE FROM lwi_spawn_member
 WHERE id IN (100001,100002,100003,100004,100005);
 
 -- ===========================================================================
+-- lwi_movement_path Clear Data
+-- ===========================================================================
+DELETE FROM lwi_movement_path
+WHERE id IN (100,101,102);
+
+-- ===========================================================================
+-- lwi_movement_node Clear Data
+-- ===========================================================================
+DELETE FROM lwi_movement_node
+WHERE id IN (10000,10001,10002,10003,10004,10005,10006,10007);
+
+-- ===========================================================================
 -- lwi_runtime_signal Clear Data
 -- ===========================================================================
 DELETE FROM lwi_runtime_signal
@@ -44,23 +62,27 @@ VALUES (1,'Defias Westfall Invasion',0,40,1,1,10,20,100,79200,115200,3600,1,0,'D
 -- lwi_invasion_stage(The stages of the invasion):
 -- ===========================================================================
 INSERT INTO lwi_invasion_stage(id,invasion_id,stage_order,name,duration_seconds,completion_type,completion_target_id,enabled,comment) 
-VALUES(1001,1,10,'Defias Scouts',0,1,100,1,'Defias Scouts establish staging point over looking Sentinel Hill'),
-      (1002,1,20,'Defias Populate Staging',0,1,101,1,'Defias populate strike force at staging point.'),
-      (1003,1,30,'Defias Establish Control',600,0,0,1,'Defias establish control of Sentinel Hill'),
-      (1004,1,40,'Defias Leadership Arrives',0,1,102,1,'Defias Leadership arrives at Sentinel Hill'),
-      (1005,1,50,'Stormwind Response',0,1,103,1,'Stormwind response forces heads to Sentinel Hill'),
-      (1006,1,60,'Stormwind vs Defias',0,1,104,1,'Final battle to destroy the Defias at Sentinel Hill');
+VALUES (1001,1,10,'Defias Scouts',0,1,100,1,'Defias Scouts establish staging point over looking Sentinel Hill'),
+       (1002,1,20,'Defias Populate Staging',0,1,101,1,'Defias populate strike force at staging point.'),
+       (1003,1,30,'Defias Establish Control',600,0,0,1,'Defias establish control of Sentinel Hill'),
+       (1004,1,40,'Defias Leadership Arrives',0,1,102,1,'Defias Leadership arrives at Sentinel Hill'),
+       (1005,1,50,'Stormwind Response',0,1,103,1,'Stormwind response forces heads to Sentinel Hill'),
+       (1006,1,60,'Stormwind vs Defias',0,1,104,1,'Final battle to destroy the Defias at Sentinel Hill');
 
+-- ===========================================================================
 -- lwi_stage_action():
+-- ===========================================================================
+INSERT INTO lwi_stage_action(id,stage_id,action_order,action_type,target_id,parameter1,parameter2,parameter3,delay_seconds,enabled,comment)
+VALUES (10001, 1001, 1, 1, 100, 0, 0, 0, 0, 1, 'Spawn Defias Scout group.');
 
 -- ===========================================================================
 -- lwi_spawn_group(Allows for grouping of spawned NPCs.):
 -- ===========================================================================
 INSERT INTO lwi_spawn_group(id,name,map_id,x,y,z,orientation,spawn_radius,enabled) 
-VALUES (100,'Defias Scouts',0,-11045.854,1509.643,43.164726,5.41409933,10,1),
-       (101,'Defias Control Team',0,-11045.854,1509.643,43.164726,5.41409933,10,1),
-       (102,'Defias Leadership',0,-11045.854,1509.643,43.164726,5.41409933,10,1),
-       (103, 'Stormwind Response Force', 0, <Need x for Stormwind Spawn>, <Need y for Stormwind Spawn>, <Need z for Stormwind Spawn>, <Need orientation for Stormwind Spawn>, 1, 1);
+VALUES (100,'Defias Scouts',0,-10898.128, 1466.9028, 42.519577, 5.4439473,10,1),
+       (101,'Defias Control Team',0,-10490.681, 1212.7977, 67.30977, 4.8823605,10,1),
+       (102,'Defias Leadership',0,-10509.177, 1046.7267, 60.51838, 4.956951,10,1),
+       (103, 'Stormwind Response Force', 0, -9005.095, 480.13635, 96.55263, 3.814248, 10, 1);
 
 -- ===========================================================================
 -- lwi_creature_template(Create custom NPCs to be able to rename/reRank/etc an existing NPC.):
@@ -79,11 +101,26 @@ VALUES (100001, 100, 1, 449, NULL, 10, 0, 3, 'Defias scouts - Melee DPS'),
        (100004, 101, 1, 0, 1, 3, 0, 3, 'Defias Control Team - Melee DPS'),
        (100005, 102, 1, 0, 2, 1, 0, 1, 'Defias Leadership - Melee DPS');
 
--- lwi_movement_parh():
+-- ===========================================================================
+-- lwi_movement_path(Grouping for the path the NPCs will take.):
+-- ===========================================================================
+INSERT INTO lwi_movement_path(id,name,enabled,comment)
+VALUES (100, 'Defias Scout Route', 1, 'Route the Defias Scout Group will use to get to staging point.'),
+       (101, 'Defias move into Sentinel Hill', 1, 'Route the Defias group will use to invade Sentinel Hill. '),
+       (102, 'Stormwind Response Force Route', 1, 'Route the Stormwind Response Force will use to reach Sentinel Hill.');
 
-
--- lwi_movement_mode():
-
+-- ===========================================================================
+-- lwi_movement_node(The path broken down by each node of it.):
+-- ===========================================================================
+INSERT INTO lwi_movement_node(id,path_id,node_order,map_id,x,y,z,orientation,wait_ms,profile_override_id,enabled,comment)
+VALUES (10000, 100, 10, 0, -10898.128, 1466.9028, 42.519577, 5.4439473,   0, 0, 1, 'Defias Scout route node 10'),
+       (10001, 100, 20, 0, -10816.262, 1388.863, 34.848286, 5.5813813,  0, 0, 1, 'Defias Scout route node 20'),
+       (10002, 100, 30, 0, -10733.547, 1328.5238, 41.804104, 5.679553,   0, 0, 1, 'Defias Scout route node 30'),
+       (10003, 100, 40, 0, -10563.534, 1303.9185, 47.28148, 5.408586,   0, 0, 1, 'Defias Scout route node 40'),
+       (10004, 100, 50, 0, -10490.681, 1212.7977, 67.30977, 4.8823605, 0, 0, 1, 'Defias Scout route node 50'),
+       (10005, 101, 10, 0, -10497.578, 1145.7003, 44.997818, 4.261898,   0, 0, 1, 'Defias move to SH route node 10'),
+       (10006, 101, 20, 0, -10517.282, 1067.6008, 54.94022, 5.0943923,   0, 0, 1, 'Defias move to SH route node 20'),
+       (10007, 101, 30, 0, -10509.177, 1046.7267, 60.51838, 4.956951,   0, 0, 1, 'Defias move to SH route node 30');
 
 -- ===========================================================================
 -- lwi_runtime_signal(Signals to indicate completeion of task.):
@@ -92,7 +129,7 @@ INSERT INTO lwi_runtime_signal(id,name,enabled,comment)
 VALUES (100,'ScoutRouteComplete',1,'Emitted when the Defias scout movement route reaches staging point.'),
        (101,'StagingComplete',1,'Emitted when the Defias spawns attack force at staging point.'),
        (102,'LeadershipComplete',1,'Emitted when the Defias spawns leadership at Sentinel Hill.'),
-       (103,'StormwindReponseComplete',1,'Emitted when the Stormwind Response arrives at Sentinel Hill.'),
+       (103,'StormwindResponseComplete',1,'Emitted when the Stormwind Response arrives at Sentinel Hill.'),
        (104,'StormwindWins',1,'Emitted when the Stormwind Response secures Sentinel Hill.');
 
 -- lwi_dialogue():
