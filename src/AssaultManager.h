@@ -2,11 +2,24 @@
 #define MOD_LIVING_WORLD_INVASIONS_ASSAULT_MANAGER_H
 
 #include "Define.h"
+#include "ObjectGuid.h"
 
 #include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
+class Creature;
 
 namespace lwi
 {
+struct TemporaryNpcCombatOverride
+{
+    ObjectGuid Guid;
+    uint32 MapId = 0;
+    bool WasImmuneToNpc = false;
+    std::unordered_set<uint64> RuntimeIds;
+};
+
 struct ActiveAssault
 {
     uint64 RuntimeId = 0;
@@ -32,7 +45,13 @@ public:
 private:
     bool TryAcquireTargets(ActiveAssault& assault);
 
+    bool EnsureServiceNpcAttackable(uint64 runtimeId, Creature* target);
+    void ReleaseRuntimeOverrides(uint64 runtimeId);
+    void RestoreAllOverrides();
+    void RestoreOverride(TemporaryNpcCombatOverride const& overrideData);
+
     std::unordered_map<uint64, ActiveAssault> _activeAssaults;
+    std::vector<TemporaryNpcCombatOverride> _temporaryNpcOverrides;
 };
 }
 

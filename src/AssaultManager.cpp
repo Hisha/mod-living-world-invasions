@@ -38,6 +38,7 @@ void LogCombatDiagnostics(
         "explicitService={} distance={:.2f} "
         "attackerFaction={} targetFaction={} attackerReaction={} targetReaction={} "
         "validAttackTarget={} canCreatureAttack={} canStartAttack={} targetable={} "
+        "attackerImmuneToNpc={} targetImmuneToNpc={} "
         "attackerCombatDisallowed={} targetCombatDisallowed={} "
         "attackerInCombat={} targetInCombat={} attackerVictim={} targetVictim={} "
         "targetNpcFlags={} targetQuestGiver={} targetVendor={} targetFlightMaster={} "
@@ -58,6 +59,8 @@ void LogCombatDiagnostics(
         attacker->CanCreatureAttack(target, true),
         attacker->CanStartAttack(target, true),
         target->isTargetableForAttack(),
+        attacker->IsImmuneToNPC(),
+        target->IsImmuneToNPC(),
         attacker->IsCombatDisallowed(),
         target->IsCombatDisallowed(),
         attacker->IsInCombat(),
@@ -82,7 +85,113 @@ AssaultManager& AssaultManager::Instance()
 
 void AssaultManager::Reset()
 {
+    RestoreAllOverrides();
     _activeAssaults.clear();
+}
+
+bool AssaultManager::EnsureServiceNpcAttackable(uint64 runtimeId, Creature* target)
+{
+    if (!target)
+    {
+        return false;
+    }
+
+    for (TemporaryNpcCombatOverride& overrideData : _temporaryNpcOverrides)
+    {
+        if (overrideData.MapId == target->GetMapId() && overrideData.Guid == target->GetGUID())
+        {
+            overrideData.RuntimeIds.insert(runtimeId);
+            return !target->IsImmuneToNPC();
+        }
+    }
+
+    if (!target->IsImmuneToNPC())
+    {
+        return true;
+    }
+
+    TemporaryNpcCombatOverride overrideData;
+    overrideData.Guid = target->GetGUID();
+    overrideData.MapId = target->GetMapId();
+    overrideData.WasImmuneToNpc = true;
+    overrideData.RuntimeIds.insert(runtimeId);
+
+    target->SetImmuneToNPC(false);
+
+    if (target->IsImmuneToNPC())
+    {
+        LOG_ERROR("server.loading",
+            "[LWI Assault] Runtime #{} failed to remove NPC immunity from service target {} GUID {}.",
+            runtimeId,
+            target->GetEntry(),
+            target->GetGUID().ToString());
+        return false;
+    }
+
+    _temporaryNpcOverrides.push_back(std::move(overrideData));
+
+    LOG_INFO("server.loading",
+        "[LWI Assault] Runtime #{} temporarily removed UNIT_FLAG_IMMUNE_TO_NPC from service target {} GUID {}.",
+        runtimeId,
+        target->GetEntry(),
+        target->GetGUID().ToString());
+
+    return true;
+}
+
+void AssaultManager::RestoreOverride(TemporaryNpcCombatOverride const& overrideData)
+{
+    Map* map = sMapMgr->FindMap(overrideData.MapId, 0);
+    if (!map)
+    {
+        return;
+    }
+
+    Creature* target = map->GetCreature(overrideData.Guid);
+    if (!target)
+    {
+        return;
+    }
+
+    target->CombatStop(true);
+
+    if (overrideData.WasImmuneToNpc)
+    {
+        target->SetImmuneToNPC(true);
+    }
+
+    LOG_INFO("server.loading",
+        "[LWI Assault] Restored service target {} GUID {} NPC immunity state to {}.",
+        target->GetEntry(),
+        target->GetGUID().ToString(),
+        overrideData.WasImmuneToNpc);
+}
+
+void AssaultManager::ReleaseRuntimeOverrides(uint64 runtimeId)
+{
+    for (auto itr = _temporaryNpcOverrides.begin(); itr != _temporaryNpcOverrides.end();)
+    {
+        itr->RuntimeIds.erase(runtimeId);
+
+        if (!itr->RuntimeIds.empty())
+        {
+            ++itr;
+            continue;
+        }
+
+        RestoreOverride(*itr);
+        itr = _temporaryNpcOverrides.erase(itr);
+    }
+}
+
+void AssaultManager::RestoreAllOverrides()
+{
+    for (TemporaryNpcCombatOverride const& overrideData : _temporaryNpcOverrides)
+    {
+        RestoreOverride(overrideData);
+    }
+
+    _temporaryNpcOverrides.clear();
 }
 
 bool AssaultManager::Start(
@@ -302,20 +411,21 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
             continue;
         }
 
-		if (creature->AI())
-		{
-		    bool attackResult = false;
-
-		    if (targetIsServiceNpc)
-		    {
-		        LOG_INFO("server.loading",
-		            "[LWI Assault] Runtime #{} creature {} member {} attempting forced attack on service NPC {} GUID {}.",
-		            assault.RuntimeId,
-		            entity.Entry,
-		            entity.MemberId,
-		            target->GetEntry(),
-		            target->GetGUID().ToString());
-
+        if (creature->AI())
+        {
+            if (targetIsServiceNpc)
+            {
+                if (!EnsureServiceNpcAttackable(assault.RuntimeId, target))
+                {
+                    LOG_WARN("server.loading",
+                        "[LWI Assault] Runtime #{} creature {} member {} could not make service target {} GUID {} attackable by NPCs.",
+                        assault.RuntimeId,
+                        entity.Entry,
+                        entity.MemberId,
+                        target->GetEntry(),
+                        target->GetGUID().ToString());
+                    continue;
+                }
 
                 LogCombatDiagnostics(
                     "PRE",
@@ -324,33 +434,17 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
                     creature,
                     target,
                     true);
+            }
 
-		        creature->SetInCombatWith(target);
-		        target->SetInCombatWith(creature);
-
-		        attackResult = creature->Attack(target, true);
-
-
-                LogCombatDiagnostics(
-                    "POST-ATTACK",
-                    assault.RuntimeId,
-                    entity,
-                    creature,
-                    target,
-                    true);
-
-		        LOG_INFO("server.loading",
-		            "[LWI Assault] Forced Attack() result={} attacker victim={} attacker combat={} target combat={}.",
-		            attackResult,
-		            creature->GetVictim() ? creature->GetVictim()->GetEntry() : 0,
-		            creature->IsInCombat(),
-		            target->IsInCombat());
-		    }
-
-		    creature->AI()->AttackStart(target);
+            creature->AI()->AttackStart(target);
 
             if (targetIsServiceNpc)
             {
+                if (target->AI() && target->CanStartAttack(creature, true))
+                {
+                    target->AI()->AttackStart(creature);
+                }
+
                 LogCombatDiagnostics(
                     "POST-AI-ATTACKSTART",
                     assault.RuntimeId,
@@ -360,37 +454,37 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
                     true);
             }
 
-		    bool const hasCorrectVictim = creature->GetVictim() == target;
+            bool const hasCorrectVictim = creature->GetVictim() == target;
 
-		    if (hasCorrectVictim)
-		    {
-		        ++engaged;
-		        ++newlyEngaged;
+            if (hasCorrectVictim)
+            {
+                ++engaged;
+                ++newlyEngaged;
 
-		        LOG_INFO("server.loading",
-		            "[LWI Assault] Runtime #{} creature {} member {} SUCCESSFULLY engaged target {} GUID {}{}.",
-		            assault.RuntimeId,
-		            entity.Entry,
-		            entity.MemberId,
-		            target->GetEntry(),
-		            target->GetGUID().ToString(),
-		            targetIsServiceNpc ? " via explicit service-NPC assault policy" : "");
-		    }
-		    else
-		    {
-		        LOG_WARN("server.loading",
-		            "[LWI Assault] Runtime #{} creature {} member {} FAILED to establish target {} GUID {}{}; "
-		            "current victim={}, inCombat={}.",
-		            assault.RuntimeId,
-		            entity.Entry,
-		            entity.MemberId,
-		            target->GetEntry(),
-		            target->GetGUID().ToString(),
-		            targetIsServiceNpc ? " via explicit service-NPC assault policy" : "",
-		            creature->GetVictim() ? creature->GetVictim()->GetEntry() : 0,
-		            creature->IsInCombat());
-		    }
-		}
+                LOG_INFO("server.loading",
+                    "[LWI Assault] Runtime #{} creature {} member {} SUCCESSFULLY engaged target {} GUID {}{}.",
+                    assault.RuntimeId,
+                    entity.Entry,
+                    entity.MemberId,
+                    target->GetEntry(),
+                    target->GetGUID().ToString(),
+                    targetIsServiceNpc ? " via explicit service-NPC assault policy" : "");
+            }
+            else
+            {
+                LOG_WARN("server.loading",
+                    "[LWI Assault] Runtime #{} creature {} member {} FAILED to establish target {} GUID {}{}; "
+                    "current victim={}, inCombat={}.",
+                    assault.RuntimeId,
+                    entity.Entry,
+                    entity.MemberId,
+                    target->GetEntry(),
+                    target->GetGUID().ToString(),
+                    targetIsServiceNpc ? " via explicit service-NPC assault policy" : "",
+                    creature->GetVictim() ? creature->GetVictim()->GetEntry() : 0,
+                    creature->IsInCombat());
+            }
+        }
     }
 
     if (newlyEngaged != 0)
@@ -424,6 +518,8 @@ void AssaultManager::CancelRuntime(uint64 runtimeId)
             ++itr;
         }
     }
+
+    ReleaseRuntimeOverrides(runtimeId);
 
     if (removed != 0)
     {
