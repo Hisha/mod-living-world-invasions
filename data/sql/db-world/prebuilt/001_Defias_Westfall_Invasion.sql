@@ -102,7 +102,7 @@ VALUES (10001, 1001, 1, 1, 100, 0, 0, 0, 0, 1, 'Spawn Defias Scout group.'),
        (10009, 1003, 5, 7, 101, 75, 2000, 7, 0, 1, 'Defias Control Team assaults Sentinel Hill.'),
        (10010, 1004, 1, 1, 102, 0, 0, 0, 0, 1, 'Spawn Defias Leadership.'),
        (10011, 1004, 2, 3, 102, 101, 100005, 0, 0, 1, 'Defias Leadership yells a warning.'),
-       {10012, 1004, 3, 7, 102, 75, 2000, 7, 0, 1 'Defias Leadership assaults Sentinel Hill.'};
+       {10012, 1004, 3, 7, 102, 75, 2000, 7, 0, 1, 'Defias Leadership assaults Sentinel Hill.'};
 
 -- ===========================================================================
 -- lwi_spawn_group(Allows for grouping of spawned NPCs.):
