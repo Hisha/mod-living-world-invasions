@@ -25,8 +25,14 @@ WHERE id IN (100,101,102,103);
 -- ===========================================================================
 -- lwi_creature_template Clear Data
 -- ===========================================================================
+DELETE FROM lwi_creature_ability
+WHERE id IN (100);
+
+-- ===========================================================================
+-- lwi_creature_template Clear Data
+-- ===========================================================================
 DELETE FROM lwi_creature_template
-WHERE id IN (1,2);
+WHERE id IN (1,2,3);
 
 -- ===========================================================================
 -- lwi_spawn_member Clear Data
@@ -117,8 +123,15 @@ VALUES (100, 'Defias Scouts', 0, -10898.128, 1466.9028, 42.519577, 5.4439473, 10
 -- lwi_creature_template(Create custom NPCs to be able to rename/reRank/etc an existing NPC.):
 -- ===========================================================================
 INSERT INTO lwi_creature_template(id,name,base_creature_entry,name_override,subname_override,faction_override,rank_override,health_modifier_override,armor_modifier_override,damage_modifier_override,enabled,comment) 
-VALUES (1, 'Defias Ogre Brute', 644, 'Defias Ogre Brute', NULL, 17, 0, 3.0, 1.5, NULL, 1, 'Defias Ogre based on Rhahk Zor'),
-	   (2, 'Westfall Invasion Boss', 639, 'Captain Garrick Vane', 'Defias Field Commander', 17, 1, 5.0, 1.5, 2.0, 1, 'Westfall Invasion Leader based on Edwin VanCleef');
+VALUES (1, 'Defias Ogre Brute', 644, 'Defias Ogre Brute', 'Defias Brotherhood', 17, 0, 3.0, 1.5, NULL, 1, 'Defias Ogre based on Rhahk Zor'),
+	   (2, 'Westfall Invasion Boss', 639, 'Captain Garrick Vane', 'Defias Field Commander', 17, 1, 5.0, 1.5, 2.0, 1, 'Westfall Invasion Leader based on Edwin VanCleef'),
+       (3, 'Defias Field Medic', 4418, 'Defias Field Medic', 'Defias Brotherhood', 17, 0, 1.0, 1.0, 0.7, 1, 'Defias healer based on Defias Wizard');
+
+-- ===========================================================================
+-- lwi_creature_ability(Data-driven combat abilities for LWI templates.):
+-- ===========================================================================
+INSERT INTO lwi_creature_ability(id,lwi_template_id,spell_id,target_type,priority,health_threshold_pct,cooldown_ms,range_yards,require_combat,enabled,comment)
+VALUES (100, 3, 2054, 1, 100, 70.0, 4000, 30.0, 1, 1, 'Defias Field Medic heals the lowest-health LWI ally at or below 70%.');
 
 -- ===========================================================================
 -- lwi_spawn_member(Gives the spawn list of NPCs being used in invasion.):
@@ -126,7 +139,7 @@ VALUES (1, 'Defias Ogre Brute', 644, 'Defias Ogre Brute', NULL, 17, 0, 3.0, 1.5,
 INSERT INTO lwi_spawn_member(id,spawn_group_id,entity_type,entity_entry,lwi_template_id,count,level_override,tactical_role,comment) 
 VALUES (100001, 100, 1, 449, NULL, 10, 0, 3, 'Defias scouts - Melee DPS'),
        (100002, 100, 1, 589, NULL, 5, 0, 4, 'Defias scouts - Ranged DPS'),
-       (100003, 100, 1, 545, NULL, 5, 0, 5, 'Defias scouts - Healer'),
+       (100003, 100, 1, 0, 3, 5, 0, 5, 'Defias scouts - Healer'),
        (100004, 101, 1, 0, 1, 3, 0, 3, 'Defias Control Team - Melee DPS'),
        (100005, 102, 1, 0, 2, 1, 0, 1, 'Defias Leadership - Melee DPS');
 

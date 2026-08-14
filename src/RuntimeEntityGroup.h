@@ -38,6 +38,7 @@ public:
     RuntimeEntityGroup const* GetGroup(uint64 runtimeGroupId) const;
 
     std::vector<uint64> GetGroupsForRuntime(uint64 runtimeId) const;
+    std::vector<uint64> GetAllGroupIds() const;
     RuntimeEntityGroup* FindLatestGroup(uint64 runtimeId, uint32 spawnGroupId);
 
     bool RemoveGroup(uint64 runtimeGroupId);

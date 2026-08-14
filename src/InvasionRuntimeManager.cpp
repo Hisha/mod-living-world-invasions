@@ -3,6 +3,7 @@
 #include "InvasionScheduler.h"
 #include "AssaultManager.h"
 #include "GroupDefeatWatcher.h"
+#include "CreatureAbilityManager.h"
 #include "LivingWorldInvasions.h"
 #include "MovementController.h"
 #include "InvasionSpawnManager.h"
@@ -40,6 +41,7 @@ void InvasionRuntimeManager::Reset()
     sMovementController.Reset();
     sAssaultManager.Reset();
     sGroupDefeatWatcher.Reset();
+    sCreatureAbilityMgr.Reset();
     sRuntimeSignalMgr.Reset();
     _runtimes.clear();
     _runtimeByInvasion.clear();
@@ -53,6 +55,7 @@ void InvasionRuntimeManager::Initialize()
     Reset();
     uint64 const now = UnixTimeNow();
     LoadActiveRuntimes(now);
+    sCreatureAbilityMgr.Load();
     _updateTimerMs = UpdateIntervalMs;
     _initialized = true;
 
@@ -70,6 +73,7 @@ void InvasionRuntimeManager::Update(uint32 diff)
     sMovementController.Update(diff);
     sAssaultManager.Update(diff);
     sGroupDefeatWatcher.Update(diff);
+    sCreatureAbilityMgr.Update(diff);
 
     if (_updateTimerMs > diff)
     {
@@ -185,6 +189,7 @@ bool InvasionRuntimeManager::FailRuntime(uint64 runtimeId, char const* reason)
         reason ? reason : "unspecified failure");
 
     sMovementController.CancelRuntime(runtimeId);
+    sCreatureAbilityMgr.CancelRuntime(runtimeId);
     sAssaultManager.CancelRuntime(runtimeId);
     sGroupDefeatWatcher.CancelRuntime(runtimeId);
     sInvasionSpawnMgr.CleanupRuntime(runtimeId);
@@ -232,6 +237,7 @@ void InvasionRuntimeManager::AbortAll()
             runtimeId, invasionId);
 
         sMovementController.CancelRuntime(runtimeId);
+        sCreatureAbilityMgr.CancelRuntime(runtimeId);
         sAssaultManager.CancelRuntime(runtimeId);
         sGroupDefeatWatcher.CancelRuntime(runtimeId);
         sInvasionSpawnMgr.CleanupRuntime(runtimeId);
@@ -368,6 +374,7 @@ void InvasionRuntimeManager::TimeoutRuntime(uint64 runtimeId, uint64 now)
         definition ? definition->MaximumRuntimeSeconds : 0);
 
     sMovementController.CancelRuntime(runtimeId);
+    sCreatureAbilityMgr.CancelRuntime(runtimeId);
     sAssaultManager.CancelRuntime(runtimeId);
     sGroupDefeatWatcher.CancelRuntime(runtimeId);
     sInvasionSpawnMgr.CleanupRuntime(runtimeId);

@@ -60,6 +60,18 @@ std::vector<uint64> RuntimeEntityGroupManager::GetGroupsForRuntime(uint64 runtim
     return itr->second;
 }
 
+std::vector<uint64> RuntimeEntityGroupManager::GetAllGroupIds() const
+{
+    std::vector<uint64> ids;
+    ids.reserve(_groups.size());
+    for (auto const& [id, group] : _groups)
+    {
+        (void)group;
+        ids.push_back(id);
+    }
+    return ids;
+}
+
 RuntimeEntityGroup* RuntimeEntityGroupManager::FindLatestGroup(uint64 runtimeId, uint32 spawnGroupId)
 {
     auto itr = _groupsByRuntime.find(runtimeId);

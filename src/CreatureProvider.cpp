@@ -156,6 +156,7 @@ bool CreatureProvider::Spawn(
         entity.GroupId = group.Id;
         entity.MemberId = member.Id;
         entity.Entry = creatureEntry;
+        entity.LwiTemplateId = member.LwiTemplateId;
         entity.TacticalRole = static_cast<uint8>(member.Role);
         entity.Guid = summon->GetGUID();
         spawnedEntities.push_back(std::move(entity));

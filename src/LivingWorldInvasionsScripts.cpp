@@ -5,6 +5,7 @@
 #include "InvasionSpawnManager.h"
 #include "LivingWorldInvasions.h"
 #include "LwiCreatureTemplateManager.h"
+#include "CreatureAbilityManager.h"
 #include "RuntimeSignalManager.h"
 
 #include "ConfigValueCache.h"
@@ -426,6 +427,7 @@ private:
         handler->PSendSysMessage("  Spawn groups: {}", sInvasionMgr.GetSpawnGroupCount());
         handler->PSendSysMessage("  Spawn members: {}", sInvasionMgr.GetSpawnMemberCount());
         handler->PSendSysMessage("  Dynamic creature templates: {}", sLwiCreatureTemplateMgr.GetMappedTemplateCount());
+        handler->PSendSysMessage("  Creature abilities: {}", sCreatureAbilityMgr.GetAbilityCount());
         handler->PSendSysMessage("  Movement paths: {}", sInvasionMgr.GetMovementPathCount());
         handler->PSendSysMessage("  Movement nodes: {}", sInvasionMgr.GetMovementNodeCount());
         handler->PSendSysMessage("  Movement profiles: {}", sInvasionMgr.GetMovementProfileCount());
