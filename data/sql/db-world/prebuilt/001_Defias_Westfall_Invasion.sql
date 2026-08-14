@@ -14,7 +14,7 @@ WHERE id IN (1001,1002,1003,1004,1005,1006);
 -- lwi_stage_action Clear Data
 -- ===========================================================================
 DELETE FROM lwi_stage_action
-WHERE id IN (10001,10002,10003,10004,10005,10006,10007,10008,10009,10010);
+WHERE id IN (10001,10002,10003,10004,10005,10006,10007,10008,10009,10010,10011);
 
 -- ===========================================================================
 -- lwi_spawn_group Clear Data
@@ -99,9 +99,9 @@ VALUES (10001, 1001, 1, 1, 100, 0, 0, 0, 0, 1, 'Spawn Defias Scout group.'),
        (10006, 1003, 2, 2, 100, 101, 100, 0, 0, 1, 'Move Defias Scout group to Sentinel Hill.'),
        (10007, 1003, 3, 2, 101, 101, 100, 0, 0, 1, 'Move Defias Control group to Sentinel Hill.'),
        (10008, 1003, 4, 7, 100, 75, 2000, 7, 0, 1, 'Defias Scouts assault Sentinel Hill.'),
-       (10009, 1003, 4, 7, 101, 75, 2000, 7, 0, 1, 'Defias Control Team assaults Sentinel Hill.'),
+       (10009, 1003, 5, 7, 101, 75, 2000, 7, 0, 1, 'Defias Control Team assaults Sentinel Hill.'),
        (10010, 1004, 1, 1, 102, 0, 0, 0, 0, 1, 'Spawn Defias Leadership.'),
-       (10011, 1004, 2, 3, 103, 101, 100005, 0, 0, 1, 'Defias Leadership yells a warning.');
+       (10011, 1004, 2, 3, 102, 101, 100005, 0, 0, 1, 'Defias Leadership yells a warning.');
 
 -- ===========================================================================
 -- lwi_spawn_group(Allows for grouping of spawned NPCs.):
