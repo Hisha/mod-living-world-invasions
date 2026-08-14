@@ -19,63 +19,6 @@ constexpr float DefaultSearchRadius = 40.0f;
 constexpr uint32 DefaultReacquireIntervalMs = 2000;
 constexpr uint32 MinimumReacquireIntervalMs = 500;
 
-void LogCombatDiagnostics(
-    char const* phase,
-    uint64 runtimeId,
-    RuntimeEntity const& entity,
-    Creature* attacker,
-    Creature* target,
-    bool explicitServiceTarget)
-{
-    if (!attacker || !target)
-    {
-        return;
-    }
-
-    uint32 const npcFlags = target->GetCreatureTemplate()->npcflag;
-
-    LOG_INFO("server.loading",
-        "[LWI AssaultDiag] {} runtime #{} attacker {} member {} -> target {} GUID {} "
-        "explicitService={} distance={:.2f} "
-        "attackerFaction={} targetFaction={} attackerReaction={} targetReaction={} "
-        "validAttackTarget={} canCreatureAttack={} canStartAttack={} targetable={} "
-        "attackerImmuneToNpc={} targetImmuneToNpc={} "
-        "attackerCombatDisallowed={} targetCombatDisallowed={} "
-        "attackerInCombat={} targetInCombat={} attackerVictim={} targetVictim={} "
-        "targetNpcFlags={} targetQuestGiver={} targetVendor={} targetFlightMaster={} "
-        "targetNonAttackable={} targetNotSelectable={} targetReactState={}.",
-        phase,
-        runtimeId,
-        entity.Entry,
-        entity.MemberId,
-        target->GetEntry(),
-        target->GetGUID().ToString(),
-        explicitServiceTarget,
-        attacker->GetDistance(target),
-        attacker->GetFaction(),
-        target->GetFaction(),
-        static_cast<uint32>(attacker->GetReactionTo(target)),
-        static_cast<uint32>(target->GetReactionTo(attacker)),
-        attacker->IsValidAttackTarget(target),
-        attacker->CanCreatureAttack(target, true),
-        attacker->CanStartAttack(target, true),
-        target->isTargetableForAttack(),
-        attacker->IsImmuneToNPC(),
-        target->IsImmuneToNPC(),
-        attacker->IsCombatDisallowed(),
-        target->IsCombatDisallowed(),
-        attacker->IsInCombat(),
-        target->IsInCombat(),
-        attacker->GetVictim() ? attacker->GetVictim()->GetEntry() : 0,
-        target->GetVictim() ? target->GetVictim()->GetEntry() : 0,
-        npcFlags,
-        (npcFlags & UNIT_NPC_FLAG_QUESTGIVER) != 0,
-        (npcFlags & UNIT_NPC_FLAG_VENDOR) != 0,
-        (npcFlags & UNIT_NPC_FLAG_FLIGHTMASTER) != 0,
-        target->HasUnitFlag(UNIT_FLAG_NON_ATTACKABLE),
-        target->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE),
-        static_cast<uint32>(target->GetReactState()));
-}
 }
 
 AssaultManager& AssaultManager::Instance()
@@ -475,26 +418,6 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
 
         if (creature->IsInCombat() && creature->GetVictim())
         {
-            if (Creature* currentVictim = creature->GetVictim()->ToCreature())
-            {
-                uint32 const currentNpcFlags = currentVictim->GetCreatureTemplate()->npcflag;
-                bool const currentIsPolicyTarget =
-                    (((assault.TargetPolicy & 1u) != 0) && ((currentNpcFlags & UNIT_NPC_FLAG_QUESTGIVER) != 0)) ||
-                    (((assault.TargetPolicy & 2u) != 0) && ((currentNpcFlags & UNIT_NPC_FLAG_VENDOR) != 0)) ||
-                    (((assault.TargetPolicy & 4u) != 0) && ((currentNpcFlags & UNIT_NPC_FLAG_FLIGHTMASTER) != 0));
-
-                if (currentIsPolicyTarget)
-                {
-                    LogCombatDiagnostics(
-                        "NEXT-TICK",
-                        assault.RuntimeId,
-                        entity,
-                        creature,
-                        currentVictim,
-                        true);
-                }
-            }
-
             ++engaged;
             continue;
         }
@@ -616,15 +539,7 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
                         target->GetGUID().ToString());
                     continue;
                 }
-
-                LogCombatDiagnostics(
-                    "PRE",
-                    assault.RuntimeId,
-                    entity,
-                    creature,
-                    target,
-                    true);
-            }
+}
 
             creature->AI()->AttackStart(target);
 
@@ -634,15 +549,7 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
                 {
                     target->AI()->AttackStart(creature);
                 }
-
-                LogCombatDiagnostics(
-                    "POST-AI-ATTACKSTART",
-                    assault.RuntimeId,
-                    entity,
-                    creature,
-                    target,
-                    true);
-            }
+}
 
             bool const hasCorrectVictim = creature->GetVictim() == target;
 
@@ -652,8 +559,8 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
                 ++newlyEngaged;
                 incrementAssignment(target->GetGUID());
 
-                LOG_INFO("server.loading",
-                    "[LWI Assault] Runtime #{} creature {} member {} SUCCESSFULLY engaged target {} GUID {}{}.",
+                LOG_DEBUG("server.loading",
+                    "[LWI Assault] Runtime #{} creature {} member {} engaged target {} GUID {}{}.",
                     assault.RuntimeId,
                     entity.Entry,
                     entity.MemberId,
@@ -663,8 +570,8 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
             }
             else
             {
-                LOG_WARN("server.loading",
-                    "[LWI Assault] Runtime #{} creature {} member {} FAILED to establish target {} GUID {}{}; "
+                LOG_DEBUG("server.loading",
+                    "[LWI Assault] Runtime #{} creature {} member {} failed to establish target {} GUID {}{}; "
                     "current victim={}, inCombat={}.",
                     assault.RuntimeId,
                     entity.Entry,
