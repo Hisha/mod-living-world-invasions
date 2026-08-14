@@ -14,7 +14,7 @@ WHERE id IN (1001,1002,1003,1004,1005,1006);
 -- lwi_stage_action Clear Data
 -- ===========================================================================
 DELETE FROM lwi_stage_action
-WHERE id IN (10001,10002,10003);
+WHERE id IN (10001,10002,10003,10004,10005,10006,10007,10008,10009,10010);
 
 -- ===========================================================================
 -- lwi_spawn_group Clear Data
@@ -81,9 +81,9 @@ VALUES (1, 'Defias Westfall Invasion', 0, 40, 1, 1, 10, 20, 100, 79200, 115200, 
 -- ===========================================================================
 INSERT INTO lwi_invasion_stage(id,invasion_id,stage_order,name,duration_seconds,completion_type,completion_target_id,enabled,comment) 
 VALUES (1001, 1, 10, 'Defias Scouts', 0, 1, 100, 1, 'Defias Scouts establish staging point over looking Sentinel Hill'),
-       (1002, 1, 20, 'Defias Populate Staging', 0, 1, 101, 1, 'Defias populate strike force at staging point.'),
+       (1002, 1, 20, 'Defias Populate Staging', 10, 0, 0, 1, 'Defias populate strike force at staging point.'),
        (1003, 1, 30, 'Defias Establish Control', 600, 0, 0, 1, 'Defias establish control of Sentinel Hill'),
-       (1004, 1, 40, 'Defias Leadership Arrives', 0, 1, 102, 1, 'Defias Leadership arrives at Sentinel Hill'),
+       (1004, 1, 40, 'Defias Leadership Arrives', 10, 0, 0, 1, 'Defias Leadership arrives at Sentinel Hill'),
        (1005, 1, 50, 'Stormwind Response', 0, 1, 103, 1, 'Stormwind response forces heads to Sentinel Hill'),
        (1006, 1, 60, 'Stormwind vs Defias', 0, 1, 104, 1, 'Final battle to destroy the Defias at Sentinel Hill');
 
@@ -93,7 +93,15 @@ VALUES (1001, 1, 10, 'Defias Scouts', 0, 1, 100, 1, 'Defias Scouts establish sta
 INSERT INTO lwi_stage_action(id,stage_id,action_order,action_type,target_id,parameter1,parameter2,parameter3,delay_seconds,enabled,comment)
 VALUES (10001, 1001, 1, 1, 100, 0, 0, 0, 0, 1, 'Spawn Defias Scout group.'),
        (10002, 1001, 2, 2, 100, 100, 100, 100, 0, 1, 'Move Defias Scout Group to staging point and emit ScoutRouteComplete'),
-       (10003, 1002, 1, 3, 100, 100, 0, 0, 0, 1, 'A scout says a warning.');
+       (10003, 1002, 1, 3, 100, 100, 0, 0, 0, 1, 'A scout says a warning.'),
+       (10004, 1002, 2, 1, 101, 0, 0, 0, 0, 1, 'Spawn Defias Control team.'),
+       (10005, 1003, 1, 4, 100, 2, 0, 1, 0, 1, 'Alliance-only Westfall zone warning; zone id derives from invasion.'),
+       (10006, 1003, 2, 2, 100, 101, 100, 0, 0, 1, 'Move Defias Scout group to Sentinel Hill.'),
+       (10007, 1003, 3, 2, 101, 101, 100, 0, 0, 1, 'Move Defias Control group to Sentinel Hill.'),
+       (10008, 1003, 4, 7, 100, 75, 2000, 7, 0, 1, 'Defias Scouts assault Sentinel Hill.'),
+       (10009, 1003, 4, 7, 101, 75, 2000, 7, 0, 1, 'Defias Control Team assaults Sentinel Hill.'),
+       (10010, 1004, 1, 1, 102, 0, 0, 0, 0, 1, 'Spawn Defias Leadership.'),
+       (10011, 1004, 2, 3, 103, 101, 100005, 0, 0, 1, 'Defias Leadership yells a warning.');
 
 -- ===========================================================================
 -- lwi_spawn_group(Allows for grouping of spawned NPCs.):
@@ -162,7 +170,8 @@ VALUES (100, 'ScoutRouteComplete', 1, 'Emitted when the Defias scout movement ro
 -- lwi_dialogue(Say/Yells by the NPCs):
 -- ===========================================================================
 INSERT INTO lwi_dialogue(id,name,text,chat_type,language,enabled,comment)
-VALUES (100, 'Defias Scout Warning', 'Keep your eyes open. Sentinel Hill is ahead.', 0, 0, 1, 'Defias Scout say at staging point.');
+VALUES (100, 'Defias Scout Warning', 'Keep your eyes open. Sentinel Hill is ahead.', 0, 0, 1, 'Defias Scout say at staging point.'),
+       (101, 'Defias Leadership Warning', 'The Brotherhood have taken Westfall!', 1, 0, 1, 'Defias Leadership announcing they control Westfall.');
 
 -- ===========================================================================
 -- lwi_announcement(Announcements to the world, limited by stage action parameters):
