@@ -137,11 +137,11 @@ VALUES (100, 3, 2054, 1, 100, 70.0, 4000, 30.0, 1, 1, 'Defias Field Medic heals 
 -- lwi_spawn_member(Gives the spawn list of NPCs being used in invasion.):
 -- ===========================================================================
 INSERT INTO lwi_spawn_member(id,spawn_group_id,entity_type,entity_entry,lwi_template_id,count,level_override,tactical_role,comment) 
-VALUES (100001, 100, 1, 449, NULL, 20, 20, 3, 'Defias scouts - Melee DPS'),
-       (100002, 100, 1, 589, NULL, 15, 20, 4, 'Defias scouts - Ranged DPS'),
-       (100003, 100, 1, 0, 3, 5, 20, 10, 'Defias scouts - Healer'),
-       (100004, 101, 1, 0, 1, 3, 20, 10, 'Defias Control Team - Melee DPS'),
-       (100005, 102, 1, 0, 2, 1, 30, 1, 'Defias Leadership - Melee DPS');
+VALUES (100001, 100, 1, 449, NULL, 20, 25, 3, 'Defias scouts - Melee DPS'),
+       (100002, 100, 1, 589, NULL, 15, 25, 4, 'Defias scouts - Ranged DPS'),
+       (100003, 100, 1, 0, 3, 5, 25, 10, 'Defias scouts - Healer'),
+       (100004, 101, 1, 0, 1, 3, 25, 10, 'Defias Control Team - Melee DPS'),
+       (100005, 102, 1, 0, 2, 1, 35, 1, 'Defias Leadership - Melee DPS');
 
 -- ===========================================================================
 -- lwi_movement_path(Grouping for the path the NPCs will take.):
