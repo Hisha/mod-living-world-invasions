@@ -14,7 +14,7 @@ WHERE id IN (1001,1002,1003,1004,1005,1006);
 -- lwi_stage_action Clear Data
 -- ===========================================================================
 DELETE FROM lwi_stage_action
-WHERE id IN (10001);
+WHERE id IN (10001,10002,10003);
 
 -- ===========================================================================
 -- lwi_spawn_group Clear Data
@@ -47,41 +47,61 @@ DELETE FROM lwi_movement_node
 WHERE id IN (10000,10001,10002,10003,10004,10005,10006,10007);
 
 -- ===========================================================================
+-- lwi_movement_profile Clear Data
+-- ===========================================================================
+DELETE FROM lwi_movement_profile
+WHERE id IN (100);
+
+-- ===========================================================================
 -- lwi_runtime_signal Clear Data
 -- ===========================================================================
 DELETE FROM lwi_runtime_signal
 WHERE id IN (100,101,102,103,104);
 
 -- ===========================================================================
+-- lwi_dialogue Clear Data
+-- ===========================================================================
+DELETE FROM lwi_dialogue
+WHERE id IN (100);
+
+-- ===========================================================================
+-- lwi_announcement Clear Data
+-- ===========================================================================
+DELETE FROM lwi_announcement
+WHERE id IN (100);
+
+-- ===========================================================================
 -- lwi_invasion table(Name the invasion):
 -- ===========================================================================
 INSERT INTO lwi_invasion(id,name,map_id,zone_id,team,response_origin_id, recommended_min_level,recommended_max_level,selection_weight,minimum_cooldown_seconds,maximum_cooldown_seconds,maximum_runtime_seconds,allow_random_start,enabled,comment) 
-VALUES (1,'Defias Westfall Invasion',0,40,1,1,10,20,100,79200,115200,3600,1,0,'Defias attack/control Sentinel Hill');
+VALUES (1, 'Defias Westfall Invasion', 0, 40, 1, 1, 10, 20, 100, 79200, 115200, 3600, 1, 0, 'Defias attack/control Sentinel Hill');
 
 -- ===========================================================================
 -- lwi_invasion_stage(The stages of the invasion):
 -- ===========================================================================
 INSERT INTO lwi_invasion_stage(id,invasion_id,stage_order,name,duration_seconds,completion_type,completion_target_id,enabled,comment) 
-VALUES (1001,1,10,'Defias Scouts',0,1,100,1,'Defias Scouts establish staging point over looking Sentinel Hill'),
-       (1002,1,20,'Defias Populate Staging',0,1,101,1,'Defias populate strike force at staging point.'),
-       (1003,1,30,'Defias Establish Control',600,0,0,1,'Defias establish control of Sentinel Hill'),
-       (1004,1,40,'Defias Leadership Arrives',0,1,102,1,'Defias Leadership arrives at Sentinel Hill'),
-       (1005,1,50,'Stormwind Response',0,1,103,1,'Stormwind response forces heads to Sentinel Hill'),
-       (1006,1,60,'Stormwind vs Defias',0,1,104,1,'Final battle to destroy the Defias at Sentinel Hill');
+VALUES (1001, 1, 10, 'Defias Scouts', 0, 1, 100, 1, 'Defias Scouts establish staging point over looking Sentinel Hill'),
+       (1002, 1, 20, 'Defias Populate Staging', 0, 1, 101, 1, 'Defias populate strike force at staging point.'),
+       (1003, 1, 30, 'Defias Establish Control', 600, 0, 0, 1, 'Defias establish control of Sentinel Hill'),
+       (1004, 1, 40, 'Defias Leadership Arrives', 0, 1, 102, 1, 'Defias Leadership arrives at Sentinel Hill'),
+       (1005, 1, 50, 'Stormwind Response', 0, 1, 103, 1, 'Stormwind response forces heads to Sentinel Hill'),
+       (1006, 1, 60, 'Stormwind vs Defias', 0, 1, 104, 1, 'Final battle to destroy the Defias at Sentinel Hill');
 
 -- ===========================================================================
 -- lwi_stage_action():
 -- ===========================================================================
 INSERT INTO lwi_stage_action(id,stage_id,action_order,action_type,target_id,parameter1,parameter2,parameter3,delay_seconds,enabled,comment)
-VALUES (10001, 1001, 1, 1, 100, 0, 0, 0, 0, 1, 'Spawn Defias Scout group.');
+VALUES (10001, 1001, 1, 1, 100, 0, 0, 0, 0, 1, 'Spawn Defias Scout group.'),
+       (10002, 1001, 2, 2, 100, 100, 100, 100, 0, 1, 'Move Defias Scout Group to staging point and emit ScoutRouteComplete'),
+       (10003, 1002, 1, 3, 100, 100, 0, 0, 0, 1, 'A scout says a warning.');
 
 -- ===========================================================================
 -- lwi_spawn_group(Allows for grouping of spawned NPCs.):
 -- ===========================================================================
 INSERT INTO lwi_spawn_group(id,name,map_id,x,y,z,orientation,spawn_radius,enabled) 
-VALUES (100,'Defias Scouts',0,-10898.128, 1466.9028, 42.519577, 5.4439473,10,1),
-       (101,'Defias Control Team',0,-10490.681, 1212.7977, 67.30977, 4.8823605,10,1),
-       (102,'Defias Leadership',0,-10509.177, 1046.7267, 60.51838, 4.956951,10,1),
+VALUES (100, 'Defias Scouts', 0, -10898.128, 1466.9028, 42.519577, 5.4439473, 10, 1),
+       (101, 'Defias Control Team', 0, -10490.681, 1212.7977, 67.30977, 4.8823605, 10, 1),
+       (102, 'Defias Leadership', 0, -10509.177, 1046.7267, 60.51838, 4.956951, 10, 1),
        (103, 'Stormwind Response Force', 0, -9005.095, 480.13635, 96.55263, 3.814248, 10, 1);
 
 -- ===========================================================================
@@ -123,16 +143,29 @@ VALUES (10000, 100, 10, 0, -10898.128, 1466.9028, 42.519577, 5.4439473,   0, 0, 
        (10007, 101, 30, 0, -10509.177, 1046.7267, 60.51838, 4.956951,   0, 0, 1, 'Defias move to SH route node 30');
 
 -- ===========================================================================
+-- lwi_movement_profile(How is the spawn group moving toward it's target.):
+-- ===========================================================================
+INSERT INTO lwi_movement_profile(id,name,default_mode,walk_speed_multiplier,run_speed_multiplier,stealth_enabled,enabled,comment)
+VALUES (100, 'Defias Scout Movement', 2, 1.0, 1.0, 0, 1, 'Defias Scout group movement to Sentinel Hill.');
+
+-- ===========================================================================
 -- lwi_runtime_signal(Signals to indicate completeion of task.):
 -- ===========================================================================
 INSERT INTO lwi_runtime_signal(id,name,enabled,comment) 
-VALUES (100,'ScoutRouteComplete',1,'Emitted when the Defias scout movement route reaches staging point.'),
-       (101,'StagingComplete',1,'Emitted when the Defias spawns attack force at staging point.'),
-       (102,'LeadershipComplete',1,'Emitted when the Defias spawns leadership at Sentinel Hill.'),
-       (103,'StormwindResponseComplete',1,'Emitted when the Stormwind Response arrives at Sentinel Hill.'),
-       (104,'StormwindWins',1,'Emitted when the Stormwind Response secures Sentinel Hill.');
+VALUES (100, 'ScoutRouteComplete', 1, 'Emitted when the Defias scout movement route reaches staging point.'),
+       (101, 'StagingComplete', 1, 'Emitted when the Defias spawns attack force at staging point.'),
+       (102, 'LeadershipComplete', 1, 'Emitted when the Defias spawns leadership at Sentinel Hill.'),
+       (103, 'StormwindResponseComplete', 1, 'Emitted when the Stormwind Response arrives at Sentinel Hill.'),
+       (104, 'StormwindWins', 1, 'Emitted when the Stormwind Response secures Sentinel Hill.');
 
--- lwi_dialogue():
+-- ===========================================================================
+-- lwi_dialogue(Say/Yells by the NPCs):
+-- ===========================================================================
+INSERT INTO lwi_dialogue(id,name,text,chat_type,language,enabled,comment)
+VALUES (100, 'Defias Scout Warning', 'Keep your eyes open. Sentinel Hill is ahead.', 0, 0, 1, 'Defias Scout say at staging point.');
 
-
--- lwi_announcement():
+-- ===========================================================================
+-- lwi_announcement(Announcements to the world, limited by stage action parameters):
+-- ===========================================================================
+INSERT INTO lwi_announcement(id,name,text,enabled,comment)
+VALUES (100, 'Westfall Alliance Warning', 'Defias activity has been reported near Sentinel Hill. Alliance forces in Westfall are advised to remain alert.', 1, 'Westfall area Defias warning.');
