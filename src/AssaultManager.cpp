@@ -233,34 +233,66 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
             continue;
         }
 
-        if (creature->AI())
-        {
-            // For explicitly permitted passive service NPCs, force the combat
-            // relationship from the invader side before handing control to AI.
-            if (targetIsServiceNpc)
-            {
-                creature->SetInCombatWith(target);
-                target->SetInCombatWith(creature);
-                creature->Attack(target, true);
-            }
+		if (creature->AI())
+		{
+		    bool attackResult = false;
 
-            creature->AI()->AttackStart(target);
+		    if (targetIsServiceNpc)
+		    {
+		        LOG_INFO("server.loading",
+		            "[LWI Assault] Runtime #{} creature {} member {} attempting forced attack on service NPC {} GUID {}.",
+		            assault.RuntimeId,
+		            entity.Entry,
+		            entity.MemberId,
+		            target->GetEntry(),
+		            target->GetGUID().ToString());
 
-            if (creature->GetVictim() == target || creature->IsInCombat())
-            {
-                ++engaged;
-                ++newlyEngaged;
+		        creature->SetInCombatWith(target);
+		        target->SetInCombatWith(creature);
 
-                LOG_INFO("server.loading",
-                    "[LWI Assault] Runtime #{} creature {} member {} engaged target {} GUID {}{}.",
-                    assault.RuntimeId,
-                    entity.Entry,
-                    entity.MemberId,
-                    target->GetEntry(),
-                    target->GetGUID().ToString(),
-                    targetIsServiceNpc ? " via explicit service-NPC assault policy" : "");
-            }
-        }
+		        attackResult = creature->Attack(target, true);
+
+		        LOG_INFO("server.loading",
+		            "[LWI Assault] Forced Attack() result={} attacker victim={} attacker combat={} target combat={}.",
+		            attackResult,
+		            creature->GetVictim() ? creature->GetVictim()->GetEntry() : 0,
+		            creature->IsInCombat(),
+		            target->IsInCombat());
+		    }
+
+		    creature->AI()->AttackStart(target);
+
+		    bool const hasCorrectVictim = creature->GetVictim() == target;
+
+		    if (hasCorrectVictim)
+		    {
+		        ++engaged;
+		        ++newlyEngaged;
+
+		        LOG_INFO("server.loading",
+		            "[LWI Assault] Runtime #{} creature {} member {} SUCCESSFULLY engaged target {} GUID {}{}.",
+		            assault.RuntimeId,
+		            entity.Entry,
+		            entity.MemberId,
+		            target->GetEntry(),
+		            target->GetGUID().ToString(),
+		            targetIsServiceNpc ? " via explicit service-NPC assault policy" : "");
+		    }
+		    else
+		    {
+		        LOG_WARN("server.loading",
+		            "[LWI Assault] Runtime #{} creature {} member {} FAILED to establish target {} GUID {}{}; "
+		            "current victim={}, inCombat={}.",
+		            assault.RuntimeId,
+		            entity.Entry,
+		            entity.MemberId,
+		            target->GetEntry(),
+		            target->GetGUID().ToString(),
+		            targetIsServiceNpc ? " via explicit service-NPC assault policy" : "",
+		            creature->GetVictim() ? creature->GetVictim()->GetEntry() : 0,
+		            creature->IsInCombat());
+		    }
+		}
     }
 
     if (newlyEngaged != 0)
