@@ -100,7 +100,7 @@ INSERT INTO lwi_stage_action(id,stage_id,action_order,action_type,target_id,para
 VALUES (10001, 1001, 1, 1, 100, 0, 0, 0, 0, 1, 'Spawn Defias Scout group.'),
 	   (10002, 1001, 2, 1, 101, 0, 0, 0, 0, 1, 'Spawn Defias 2nd Scout group.'),
        (10003, 1001, 3, 2, 100, 100, 100, 100, 0, 1, 'Move Defias Scout Group to staging point and emit ScoutRouteComplete'),
-       (10004, 1001, 4, 2, 101, 100, 100, 100, 0, 1, 'Move Defias 2nd Scout Group to staging point and emit ScoutRouteComplete'),
+       (10004, 1001, 4, 2, 101, 101, 100, 100, 0, 1, 'Move Defias 2nd Scout Group to staging point and emit ScoutRouteComplete'),
        (10005, 1002, 1, 3, 100, 100, 0, 0, 0, 1, 'A scout says a warning.'),
        (10006, 1002, 2, 1, 102, 0, 0, 0, 0, 1, 'Spawn Defias Control team.'),
        (10007, 1002, 3, 1, 103, 0, 0, 0, 0, 1, 'Spawn Defias 2nd Control team.'),
