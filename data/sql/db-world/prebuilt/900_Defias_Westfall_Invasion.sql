@@ -44,7 +44,7 @@ WHERE id IN (100001,100002,100003,100004,100005,100006,100007,100008,100009,1000
 -- lwi_movement_path Clear Data
 -- ===========================================================================
 DELETE FROM lwi_movement_path
-WHERE id IN (100,101,102);
+WHERE id IN (100,101,102,103,104,105);
 
 -- ===========================================================================
 -- lwi_movement_node Clear Data
@@ -102,7 +102,7 @@ VALUES (10001, 1001, 1, 1, 100, 0, 0, 0, 0, 1, 'Spawn Defias Scout group.'),
        (10003, 1001, 3, 2, 100, 100, 100, 100, 0, 1, 'Move Defias Scout Group to staging point and emit ScoutRouteComplete'),
        (10004, 1001, 4, 2, 101, 100, 100, 100, 0, 1, 'Move Defias 2nd Scout Group to staging point and emit ScoutRouteComplete'),
        (10005, 1002, 1, 3, 100, 100, 0, 0, 0, 1, 'A scout says a warning.'),
-       (10006, 1002, 2, 1, 101, 0, 0, 0, 0, 1, 'Spawn Defias Control team.'),
+       (10006, 1002, 2, 1, 102, 0, 0, 0, 0, 1, 'Spawn Defias Control team.'),
        (10007, 1002, 3, 1, 103, 0, 0, 0, 0, 1, 'Spawn Defias 2nd Control team.'),
        (10008, 1002, 4, 1, 104, 0, 0, 0, 0, 1, 'Spawn Defias 3rd Control team.'),
        (10009, 1003, 1, 4, 100, 2, 0, 1, 0, 1, 'Alliance-only Westfall zone warning; zone id derives from invasion.'),
@@ -167,9 +167,12 @@ VALUES (100001, 100, 1, 449, NULL, 3, 25, 3, 'Defias scouts - Melee DPS'),
 -- lwi_movement_path(Grouping for the path the NPCs will take.):
 -- ===========================================================================
 INSERT INTO lwi_movement_path(id,name,enabled,comment)
-VALUES (100, 'Defias Scout Route', 1, 'Route the Defias Scout Group will use to get to staging point.'),
-       (101, 'Defias move into Sentinel Hill', 1, 'Route the Defias group will use to invade Sentinel Hill. '),
-       (102, 'Stormwind Response Force Route', 1, 'Route the Stormwind Response Force will use to reach Sentinel Hill.');
+VALUES (100, 'Defias Scout Route 1', 1, 'First Defias scout route to staging point.'),
+       (101, 'Defias Scout Route 2', 1, 'Second Defias scout route to staging point.'),
+       (102, 'Defias West Assault Route', 1, 'Western Defias force route into Sentinel Hill.'),
+       (103, 'Defias North Assault Route', 1, 'Northern Defias force route into Sentinel Hill.'),
+       (104, 'Defias South Assault Route', 1, 'Southern Defias force route into Sentinel Hill.'),
+       (105, 'Stormwind Response Force Route', 1, 'Stormwind response route to Sentinel Hill.');
 
 -- ===========================================================================
 -- lwi_movement_node(The path broken down by each node of it.):
