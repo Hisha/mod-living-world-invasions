@@ -14,13 +14,13 @@ WHERE id IN (1001,1002,1003,1004,1005,1006);
 -- lwi_stage_action Clear Data
 -- ===========================================================================
 DELETE FROM lwi_stage_action
-WHERE id IN (10001,10002,10003,10004,10005,10006,10007,10008,10009,10010,10011,10012);
+WHERE id IN (10001,10002,10003,10004,10005,10006,10007,10008,10009,10010,10011,10012,10013,10014,10015,10016,10017,10018,10019,10020,10021,10022);
 
 -- ===========================================================================
 -- lwi_spawn_group Clear Data
 -- ===========================================================================
 DELETE FROM lwi_spawn_group
-WHERE id IN (100,101,102,103);
+WHERE id IN (100,101,102,103,104,105,106);
 
 -- ===========================================================================
 -- lwi_creature_template Clear Data
@@ -38,7 +38,7 @@ WHERE id IN (1,2,3);
 -- lwi_spawn_member Clear Data
 -- ===========================================================================
 DELETE FROM lwi_spawn_member
-WHERE id IN (100001,100002,100003,100004,100005);
+WHERE id IN (100001,100002,100003,100004,100005,100006,100007,100008,100009,100010,100011,100012);
 
 -- ===========================================================================
 -- lwi_movement_path Clear Data
@@ -50,7 +50,7 @@ WHERE id IN (100,101,102);
 -- lwi_movement_node Clear Data
 -- ===========================================================================
 DELETE FROM lwi_movement_node
-WHERE id IN (10000,10001,10002,10003,10004,10005,10006,10007);
+WHERE id IN (10000,10001,10002,10003,10004,10005,10006,10007,10008,10009,10010,10012,10013,10014,10015,10016,10017);
 
 -- ===========================================================================
 -- lwi_movement_profile Clear Data
@@ -98,26 +98,39 @@ VALUES (1001, 1, 10, 'Defias Scouts', 0, 1, 100, 1, 'Defias Scouts establish sta
 -- ===========================================================================
 INSERT INTO lwi_stage_action(id,stage_id,action_order,action_type,target_id,parameter1,parameter2,parameter3,delay_seconds,enabled,comment)
 VALUES (10001, 1001, 1, 1, 100, 0, 0, 0, 0, 1, 'Spawn Defias Scout group.'),
-       (10002, 1001, 2, 2, 100, 100, 100, 100, 0, 1, 'Move Defias Scout Group to staging point and emit ScoutRouteComplete'),
-       (10003, 1002, 1, 3, 100, 100, 0, 0, 0, 1, 'A scout says a warning.'),
-       (10004, 1002, 2, 1, 101, 0, 0, 0, 0, 1, 'Spawn Defias Control team.'),
-       (10005, 1003, 1, 4, 100, 2, 0, 1, 0, 1, 'Alliance-only Westfall zone warning; zone id derives from invasion.'),
-       (10006, 1003, 2, 2, 100, 101, 100, 0, 0, 1, 'Move Defias Scout group to Sentinel Hill.'),
-       (10007, 1003, 3, 2, 101, 101, 100, 0, 0, 1, 'Move Defias Control group to Sentinel Hill.'),
-       (10008, 1003, 4, 7, 100, 75, 2000, 7, 0, 1, 'Defias Scouts assault Sentinel Hill.'),
-       (10009, 1003, 5, 7, 101, 75, 2000, 7, 0, 1, 'Defias Control Team assaults Sentinel Hill.'),
-       (10010, 1004, 1, 1, 102, 0, 0, 0, 0, 1, 'Spawn Defias Leadership.'),
-       (10011, 1004, 2, 3, 102, 101, 100005, 0, 0, 1, 'Defias Leadership yells a warning.'),
-       (10012, 1004, 3, 7, 102, 75, 2000, 7, 0, 1, 'Defias Leadership assaults Sentinel Hill.');
+	   (10002, 1001, 2, 1, 101, 0, 0, 0, 0, 1, 'Spawn Defias 2nd Scout group.'),
+       (10003, 1001, 3, 2, 100, 100, 100, 100, 0, 1, 'Move Defias Scout Group to staging point and emit ScoutRouteComplete'),
+       (10004, 1001, 4, 2, 101, 100, 100, 100, 0, 1, 'Move Defias 2nd Scout Group to staging point and emit ScoutRouteComplete'),
+       (10005, 1002, 1, 3, 100, 100, 0, 0, 0, 1, 'A scout says a warning.'),
+       (10006, 1002, 2, 1, 101, 0, 0, 0, 0, 1, 'Spawn Defias Control team.'),
+       (10007, 1002, 3, 1, 103, 0, 0, 0, 0, 1, 'Spawn Defias 2nd Control team.'),
+       (10008, 1002, 4, 1, 104, 0, 0, 0, 0, 1, 'Spawn Defias 3rd Control team.'),
+       (10009, 1003, 1, 4, 100, 2, 0, 1, 0, 1, 'Alliance-only Westfall zone warning; zone id derives from invasion.'),
+       (10010, 1003, 2, 2, 100, 102, 100, 0, 0, 1, 'Move Defias Scout group to Sentinel Hill.'),
+       (10011, 1003, 3, 2, 101, 103, 100, 0, 0, 1, 'Move Defias 2nd Scout group to Sentinel Hill.'),
+       (10012, 1003, 4, 2, 102, 102, 100, 0, 0, 1, 'Move Defias Control group to Sentinel Hill.'),
+       (10013, 1003, 5, 2, 103, 103, 100, 0, 0, 1, 'Move Defias 2nd Control group to Sentinel Hill.'),
+       (10014, 1003, 6, 2, 104, 104, 100, 0, 0, 1, 'Move Defias 3rd Control group to Sentinel Hill.'),
+       (10015, 1003, 7, 7, 100, 75, 2000, 7, 0, 1, 'Defias Scouts assault Sentinel Hill.'),
+       (10016, 1003, 7, 7, 101, 75, 2000, 7, 0, 1, 'Defias 2nd Scouts assault Sentinel Hill.'),
+       (10017, 1003, 8, 7, 102, 75, 2000, 7, 0, 1, 'Defias Control Team assaults Sentinel Hill.'),
+       (10018, 1003, 8, 7, 103, 75, 2000, 7, 0, 1, 'Defias 2nd Control Team assaults Sentinel Hill.'),
+       (10019, 1003, 8, 7, 104, 75, 2000, 7, 0, 1, 'Defias 3rd Control Team assaults Sentinel Hill.'),
+       (10020, 1004, 1, 1, 105, 0, 0, 0, 0, 1, 'Spawn Defias Leadership.'),
+       (10021, 1004, 2, 3, 105, 101, 100005, 0, 0, 1, 'Defias Leadership yells a warning.'),
+       (10022, 1004, 3, 7, 105, 75, 2000, 7, 0, 1, 'Defias Leadership assaults Sentinel Hill.');
 
 -- ===========================================================================
 -- lwi_spawn_group(Allows for grouping of spawned NPCs.):
 -- ===========================================================================
 INSERT INTO lwi_spawn_group(id,name,map_id,x,y,z,orientation,spawn_radius,enabled) 
 VALUES (100, 'Defias Scouts', 0, -10898.128, 1466.9028, 42.519577, 5.4439473, 10, 1),
-       (101, 'Defias Control Team', 0, -10490.681, 1212.7977, 67.30977, 4.8823605, 10, 1),
-       (102, 'Defias Leadership', 0, -10509.177, 1046.7267, 60.51838, 4.956951, 10, 1),
-       (103, 'Stormwind Response Force', 0, -9005.095, 480.13635, 96.55263, 3.814248, 10, 1);
+	   (101, 'Defias 2nd Scouts', 0, -10898.128, 1466.9028, 42.519577, 5.4439473, 10, 1),
+       (102, 'Defias Control Team', 0, -10490.681, 1212.7977, 67.30977, 4.8823605, 10, 1),
+       (103, 'Defias 2nd Control Team', 0, -10711.868, 1192.233, 63.428204, 5.3473687, 10, 1),
+       (104, 'Defias 3rd Control Team', 0, -10711.868, 1192.233, 63.428204, 5.3473687, 10, 1),
+       (105, 'Defias Leadership', 0, -10509.177, 1046.7267, 60.51838, 4.956951, 10, 1),
+       (106, 'Stormwind Response Force', 0, -9005.095, 480.13635, 96.55263, 3.814248, 10, 1);
 
 -- ===========================================================================
 -- lwi_creature_template(Create custom NPCs to be able to rename/reRank/etc an existing NPC.):
@@ -137,11 +150,18 @@ VALUES (100, 3, 2054, 1, 100, 70.0, 4000, 30.0, 1, 1, 'Defias Field Medic heals 
 -- lwi_spawn_member(Gives the spawn list of NPCs being used in invasion.):
 -- ===========================================================================
 INSERT INTO lwi_spawn_member(id,spawn_group_id,entity_type,entity_entry,lwi_template_id,count,level_override,tactical_role,comment) 
-VALUES (100001, 100, 1, 449, NULL, 20, 25, 3, 'Defias scouts - Melee DPS'),
-       (100002, 100, 1, 589, NULL, 15, 25, 4, 'Defias scouts - Ranged DPS'),
-       (100003, 100, 1, 0, 3, 5, 25, 10, 'Defias scouts - Healer'),
-       (100004, 101, 1, 0, 1, 3, 25, 10, 'Defias Control Team - Melee DPS'),
-       (100005, 102, 1, 0, 2, 1, 35, 1, 'Defias Leadership - Melee DPS');
+VALUES (100001, 100, 1, 449, NULL, 3, 25, 3, 'Defias scouts - Melee DPS'),
+	   (100002, 101, 1, 449, NULL, 3, 25, 3, 'Defias 2nd scouts - Melee DPS'),
+       (100003, 102, 1, 589, NULL, 15, 25, 4, 'Defias Control Team - Ranged DPS'),
+       (100004, 102, 1, 0, 3, 10, 25, 5, 'Defias Control Team - Healer'),
+       (100005, 102, 1, 0, 1, 5, 25, 3, 'Defias Control Team - Melee DPS'),
+       (100006, 103, 1, 589, NULL, 15, 25, 4, 'Defias 2nd Control Team - Ranged DPS'),
+       (100007, 103, 1, 0, 3, 10, 25, 5, 'Defias 2nd Control Team - Healer'),
+       (100008, 103, 1, 0, 1, 5, 25, 3, 'Defias 2nd Control Team - Melee DPS'),
+       (100009, 104, 1, 589, NULL, 15, 25, 4, 'Defias 3rd Control Team - Ranged DPS'),
+       (100010, 104, 1, 0, 3, 10, 25, 5, 'Defias 3rd Control Team - Healer'),
+       (100011, 104, 1, 0, 1, 5, 25, 3, 'Defias 3rd Control Team - Melee DPS'),
+       (100012, 105, 1, 0, 2, 1, 35, 1, 'Defias Leadership - Melee DPS');
 
 -- ===========================================================================
 -- lwi_movement_path(Grouping for the path the NPCs will take.):
@@ -160,9 +180,19 @@ VALUES (10000, 100, 10, 0, -10898.128, 1466.9028, 42.519577, 5.4439473,   0, 0, 
        (10002, 100, 30, 0, -10733.547, 1328.5238, 41.804104, 5.679553,   0, 0, 1, 'Defias Scout route node 30'),
        (10003, 100, 40, 0, -10563.534, 1303.9185, 47.28148, 5.408586,   0, 0, 1, 'Defias Scout route node 40'),
        (10004, 100, 50, 0, -10490.681, 1212.7977, 67.30977, 4.8823605, 0, 0, 1, 'Defias Scout route node 50'),
-       (10005, 101, 10, 0, -10497.578, 1145.7003, 44.997818, 4.261898,   0, 0, 1, 'Defias move to SH route node 10'),
-       (10006, 101, 20, 0, -10517.282, 1067.6008, 54.94022, 5.0943923,   0, 0, 1, 'Defias move to SH route node 20'),
-       (10007, 101, 30, 0, -10509.177, 1046.7267, 60.51838, 4.956951,   0, 0, 1, 'Defias move to SH route node 30');
+       (10005, 101, 10, 0, -10898.128, 1466.9028, 42.519577, 5.4439473,   0, 0, 1, 'Defias 2nd Scout route node 10'),
+       (10006, 101, 20, 0, -10816.262, 1388.863, 34.848286, 5.5813813,  0, 0, 1, 'Defias 2nd Scout route node 20'),
+       (10007, 101, 30, 0, -10733.547, 1328.5238, 41.804104, 5.679553,   0, 0, 1, 'Defias 2nd Scout route node 30'),
+       (10008, 101, 40, 0, -10711.868, 1192.233, 63.428204, 5.3473687, 0, 0, 1, 'Defias 2nd Scout route node 40'),
+       (10009, 102, 10, 0, -10497.578, 1145.7003, 44.997818, 4.261898,   0, 0, 1, 'Defias 1st move to SH route node 10'),
+       (10010, 102, 20, 0, -10517.282, 1067.6008, 54.94022, 5.0943923,   0, 0, 1, 'Defias 1st move to SH route node 20'),
+       (10011, 102, 30, 0, -10509.177, 1046.7267, 60.51838, 4.956951,   0, 0, 1, 'Defias 1st move to SH route node 30'),
+       (10012, 103, 10, 0, -10712.419, 1138.1829, 45.58178, 5.696045,   0, 0, 1, 'Defias 2nd Control move to SH route node 10'),
+       (10013, 103, 20, 0, -10658.855, 1150.3375, 33.672962, 5.994494,   0, 0, 1, 'Defias 2nd Control move to SH route node 20'),
+       (10014, 103, 30, 0, -10626.727, 1126.5358, 33.848064, 4.23914,   0, 0, 1, 'Defias 2nd Control move to SH route node 30'),
+       (10015, 104, 10, 0, -10712.419, 1138.1829, 45.58178, 5.696045,   0, 0, 1, 'Defias 3rd Control move to SH route node 10'),
+       (10016, 104, 20, 0, -10683.241, 1054.9269, 35.460896, 5.3897476,   0, 0, 1, 'Defias 3rd Control move to SH route node 20'),
+       (10017, 104, 30, 0, -10643.531, 1017.29474, 31.459375, 5.621436,   0, 0, 1, 'Defias 3rd Control move to SH route node 30');
 
 -- ===========================================================================
 -- lwi_movement_profile(How is the spawn group moving toward it's target.):
