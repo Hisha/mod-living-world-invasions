@@ -20,6 +20,17 @@ struct TemporaryNpcCombatOverride
     uint32 OriginalFaction = 0;
     uint32 TemporaryFaction = 0;
     bool FactionChanged = false;
+
+    bool CombatNormalized = false;
+    uint8 OriginalLevel = 0;
+    uint32 OriginalMaxHealth = 0;
+    float OriginalBaseMinDamage = 0.0f;
+    float OriginalBaseMaxDamage = 0.0f;
+    float OriginalOffMinDamage = 0.0f;
+    float OriginalOffMaxDamage = 0.0f;
+    float OriginalRangedMinDamage = 0.0f;
+    float OriginalRangedMaxDamage = 0.0f;
+
     std::unordered_set<uint64> RuntimeIds;
 };
 
@@ -49,6 +60,8 @@ private:
     bool TryAcquireTargets(ActiveAssault& assault);
 
     bool EnsureWorldDefenderAttackable(uint64 runtimeId, Creature* attacker, Creature* target, float searchRadius);
+    void NormalizeWorldDefenderForAssault(uint64 runtimeId, Creature* attacker, Creature* target);
+    TemporaryNpcCombatOverride* FindOrCreateOverride(uint64 runtimeId, Creature* target);
     void ReleaseRuntimeOverrides(uint64 runtimeId);
     void RestoreAllOverrides();
     void RestoreOverride(TemporaryNpcCombatOverride const& overrideData);

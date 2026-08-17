@@ -19,6 +19,13 @@ constexpr float DefaultSearchRadius = 40.0f;
 constexpr uint32 DefaultReacquireIntervalMs = 2000;
 constexpr uint32 MinimumReacquireIntervalMs = 500;
 
+// World defenders that are dramatically above the invasion force can dominate
+// low-level events (for example level-65 flight gryphons in Westfall). Leave
+// ordinary level differences alone, but clamp extreme outliers close to the
+// attacking creature's level for the duration of the invasion.
+constexpr uint8 DefenderNormalizationThresholdLevels = 10;
+constexpr uint8 DefenderNormalizationBonusLevels = 2;
+
 }
 
 AssaultManager& AssaultManager::Instance()
@@ -33,6 +40,113 @@ void AssaultManager::Reset()
     _activeAssaults.clear();
 }
 
+TemporaryNpcCombatOverride* AssaultManager::FindOrCreateOverride(uint64 runtimeId, Creature* target)
+{
+    if (!target)
+    {
+        return nullptr;
+    }
+
+    for (TemporaryNpcCombatOverride& overrideData : _temporaryNpcOverrides)
+    {
+        if (overrideData.MapId == target->GetMapId() && overrideData.Guid == target->GetGUID())
+        {
+            overrideData.RuntimeIds.insert(runtimeId);
+            return &overrideData;
+        }
+    }
+
+    TemporaryNpcCombatOverride overrideData;
+    overrideData.Guid = target->GetGUID();
+    overrideData.MapId = target->GetMapId();
+    overrideData.WasImmuneToNpc = target->IsImmuneToNPC();
+    overrideData.OriginalFaction = target->GetFaction();
+    overrideData.TemporaryFaction = target->GetFaction();
+    overrideData.RuntimeIds.insert(runtimeId);
+
+    _temporaryNpcOverrides.push_back(std::move(overrideData));
+    return &_temporaryNpcOverrides.back();
+}
+
+void AssaultManager::NormalizeWorldDefenderForAssault(
+    uint64 runtimeId,
+    Creature* attacker,
+    Creature* target)
+{
+    if (!attacker || !target || !target->IsAlive())
+    {
+        return;
+    }
+
+    uint8 const attackerLevel = attacker->GetLevel();
+    uint8 const targetLevel = target->GetLevel();
+
+    if (targetLevel <= attackerLevel + DefenderNormalizationThresholdLevels)
+    {
+        return;
+    }
+
+    TemporaryNpcCombatOverride* overrideData = FindOrCreateOverride(runtimeId, target);
+    if (!overrideData || overrideData->CombatNormalized)
+    {
+        return;
+    }
+
+    uint8 const normalizedLevel = static_cast<uint8>(std::min<uint32>(
+        STRONG_MAX_LEVEL,
+        static_cast<uint32>(attackerLevel) + DefenderNormalizationBonusLevels));
+
+    if (normalizedLevel >= targetLevel)
+    {
+        return;
+    }
+
+    overrideData->CombatNormalized = true;
+    overrideData->OriginalLevel = targetLevel;
+    overrideData->OriginalMaxHealth = target->GetMaxHealth();
+    overrideData->OriginalBaseMinDamage = target->GetWeaponDamageRange(BASE_ATTACK, MINDAMAGE);
+    overrideData->OriginalBaseMaxDamage = target->GetWeaponDamageRange(BASE_ATTACK, MAXDAMAGE);
+    overrideData->OriginalOffMinDamage = target->GetWeaponDamageRange(OFF_ATTACK, MINDAMAGE);
+    overrideData->OriginalOffMaxDamage = target->GetWeaponDamageRange(OFF_ATTACK, MAXDAMAGE);
+    overrideData->OriginalRangedMinDamage = target->GetWeaponDamageRange(RANGED_ATTACK, MINDAMAGE);
+    overrideData->OriginalRangedMaxDamage = target->GetWeaponDamageRange(RANGED_ATTACK, MAXDAMAGE);
+
+    float const healthPct = target->GetMaxHealth() != 0
+        ? static_cast<float>(target->GetHealth()) / static_cast<float>(target->GetMaxHealth())
+        : 1.0f;
+
+    float const scale = static_cast<float>(normalizedLevel) / static_cast<float>(targetLevel);
+    uint32 const normalizedMaxHealth = std::max<uint32>(1u,
+        static_cast<uint32>(static_cast<float>(overrideData->OriginalMaxHealth) * scale));
+
+    target->SetLevel(normalizedLevel);
+    target->SetMaxHealth(normalizedMaxHealth);
+    target->SetHealth(std::max<uint32>(1u,
+        static_cast<uint32>(static_cast<float>(normalizedMaxHealth) * healthPct)));
+
+    target->SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, overrideData->OriginalBaseMinDamage * scale);
+    target->SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, overrideData->OriginalBaseMaxDamage * scale);
+    target->SetBaseWeaponDamage(OFF_ATTACK, MINDAMAGE, overrideData->OriginalOffMinDamage * scale);
+    target->SetBaseWeaponDamage(OFF_ATTACK, MAXDAMAGE, overrideData->OriginalOffMaxDamage * scale);
+    target->SetBaseWeaponDamage(RANGED_ATTACK, MINDAMAGE, overrideData->OriginalRangedMinDamage * scale);
+    target->SetBaseWeaponDamage(RANGED_ATTACK, MAXDAMAGE, overrideData->OriginalRangedMaxDamage * scale);
+    target->UpdateDamagePhysical(BASE_ATTACK);
+    target->UpdateDamagePhysical(OFF_ATTACK);
+    target->UpdateDamagePhysical(RANGED_ATTACK);
+
+    LOG_INFO("server.loading",
+        "[LWI Assault] Runtime #{} temporarily normalized world defender {} GUID {} from level {} to {} "
+        "(health {} -> {}, damage scale {:.2f}).",
+        runtimeId,
+        target->GetEntry(),
+        target->GetGUID().ToString(),
+        targetLevel,
+        normalizedLevel,
+        overrideData->OriginalMaxHealth,
+        normalizedMaxHealth,
+        scale);
+}
+
 bool AssaultManager::EnsureWorldDefenderAttackable(
     uint64 runtimeId,
     Creature* attacker,
@@ -44,31 +158,13 @@ bool AssaultManager::EnsureWorldDefenderAttackable(
         return false;
     }
 
-    TemporaryNpcCombatOverride* existingOverride = nullptr;
-
-    for (TemporaryNpcCombatOverride& overrideData : _temporaryNpcOverrides)
-    {
-        if (overrideData.MapId == target->GetMapId() && overrideData.Guid == target->GetGUID())
-        {
-            overrideData.RuntimeIds.insert(runtimeId);
-            existingOverride = &overrideData;
-            break;
-        }
-    }
-
+    TemporaryNpcCombatOverride* existingOverride = FindOrCreateOverride(runtimeId, target);
     if (!existingOverride)
     {
-        TemporaryNpcCombatOverride overrideData;
-        overrideData.Guid = target->GetGUID();
-        overrideData.MapId = target->GetMapId();
-        overrideData.WasImmuneToNpc = target->IsImmuneToNPC();
-        overrideData.OriginalFaction = target->GetFaction();
-        overrideData.TemporaryFaction = target->GetFaction();
-        overrideData.RuntimeIds.insert(runtimeId);
-
-        _temporaryNpcOverrides.push_back(std::move(overrideData));
-        existingOverride = &_temporaryNpcOverrides.back();
+        return false;
     }
+
+    NormalizeWorldDefenderForAssault(runtimeId, attacker, target);
 
     if (target->IsImmuneToNPC())
     {
@@ -193,6 +289,31 @@ void AssaultManager::RestoreOverride(TemporaryNpcCombatOverride const& overrideD
 
     target->CombatStop(true);
 
+    if (overrideData.CombatNormalized)
+    {
+        float const healthPct = target->GetMaxHealth() != 0
+            ? static_cast<float>(target->GetHealth()) / static_cast<float>(target->GetMaxHealth())
+            : 1.0f;
+
+        target->SetLevel(overrideData.OriginalLevel);
+        target->SetMaxHealth(overrideData.OriginalMaxHealth);
+        if (target->IsAlive())
+        {
+            target->SetHealth(std::max<uint32>(1u,
+                static_cast<uint32>(static_cast<float>(overrideData.OriginalMaxHealth) * healthPct)));
+        }
+
+        target->SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, overrideData.OriginalBaseMinDamage);
+        target->SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, overrideData.OriginalBaseMaxDamage);
+        target->SetBaseWeaponDamage(OFF_ATTACK, MINDAMAGE, overrideData.OriginalOffMinDamage);
+        target->SetBaseWeaponDamage(OFF_ATTACK, MAXDAMAGE, overrideData.OriginalOffMaxDamage);
+        target->SetBaseWeaponDamage(RANGED_ATTACK, MINDAMAGE, overrideData.OriginalRangedMinDamage);
+        target->SetBaseWeaponDamage(RANGED_ATTACK, MAXDAMAGE, overrideData.OriginalRangedMaxDamage);
+        target->UpdateDamagePhysical(BASE_ATTACK);
+        target->UpdateDamagePhysical(OFF_ATTACK);
+        target->UpdateDamagePhysical(RANGED_ATTACK);
+    }
+
     if (overrideData.FactionChanged && target->GetFaction() != overrideData.OriginalFaction)
     {
         target->SetFaction(overrideData.OriginalFaction);
@@ -201,11 +322,13 @@ void AssaultManager::RestoreOverride(TemporaryNpcCombatOverride const& overrideD
     target->SetImmuneToNPC(overrideData.WasImmuneToNpc);
 
     LOG_INFO("server.loading",
-        "[LWI Assault] Restored world defender {} GUID {} to faction {} and NPC immunity state {}.",
+        "[LWI Assault] Restored world defender {} GUID {} to faction {}, NPC immunity state {}, level {}{}.",
         target->GetEntry(),
         target->GetGUID().ToString(),
         overrideData.OriginalFaction,
-        overrideData.WasImmuneToNpc);
+        overrideData.WasImmuneToNpc,
+        target->GetLevel(),
+        overrideData.CombatNormalized ? " (combat normalization removed)" : "");
 }
 
 void AssaultManager::ReleaseRuntimeOverrides(uint64 runtimeId)
@@ -543,6 +666,11 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
 
         if (creature->AI())
         {
+            // Normal faction-hostile defenders can also be extreme level outliers
+            // (notably flight-master gryphons), so normalization applies whether
+            // the target came from the core hostile path or our explicit scan.
+            NormalizeWorldDefenderForAssault(assault.RuntimeId, creature, target);
+
             if (targetIsWorldDefender)
             {
                 if (!EnsureWorldDefenderAttackable(
