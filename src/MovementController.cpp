@@ -27,7 +27,7 @@ namespace
 {
 constexpr uint32 MovementUpdateIntervalMs = 250;
 constexpr float ArrivalTolerance = 2.0f;
-constexpr float FormationArrivalTolerance = 10.0f;
+constexpr float FormationArrivalTolerance = 25.0f;
 constexpr uint32 FormationArrivalPercent = 75;
 
 // Large invasion groups should march as a compact road column instead of allowing
@@ -781,7 +781,7 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
             continue;
         }
 
-        if (creature->GetDistance(destination.X, destination.Y, destination.Z) <= ArrivalTolerance)
+        if (creature->GetDistance(destination.X, destination.Y, destination.Z) <= FormationArrivalTolerance)
         {
             destination.WasInCombat = false;
             continue;
