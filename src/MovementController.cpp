@@ -254,6 +254,89 @@ bool MovementController::StartPath(
     return true;
 }
 
+bool MovementController::StartRouteSegment(
+    uint64 runtimeGroupId,
+    uint32 routeSegmentId,
+    uint32 fromNodeId,
+    uint32 profileId,
+    uint32 completionSignalId)
+{
+    RouteSegmentDefinition const* segment = sInvasionMgr.GetRouteSegment(routeSegmentId);
+    if (!segment)
+    {
+        LOG_ERROR("server.loading",
+            "[LWI Route] Runtime entity group #{} requested missing route segment {}.",
+            runtimeGroupId, routeSegmentId);
+        return false;
+    }
+
+    MovementDirection direction = MovementDirection::Forward;
+    uint32 destinationNodeId = 0;
+
+    if (fromNodeId == segment->StartNodeId)
+    {
+        direction = MovementDirection::Forward;
+        destinationNodeId = segment->EndNodeId;
+    }
+    else if (fromNodeId == segment->EndNodeId)
+    {
+        direction = MovementDirection::Reverse;
+        destinationNodeId = segment->StartNodeId;
+    }
+    else
+    {
+        LOG_ERROR("server.loading",
+            "[LWI Route] Runtime entity group #{} cannot start route segment {} ({}) from route node {} because the segment connects nodes {} and {}.",
+            runtimeGroupId,
+            segment->Id,
+            segment->Name,
+            fromNodeId,
+            segment->StartNodeId,
+            segment->EndNodeId);
+        return false;
+    }
+
+    RouteNodeDefinition const* fromNode = sInvasionMgr.GetRouteNode(fromNodeId);
+    RouteNodeDefinition const* destinationNode = sInvasionMgr.GetRouteNode(destinationNodeId);
+    if (!fromNode || !destinationNode)
+    {
+        LOG_ERROR("server.loading",
+            "[LWI Route] Route segment {} ({}) references unavailable route node data; movement was not started.",
+            segment->Id, segment->Name);
+        return false;
+    }
+
+    if (!StartPath(
+            runtimeGroupId,
+            segment->MovementPathId,
+            profileId,
+            completionSignalId,
+            direction))
+    {
+        LOG_ERROR("server.loading",
+            "[LWI Route] Runtime entity group #{} failed to start route segment {} ({}) from {} to {} using movement path {}.",
+            runtimeGroupId,
+            segment->Id,
+            segment->Name,
+            fromNode->Name,
+            destinationNode->Name,
+            segment->MovementPathId);
+        return false;
+    }
+
+    LOG_INFO("server.loading",
+        "[LWI Route] Runtime entity group #{} started route segment {} ({}) from {} to {} using movement path {} {}.",
+        runtimeGroupId,
+        segment->Id,
+        segment->Name,
+        fromNode->Name,
+        destinationNode->Name,
+        segment->MovementPathId,
+        direction == MovementDirection::Reverse ? "in reverse" : "forward");
+
+    return true;
+}
+
 bool MovementController::CancelGroup(uint64 runtimeGroupId)
 {
     auto itr = _activeMovements.find(runtimeGroupId);

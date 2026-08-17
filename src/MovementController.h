@@ -62,6 +62,14 @@ public:
         uint32 profileId = 0,
         uint32 completionSignalId = 0,
         MovementDirection direction = MovementDirection::Forward);
+
+    bool StartRouteSegment(
+        uint64 runtimeGroupId,
+        uint32 routeSegmentId,
+        uint32 fromNodeId,
+        uint32 profileId = 0,
+        uint32 completionSignalId = 0);
+
     bool CancelGroup(uint64 runtimeGroupId);
     void CancelRuntime(uint64 runtimeId);
 
