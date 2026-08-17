@@ -14,7 +14,7 @@ WHERE id IN (1001,1002,1003,1004,1005,1006);
 -- lwi_stage_action Clear Data
 -- ===========================================================================
 DELETE FROM lwi_stage_action
-WHERE id IN (10001,10002,10003,10004,10005,10006,10007,10008,10009,10010,10011,10012,10013,10014,10015,10016,10017,10018,10019,10020,10021,10022);
+WHERE id IN (10001,10002,10003,10004,10005,10006,10007,10008,10009,10010,10011,10012,10013,10014,10015,10016,10017,10018,10019,10020,10021,10022,10023,10024,10025);
 
 -- ===========================================================================
 -- lwi_spawn_group Clear Data
@@ -116,9 +116,12 @@ VALUES (10001, 1001, 1, 1, 100, 0, 0, 0, 0, 1, 'Spawn Defias Scout group.'),
        (10017, 1003, 9, 7, 102, 75, 2000, 7, 0, 1, 'Defias Control Team assaults Sentinel Hill.'),
        (10018, 1003, 10, 7, 103, 75, 2000, 7, 0, 1, 'Defias 2nd Control Team assaults Sentinel Hill.'),
        (10019, 1003, 11, 7, 104, 75, 2000, 7, 0, 1, 'Defias 3rd Control Team assaults Sentinel Hill.'),
-       (10020, 1004, 1, 1, 105, 0, 0, 0, 0, 1, 'Spawn Defias Leadership.'),
-       (10021, 1004, 2, 3, 105, 101, 100005, 0, 0, 1, 'Defias Leadership yells a warning.'),
-       (10022, 1004, 3, 7, 105, 75, 2000, 7, 0, 1, 'Defias Leadership assaults Sentinel Hill.');
+       (10020, 1003, 12, 9, 102, 30, 5, 10, 0, 1, 'Defias Control Team garrisons Sentinel Hill and replenishes after 30 seconds uncontested.'),
+       (10021, 1003, 13, 9, 103, 30, 5, 10, 0, 1, 'Defias 2nd Control Team garrisons Sentinel Hill and replenishes after 30 seconds uncontested.'),
+       (10022, 1003, 14, 9, 104, 30, 5, 10, 0, 1, 'Defias 3rd Control Team garrisons Sentinel Hill and replenishes after 30 seconds uncontested.'),
+       (10023, 1004, 1, 1, 105, 0, 0, 0, 0, 1, 'Spawn Defias Leadership.'),
+       (10024, 1004, 2, 3, 105, 101, 100012, 0, 0, 1, 'Defias Leadership yells a warning.'),
+       (10025, 1004, 3, 7, 105, 75, 2000, 7, 0, 1, 'Defias Leadership assaults Sentinel Hill.');
 
 -- ===========================================================================
 -- lwi_spawn_group(Allows for grouping of spawned NPCs.):

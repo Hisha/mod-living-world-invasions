@@ -30,6 +30,7 @@ constexpr uint8 SoundActionType = 5;
 constexpr uint8 SpellActionType = 6;
 constexpr uint8 StartAssaultActionType = 7;
 constexpr uint8 WatchGroupDefeatActionType = 8;
+constexpr uint8 StartGarrisonActionType = 9;
 }
 
 InvasionRuntime::InvasionRuntime(uint64 runtimeId, uint32 invasionId,
@@ -88,6 +89,8 @@ bool InvasionRuntime::Update(uint64 now)
     {
         return _state == ActiveRuntimeState::Completed;
     }
+
+    sInvasionSpawnMgr.UpdateGarrisons(_runtimeId, now);
 
     InvasionStageDefinition const* stage = GetCurrentStage();
     if (!stage)
@@ -301,6 +304,27 @@ bool InvasionRuntime::BeginCurrentStage(uint64 now)
                         action.TargetId,
                         action.Parameter1,
                         action.Parameter2 != 0);
+                }
+            }
+
+            if (action.ActionType == StartGarrisonActionType)
+            {
+                if (!sInvasionSpawnMgr.StartGarrison(
+                    _runtimeId,
+                    action.TargetId,
+                    action.Parameter1,
+                    action.Parameter2,
+                    action.Parameter3))
+                {
+                    LOG_ERROR("server.loading",
+                        "[LWI Runtime] Runtime #{} failed garrison action {} "
+                        "(spawn group {}, quiet period {} sec, batch size {}, refill interval {} sec).",
+                        _runtimeId,
+                        action.Id,
+                        action.TargetId,
+                        action.Parameter1,
+                        action.Parameter2,
+                        action.Parameter3);
                 }
             }
         }

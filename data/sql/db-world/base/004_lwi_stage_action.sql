@@ -7,6 +7,7 @@
 -- action_type 6 = Spell (scripted event cast)
 -- action_type 7 = Start Assault
 -- action_type 8 = Watch Group Defeat
+-- action_type 9 = Start Garrison Restock
 --
 -- Start Movement parameter mapping:
 --   target_id  = spawn_group_id whose latest runtime entity group should move
@@ -77,3 +78,17 @@ CREATE TABLE IF NOT EXISTS `lwi_stage_action` (
 --
 -- Multiple action_type 8 rows in the same runtime may register multiple spawn
 -- groups into the same watch. They must use the same signal id and mode.
+
+-- Start Garrison Restock parameter mapping:
+--   target_id  = spawn_group_id whose latest runtime entity group should be maintained
+--   parameter1 = quiet period in seconds before replenishment may begin (0 = 30)
+--   parameter2 = maximum replacement creatures spawned per refill batch (0 = 5)
+--   parameter3 = seconds between refill batches while the group remains quiet (0 = 10)
+--
+-- Garrison restock begins only after the runtime group has finished active movement.
+-- Any active combat, assigned victim, or hostile player/playerbot near the garrison
+-- resets the quiet timer. Replacements are spawned near the surviving group's
+-- final/home objective position and are added back to the same runtime entity group.
+-- Restock never exceeds the authored lwi_spawn_member counts. A completely defeated
+-- garrison does not regenerate from zero; at least one living creature must remain
+-- to anchor the garrison.
