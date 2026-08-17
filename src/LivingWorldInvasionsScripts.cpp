@@ -16,15 +16,51 @@
 #include "Field.h"
 #include "QueryResult.h"
 #include "Log.h"
+#include "Player.h"
+#include "WorldSession.h"
 #include "ScriptMgr.h"
 
+#include <algorithm>
+#include <cctype>
+#include <string>
 #include <unordered_set>
+#include <vector>
 
 using namespace Acore::ChatCommands;
 
 namespace
 {
 std::unordered_set<uint64> routeTestGroupIds;
+
+struct RouteRecordingSession
+{
+    uint32 OwnerGuidLow = 0;
+    uint32 PathId = 0;
+    std::string PathName;
+    uint16 MapId = 0;
+    uint32 NextNodeId = 1;
+    uint16 NextNodeOrder = 10;
+    std::vector<uint32> NodeIds;
+};
+
+RouteRecordingSession routeRecordingSession;
+bool routeRecordingActive = false;
+
+bool IsSafeRouteRecordName(std::string const& name)
+{
+    if (name.empty() || name.size() > 120)
+        return false;
+
+    return std::all_of(name.begin(), name.end(), [](unsigned char c)
+    {
+        return std::isalnum(c) || c == '_' || c == '-';
+    });
+}
+
+Player* GetCommandPlayer(ChatHandler* handler)
+{
+    return handler && handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+}
 
 enum class LwiConfig
 {
@@ -182,6 +218,60 @@ public:
             }
         };
 
+        static ChatCommandTable routeRecordCancelCommandTable =
+        {
+            {
+                "confirm",
+                HandleRouteRecordCancelConfirmCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "",
+                HandleRouteRecordCancelCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            }
+        };
+
+        static ChatCommandTable routeRecordCommandTable =
+        {
+            {
+                "start",
+                HandleRouteRecordStartCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "add",
+                HandleRouteRecordAddCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "undo",
+                HandleRouteRecordUndoCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "status",
+                HandleRouteRecordStatusCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "finish",
+                HandleRouteRecordFinishCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "cancel",
+                routeRecordCancelCommandTable
+            }
+        };
+
         static ChatCommandTable routeCommandTable =
         {
             {
@@ -189,6 +279,10 @@ public:
                 HandleRouteTestCommand,
                 rbac::RBAC_PERM_COMMAND_SERVER_INFO,
                 Console::No
+            },
+            {
+                "record",
+                routeRecordCommandTable
             }
         };
 
@@ -496,6 +590,297 @@ private:
         handler->PSendSysMessage(
             "Living World Invasions emergency abort completed. {} runtime(s) were targeted. Scheduler remains stopped.",
             active);
+        return true;
+    }
+
+    static bool HandleRouteRecordStartCommand(ChatHandler* handler, uint32 pathId, std::string pathName)
+    {
+        if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Debug))
+        {
+            handler->SendSysMessage(
+                "Living World Invasions debug commands are disabled. Set LWI.Debug = 1 to use .lwi route record.");
+            return false;
+        }
+
+        Player* player = GetCommandPlayer(handler);
+        if (!player)
+            return false;
+
+        if (routeRecordingActive)
+        {
+            handler->PSendSysMessage(
+                "A route recording is already active for movement path {} ({}). Finish or cancel it before starting another recording.",
+                routeRecordingSession.PathId,
+                routeRecordingSession.PathName);
+            return false;
+        }
+
+        if (!IsSafeRouteRecordName(pathName))
+        {
+            handler->SendSysMessage(
+                "Route recording name must be 1-120 characters and may contain only letters, numbers, underscores, and hyphens.");
+            return false;
+        }
+
+        if (WorldDatabase.Query("SELECT 1 FROM `lwi_movement_path` WHERE `id` = {} LIMIT 1", pathId))
+        {
+            handler->PSendSysMessage(
+                "Movement path {} already exists. Choose an unused path ID; the recorder will never overwrite an existing path.",
+                pathId);
+            return false;
+        }
+
+        QueryResult nextIdResult = WorldDatabase.Query(
+            "SELECT COALESCE(MAX(`id`), 0) + 1 FROM `lwi_movement_node`");
+        uint32 nextNodeId = 1;
+        if (nextIdResult)
+            nextNodeId = nextIdResult->Fetch()[0].Get<uint32>();
+
+        WorldDatabase.Execute(
+            "INSERT INTO `lwi_movement_path` (`id`, `name`, `enabled`, `comment`) "
+            "VALUES ({}, '{}', 1, 'Recorded in-game with the LWI route recorder')",
+            pathId,
+            pathName);
+
+        routeRecordingSession = {};
+        routeRecordingSession.OwnerGuidLow = player->GetGUID().GetCounter();
+        routeRecordingSession.PathId = pathId;
+        routeRecordingSession.PathName = pathName;
+        routeRecordingSession.MapId = player->GetMapId();
+        routeRecordingSession.NextNodeId = nextNodeId;
+        routeRecordingSession.NextNodeOrder = 10;
+        routeRecordingActive = true;
+
+        handler->PSendSysMessage(
+            "Started recording movement path {} ({}) on map {}. Move to the first point and use .lwi route record add.",
+            pathId,
+            pathName,
+            player->GetMapId());
+        return true;
+    }
+
+    static bool HandleRouteRecordAddCommand(ChatHandler* handler)
+    {
+        if (!routeRecordingActive)
+        {
+            handler->SendSysMessage(
+                "No route recording is active. Use .lwi route record start <pathId> <name> first.");
+            return false;
+        }
+
+        Player* player = GetCommandPlayer(handler);
+        if (!player)
+            return false;
+
+        if (player->GetGUID().GetCounter() != routeRecordingSession.OwnerGuidLow)
+        {
+            handler->PSendSysMessage(
+                "Movement path {} ({}) is currently being recorded by another GM.",
+                routeRecordingSession.PathId,
+                routeRecordingSession.PathName);
+            return false;
+        }
+
+        if (player->GetMapId() != routeRecordingSession.MapId)
+        {
+            handler->PSendSysMessage(
+                "This recording started on map {}, but you are now on map {}. A single movement path must remain on one map.",
+                routeRecordingSession.MapId,
+                player->GetMapId());
+            return false;
+        }
+
+        if (routeRecordingSession.NextNodeOrder > 65520)
+        {
+            handler->SendSysMessage(
+                "This path has reached the maximum supported node order. Finish the current recording and begin another route segment.");
+            return false;
+        }
+
+        uint32 const nodeId = routeRecordingSession.NextNodeId++;
+        uint16 const nodeOrder = routeRecordingSession.NextNodeOrder;
+        routeRecordingSession.NextNodeOrder = static_cast<uint16>(routeRecordingSession.NextNodeOrder + 10);
+
+        WorldDatabase.Execute(
+            "INSERT INTO `lwi_movement_node` "
+            "(`id`, `path_id`, `node_order`, `map_id`, `x`, `y`, `z`, `orientation`, `wait_ms`, `profile_override_id`, `enabled`, `comment`) "
+            "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, 0, 0, 1, '{} route node {}')",
+            nodeId,
+            routeRecordingSession.PathId,
+            nodeOrder,
+            player->GetMapId(),
+            player->GetPositionX(),
+            player->GetPositionY(),
+            player->GetPositionZ(),
+            player->GetOrientation(),
+            routeRecordingSession.PathName,
+            nodeOrder);
+
+        routeRecordingSession.NodeIds.push_back(nodeId);
+
+        handler->PSendSysMessage(
+            "Recorded node {} (order {}) for path {} at X {:.3f} Y {:.3f} Z {:.3f} O {:.3f}. Total nodes: {}.",
+            nodeId,
+            nodeOrder,
+            routeRecordingSession.PathId,
+            player->GetPositionX(),
+            player->GetPositionY(),
+            player->GetPositionZ(),
+            player->GetOrientation(),
+            routeRecordingSession.NodeIds.size());
+        return true;
+    }
+
+    static bool HandleRouteRecordUndoCommand(ChatHandler* handler)
+    {
+        if (!routeRecordingActive)
+        {
+            handler->SendSysMessage("No route recording is active.");
+            return false;
+        }
+
+        Player* player = GetCommandPlayer(handler);
+        if (!player || player->GetGUID().GetCounter() != routeRecordingSession.OwnerGuidLow)
+        {
+            handler->SendSysMessage("Only the GM who started the route recording may modify it.");
+            return false;
+        }
+
+        if (routeRecordingSession.NodeIds.empty())
+        {
+            handler->SendSysMessage("The current recording has no nodes to undo.");
+            return false;
+        }
+
+        uint32 const nodeId = routeRecordingSession.NodeIds.back();
+        routeRecordingSession.NodeIds.pop_back();
+        routeRecordingSession.NextNodeOrder = static_cast<uint16>(routeRecordingSession.NextNodeOrder - 10);
+
+        WorldDatabase.Execute(
+            "DELETE FROM `lwi_movement_node` WHERE `id` = {} AND `path_id` = {}",
+            nodeId,
+            routeRecordingSession.PathId);
+
+        handler->PSendSysMessage(
+            "Removed the last recorded node ({}) from path {}. Remaining nodes: {}.",
+            nodeId,
+            routeRecordingSession.PathId,
+            routeRecordingSession.NodeIds.size());
+        return true;
+    }
+
+    static bool HandleRouteRecordStatusCommand(ChatHandler* handler)
+    {
+        if (!routeRecordingActive)
+        {
+            handler->SendSysMessage("No route recording is active.");
+            return true;
+        }
+
+        handler->PSendSysMessage(
+            "Route recording: path {} ({}) | map {} | nodes {} | next order {}.",
+            routeRecordingSession.PathId,
+            routeRecordingSession.PathName,
+            routeRecordingSession.MapId,
+            routeRecordingSession.NodeIds.size(),
+            routeRecordingSession.NextNodeOrder);
+        return true;
+    }
+
+    static bool HandleRouteRecordFinishCommand(ChatHandler* handler)
+    {
+        if (!routeRecordingActive)
+        {
+            handler->SendSysMessage("No route recording is active.");
+            return false;
+        }
+
+        Player* player = GetCommandPlayer(handler);
+        if (!player || player->GetGUID().GetCounter() != routeRecordingSession.OwnerGuidLow)
+        {
+            handler->SendSysMessage("Only the GM who started the route recording may finish it.");
+            return false;
+        }
+
+        if (routeRecordingSession.NodeIds.size() < 2)
+        {
+            handler->PSendSysMessage(
+                "Path {} currently has only {} node(s). Record at least two nodes before finishing, or use .lwi route record cancel confirm.",
+                routeRecordingSession.PathId,
+                routeRecordingSession.NodeIds.size());
+            return false;
+        }
+
+        uint32 const pathId = routeRecordingSession.PathId;
+        std::string const pathName = routeRecordingSession.PathName;
+        std::size_t const nodeCount = routeRecordingSession.NodeIds.size();
+
+        routeRecordingSession = {};
+        routeRecordingActive = false;
+
+        handler->PSendSysMessage(
+            "Finished recording movement path {} ({}) with {} node(s). The data is saved in lwi_movement_path/lwi_movement_node. Use .lwi reload before testing it through a route segment.",
+            pathId,
+            pathName,
+            nodeCount);
+        return true;
+    }
+
+    static bool HandleRouteRecordCancelCommand(ChatHandler* handler)
+    {
+        if (!routeRecordingActive)
+        {
+            handler->SendSysMessage("No route recording is active.");
+            return true;
+        }
+
+        Player* player = GetCommandPlayer(handler);
+        if (!player || player->GetGUID().GetCounter() != routeRecordingSession.OwnerGuidLow)
+        {
+            handler->SendSysMessage("Only the GM who started the route recording may cancel it.");
+            return false;
+        }
+
+        handler->PSendSysMessage(
+            "WARNING: This will delete unfinished movement path {} ({}) and its {} recorded node(s). Use .lwi route record cancel confirm to continue.",
+            routeRecordingSession.PathId,
+            routeRecordingSession.PathName,
+            routeRecordingSession.NodeIds.size());
+        return true;
+    }
+
+    static bool HandleRouteRecordCancelConfirmCommand(ChatHandler* handler)
+    {
+        if (!routeRecordingActive)
+        {
+            handler->SendSysMessage("No route recording is active.");
+            return true;
+        }
+
+        Player* player = GetCommandPlayer(handler);
+        if (!player || player->GetGUID().GetCounter() != routeRecordingSession.OwnerGuidLow)
+        {
+            handler->SendSysMessage("Only the GM who started the route recording may cancel it.");
+            return false;
+        }
+
+        uint32 const pathId = routeRecordingSession.PathId;
+        std::string const pathName = routeRecordingSession.PathName;
+
+        WorldDatabase.Execute(
+            "DELETE FROM `lwi_movement_node` WHERE `path_id` = {}",
+            pathId);
+        WorldDatabase.Execute(
+            "DELETE FROM `lwi_movement_path` WHERE `id` = {}",
+            pathId);
+
+        routeRecordingSession = {};
+        routeRecordingActive = false;
+
+        handler->PSendSysMessage(
+            "Canceled route recording and deleted unfinished movement path {} ({}).",
+            pathId,
+            pathName);
         return true;
     }
 
