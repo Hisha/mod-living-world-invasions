@@ -32,13 +32,13 @@ WHERE id IN (100);
 -- lwi_creature_template Clear Data
 -- ===========================================================================
 DELETE FROM lwi_creature_template
-WHERE id IN (1,2,3);
+WHERE id IN (1,2,3,4,5,6);
 
 -- ===========================================================================
 -- lwi_spawn_member Clear Data
 -- ===========================================================================
 DELETE FROM lwi_spawn_member
-WHERE id IN (100001,100002,100003,100004,100005,100006,100007,100008,100009,100010,100011,100012);
+WHERE id IN (100001,100002,100003,100004,100005,100006,100007,100008,100009,100010,100011,100012,100013,100014,100015,100016);
 
 -- ===========================================================================
 -- lwi_movement_path Clear Data
@@ -141,8 +141,11 @@ VALUES (100, 'Defias Scouts', 0, -10898.128, 1466.9028, 42.519577, 5.4439473, 10
 INSERT INTO lwi_creature_template(id,name,base_creature_entry,name_override,subname_override,faction_override,rank_override,health_modifier_override,armor_modifier_override,damage_modifier_override,enabled,comment) 
 VALUES (1, 'Defias Ogre Brute', 644, 'Defias Ogre Brute', 'Defias Brotherhood', 17, 0, 3.0, 1.5, NULL, 1, 'Defias Ogre based on Rhahk Zor'),
 	   (2, 'Westfall Invasion Boss', 639, 'Captain Garrick Vane', 'Defias Field Commander', 17, 1, 5.0, 1.5, 2.0, 1, 'Westfall Invasion Leader based on Edwin VanCleef'),
-       (3, 'Defias Field Medic', 4418, 'Defias Field Medic', 'Defias Brotherhood', 17, 0, 1.0, 1.0, 0.7, 1, 'Defias healer based on Defias Wizard');
-
+       (3, 'Defias Field Medic', 4418, 'Defias Field Medic', 'Defias Brotherhood', 17, 0, 1.0, 1.0, 0.7, 1, 'Defias healer based on Defias Wizard'),
+       (4, 'Commander Aldric Stoneward', 466, 'Commander Aldric Stoneward', 'Stormwind Response Force', 12, 0, 5.0, 1.5, 2.0, 1, 'Stormwind Response Force Commander based on General Marcus Jonathan'),
+       (5, 'Stormwind Battle Chaplain', 5484, 'Stormwind Battle Chaplain', 'Stormwind Response Force', 12, 0, 1.0, 1.0, 0.7, 1, 'Stormwind Healer based on Brother Benjamin'),
+       (6, 'Stormwind Paladin', 4885, 'Stormwind Paladin', 'Stormwind Response Force', 12, 0, 1.0, 1.0, 0.7, 1, 'Stormwind Paladin based on Duthorian Rall');
+       
 -- ===========================================================================
 -- lwi_creature_ability(Data-driven combat abilities for LWI templates.):
 -- ===========================================================================
@@ -164,7 +167,11 @@ VALUES (100001, 100, 1, 449, NULL, 3, 25, 3, 'Defias scouts - Melee DPS'),
        (100009, 104, 1, 589, NULL, 15, 25, 4, 'Defias 3rd Control Team - Ranged DPS'),
        (100010, 104, 1, 0, 3, 10, 25, 5, 'Defias 3rd Control Team - Healer'),
        (100011, 104, 1, 0, 1, 5, 25, 3, 'Defias 3rd Control Team - Melee DPS'),
-       (100012, 105, 1, 0, 2, 1, 35, 1, 'Defias Leadership - Melee DPS');
+       (100012, 105, 1, 0, 2, 1, 35, 1, 'Defias Leadership - Melee DPS'),
+       (100013, 106, 1, 68, NULL, 50, 25, 3, 'Stormwind Guard - Melee DPS'),
+       (100014, 106, 1, 0, 4, 1, 35, 1, 'Stormwind Commander - Melee DPS'),
+       (100015, 106, 1, 0, 5, 20, 30, 5, 'Stormwind Battle Chaplain - Healer'),
+       (100016, 106, 1, 0, 6, 25, 30, 3, 'Stormwind Paladin - Melee DPS');
 
 -- ===========================================================================
 -- lwi_movement_path(Grouping for the path the NPCs will take.):
