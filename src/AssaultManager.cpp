@@ -33,7 +33,7 @@ void AssaultManager::Reset()
     _activeAssaults.clear();
 }
 
-bool AssaultManager::EnsureServiceNpcAttackable(
+bool AssaultManager::EnsureWorldDefenderAttackable(
     uint64 runtimeId,
     Creature* attacker,
     Creature* target,
@@ -75,18 +75,18 @@ bool AssaultManager::EnsureServiceNpcAttackable(
         target->SetImmuneToNPC(false);
 
         LOG_INFO("server.loading",
-            "[LWI Assault] Runtime #{} temporarily removed UNIT_FLAG_IMMUNE_TO_NPC from service target {} GUID {}.",
+            "[LWI Assault] Runtime #{} temporarily removed UNIT_FLAG_IMMUNE_TO_NPC from world defender {} GUID {}.",
             runtimeId,
             target->GetEntry(),
             target->GetGUID().ToString());
     }
 
-    // Some service NPCs remain neutral to the invasion even after NPC immunity
+    // Some world defenders remain neutral to the invasion even after NPC immunity
     // is removed. Rather than hard-code a faction, borrow the faction template
     // of a nearby normal defender that this attacker can already attack.
     //
     // That preserves the area's normal defender allegiance (including player
-    // friendliness) while making only this live service-NPC instance a proper
+    // friendliness) while making only this live world-defender instance a proper
     // participant in the invasion.
     if (!attacker->IsValidAttackTarget(target))
     {
@@ -136,7 +136,7 @@ bool AssaultManager::EnsureServiceNpcAttackable(
                 existingOverride->FactionChanged = true;
 
                 LOG_INFO("server.loading",
-                    "[LWI Assault] Runtime #{} temporarily changed service target {} GUID {} faction {} -> {} "
+                    "[LWI Assault] Runtime #{} temporarily changed world defender {} GUID {} faction {} -> {} "
                     "using nearby hostile defender {} GUID {} as faction donor.",
                     runtimeId,
                     target->GetEntry(),
@@ -150,7 +150,7 @@ bool AssaultManager::EnsureServiceNpcAttackable(
         else
         {
             LOG_WARN("server.loading",
-                "[LWI Assault] Runtime #{} service target {} GUID {} is still not a valid attack target after "
+                "[LWI Assault] Runtime #{} world defender {} GUID {} is still not a valid attack target after "
                 "NPC-immunity removal, and no nearby normal hostile defender was available as a faction donor.",
                 runtimeId,
                 target->GetEntry(),
@@ -163,7 +163,7 @@ bool AssaultManager::EnsureServiceNpcAttackable(
     if (!valid)
     {
         LOG_WARN("server.loading",
-            "[LWI Assault] Runtime #{} service target {} GUID {} remains invalid for attacker {} after temporary override; "
+            "[LWI Assault] Runtime #{} world defender {} GUID {} remains invalid for attacker {} after temporary override; "
             "attackerReaction={}, targetReaction={}, targetFaction={}.",
             runtimeId,
             target->GetEntry(),
@@ -201,7 +201,7 @@ void AssaultManager::RestoreOverride(TemporaryNpcCombatOverride const& overrideD
     target->SetImmuneToNPC(overrideData.WasImmuneToNpc);
 
     LOG_INFO("server.loading",
-        "[LWI Assault] Restored service target {} GUID {} to faction {} and NPC immunity state {}.",
+        "[LWI Assault] Restored world defender {} GUID {} to faction {} and NPC immunity state {}.",
         target->GetEntry(),
         target->GetGUID().ToString(),
         overrideData.OriginalFaction,
@@ -425,7 +425,7 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
         Creature* target = nullptr;
         float bestDistance = assault.SearchRadius + 1.0f;
         uint32 bestAssignmentCount = std::numeric_limits<uint32>::max();
-        bool targetIsServiceNpc = false;
+        bool targetIsWorldDefender = false;
 
         // Keep the core's normal hostile acquisition path for defenders that
         // already participate in AzerothCore faction combat.
@@ -439,11 +439,11 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
             }
         }
 
-        // Service NPCs such as quest givers/vendors/flight masters can be
-        // passive toward the invasion even when they are intended assault
-        // targets.  Scan the map's normal spawned-creature store explicitly
-        // instead of relying on grid notifier helpers whose API differs across
-        // AzerothCore revisions.
+        // Some world defenders never enter AzerothCore's normal hostile-target
+        // path. This includes protected service NPCs and ordinary civilian
+        // humanoids such as workers/lumberjacks. Scan the map's normal spawned-
+        // creature store explicitly so the invasion can pull those defenders
+        // into combat without changing their persistent creature templates.
         for (auto const& [spawnId, candidate] : map->GetCreatureBySpawnIdStore())
         {
             (void)spawnId;
@@ -464,23 +464,44 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
                 continue;
             }
 
-            uint32 const npcFlags = candidate->GetCreatureTemplate()->npcflag;
+            CreatureTemplate const* candidateTemplate = candidate->GetCreatureTemplate();
+            if (!candidateTemplate)
+            {
+                continue;
+            }
+
+            uint32 const npcFlags = candidateTemplate->npcflag;
 
             // parameter3 is an assault target-policy bitmask:
             //   bit 0 (1) = quest givers
             //   bit 1 (2) = vendors
             //   bit 2 (4) = flight masters
-            bool const allowedQuestGiver =
-                (assault.TargetPolicy & 1u) != 0 &&
-                (npcFlags & UNIT_NPC_FLAG_QUESTGIVER) != 0;
-            bool const allowedVendor =
-                (assault.TargetPolicy & 2u) != 0 &&
-                (npcFlags & UNIT_NPC_FLAG_VENDOR) != 0;
-            bool const allowedFlightMaster =
-                (assault.TargetPolicy & 4u) != 0 &&
-                (npcFlags & UNIT_NPC_FLAG_FLIGHTMASTER) != 0;
+            //
+            // Ordinary humanoid civilians do not need a policy bit. They are
+            // eligible when they are not friendly to the invader. This catches
+            // workers/lumberjacks and similar town NPCs that have npcflag = 0,
+            // while avoiding creatures that are already allied with the invasion.
+            bool const isQuestGiver = (npcFlags & UNIT_NPC_FLAG_QUESTGIVER) != 0;
+            bool const isVendor = (npcFlags & UNIT_NPC_FLAG_VENDOR) != 0;
+            bool const isFlightMaster = (npcFlags & UNIT_NPC_FLAG_FLIGHTMASTER) != 0;
+            bool const isProtectedServiceNpc = isQuestGiver || isVendor || isFlightMaster;
 
-            if (!allowedQuestGiver && !allowedVendor && !allowedFlightMaster)
+            bool const allowedQuestGiver =
+                (assault.TargetPolicy & 1u) != 0 && isQuestGiver;
+            bool const allowedVendor =
+                (assault.TargetPolicy & 2u) != 0 && isVendor;
+            bool const allowedFlightMaster =
+                (assault.TargetPolicy & 4u) != 0 && isFlightMaster;
+
+            bool const allowedCivilianHumanoid =
+                !isProtectedServiceNpc &&
+                candidateTemplate->type == CREATURE_TYPE_HUMANOID &&
+                !candidate->IsFriendlyTo(creature);
+
+            if (!allowedQuestGiver &&
+                !allowedVendor &&
+                !allowedFlightMaster &&
+                !allowedCivilianHumanoid)
             {
                 continue;
             }
@@ -512,7 +533,7 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
             target = candidate;
             bestDistance = distance;
             bestAssignmentCount = assignmentCount;
-            targetIsServiceNpc = true;
+            targetIsWorldDefender = true;
         }
 
         if (!target)
@@ -522,16 +543,16 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
 
         if (creature->AI())
         {
-            if (targetIsServiceNpc)
+            if (targetIsWorldDefender)
             {
-                if (!EnsureServiceNpcAttackable(
+                if (!EnsureWorldDefenderAttackable(
                         assault.RuntimeId,
                         creature,
                         target,
                         assault.SearchRadius))
                 {
                     LOG_WARN("server.loading",
-                        "[LWI Assault] Runtime #{} creature {} member {} could not make service target {} GUID {} attackable by NPCs.",
+                        "[LWI Assault] Runtime #{} creature {} member {} could not make world defender {} GUID {} attackable by NPCs.",
                         assault.RuntimeId,
                         entity.Entry,
                         entity.MemberId,
@@ -543,7 +564,7 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
 
             creature->AI()->AttackStart(target);
 
-            if (targetIsServiceNpc)
+            if (targetIsWorldDefender)
             {
                 if (target->AI() && target->CanStartAttack(creature, true))
                 {
@@ -566,7 +587,7 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
                     entity.MemberId,
                     target->GetEntry(),
                     target->GetGUID().ToString(),
-                    targetIsServiceNpc ? " via explicit service-NPC assault policy" : "");
+                    targetIsWorldDefender ? " via explicit world-defender assault policy" : "");
             }
             else
             {
@@ -578,7 +599,7 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
                     entity.MemberId,
                     target->GetEntry(),
                     target->GetGUID().ToString(),
-                    targetIsServiceNpc ? " via explicit service-NPC assault policy" : "",
+                    targetIsWorldDefender ? " via explicit world-defender assault policy" : "",
                     creature->GetVictim() ? creature->GetVictim()->GetEntry() : 0,
                     creature->IsInCombat());
             }

@@ -48,7 +48,7 @@ public:
 private:
     bool TryAcquireTargets(ActiveAssault& assault);
 
-    bool EnsureServiceNpcAttackable(uint64 runtimeId, Creature* attacker, Creature* target, float searchRadius);
+    bool EnsureWorldDefenderAttackable(uint64 runtimeId, Creature* attacker, Creature* target, float searchRadius);
     void ReleaseRuntimeOverrides(uint64 runtimeId);
     void RestoreAllOverrides();
     void RestoreOverride(TemporaryNpcCombatOverride const& overrideData);
