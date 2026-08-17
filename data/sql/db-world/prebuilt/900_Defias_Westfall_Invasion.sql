@@ -14,7 +14,7 @@ WHERE id IN (1001,1002,1003,1004,1005,1006);
 -- lwi_stage_action Clear Data
 -- ===========================================================================
 DELETE FROM lwi_stage_action
-WHERE id IN (10001,10002,10003,10004,10005,10006,10007,10008,10009,10010,10011,10012,10013,10014,10015,10016,10017,10018,10019,10020,10021,10022,10023,10024,10025);
+WHERE id IN (10001,10002,10003,10004,10005,10006,10007,10008,10009,10010,10011,10012,10013,10014,10015,10016,10017,10018,10019,10020,10021,10022,10023,10024,10025,10026,10027,10028);
 
 -- ===========================================================================
 -- lwi_spawn_group Clear Data
@@ -50,7 +50,7 @@ WHERE id IN (100,101,102,103,104,105);
 -- lwi_movement_node Clear Data
 -- ===========================================================================
 DELETE FROM lwi_movement_node
-WHERE id IN (10000,10001,10002,10003,10004,10005,10006,10007,10008,10009,10010,10011,10012,10013,10014,10015,10016,10017,10501,10502,10503,10504,10505,10506,10507,10508,10509,10510,10511,10512,10513,10514,10515,10516,10517,10518,10519);
+WHERE id IN (10000,10001,10002,10003,10004,10005,10006,10007,10008,10009,10010,10011,10012,10013,10014,10015,10016,10017,10501,10502,10503,10504,10505,10506,10507,10508,10509,10510,10511,10512,10513,10514,10515,10516,10517,10518,10519,10520,10521,10522,10523,10524,10525,10526,10527,10528,10529,10530,10531,10532);
 
 -- ===========================================================================
 -- lwi_movement_profile Clear Data
@@ -68,7 +68,7 @@ WHERE id IN (100,101,102,103,104);
 -- lwi_dialogue Clear Data
 -- ===========================================================================
 DELETE FROM lwi_dialogue
-WHERE id IN (100,101,102);
+WHERE id IN (100,101,102,103);
 
 -- ===========================================================================
 -- lwi_announcement Clear Data
@@ -127,7 +127,10 @@ VALUES (10001, 1001, 1, 1, 100, 0, 0, 0, 0, 1, 'Spawn Defias Scout group.'),
        (10022, 1003, 14, 9, 104, 30, 5, 10, 0, 1, 'Defias 3rd Control Team garrisons Sentinel Hill and replenishes after 30 seconds uncontested.'),
        (10023, 1004, 1, 1, 105, 0, 0, 0, 0, 1, 'Spawn Defias Leadership.'),
        (10024, 1004, 2, 3, 105, 101, 100012, 0, 0, 1, 'Defias Leadership yells a warning.'),
-       (10025, 1004, 3, 7, 105, 75, 2000, 7, 0, 1, 'Defias Leadership assaults Sentinel Hill.');
+       (10025, 1004, 3, 7, 105, 75, 2000, 7, 0, 1, 'Defias Leadership assaults Sentinel Hill.'),
+       (10026, 1005, 1, 2, 106, 105, 100, 103, 0, 1, 'Move Stormwind Response Force group to Sentinel Hill.'),
+       (10027, 1006, 1, 3, 106, 103, 100014, 0, 0, 1, 'Commander Aldric yells the battle cry.'),
+       (10028, 1006, 2, 7, 106, 100, 2000, 0, 0, 1, 'Stormwind Response Force assaults the Defias.');
 
 -- ===========================================================================
 -- lwi_spawn_group(Allows for grouping of spawned NPCs.):
@@ -231,7 +234,20 @@ VALUES (10000, 100, 10, 0, -10898.128, 1466.9028, 42.519577, 5.4439473, 0, 0, 1,
        (10516, 105, 160, 0, -9759.922, 678.2379, 27.01971, 1.5200992, 0, 0, 1, 'Stormwind Response route node 160'),
        (10517, 105, 170, 0, -9751.139, 746.1365, 25.074335, 1.8499665, 0, 0, 1, 'Stormwind Response route node 170'),
        (10518, 105, 180, 0, -9780.321, 808.8351, 25.547562, 2.2426658, 0, 0, 1, 'Stormwind Response route node 180'),
-       (10519, 105, 190, 0, -9832.013, 872.44147, 25.917767, 2.117002, 0, 0, 1, 'Stormwind Response route node 190');
+       (10519, 105, 190, 0, -9832.013, 872.44147, 25.917767, 2.117002, 0, 0, 1, 'Stormwind Response route node 190'),
+       (10520, 105, 200, 0, -0969.042, 933.22217, 30.57748, 2.0777338, 0, 0, 1, 'Stormwind Response route node 200'),
+       (10521, 105, 210, 0, -9883.874, 977.924, 31.13226, 2.7728112, 0, 0, 1, 'Stormwind Response route node 210'),
+       (10522, 105, 220, 0, -9960.343, 1004.00635, 31.448572, 3.346152, 0, 0, 1, 'Stormwind Response route node 220'),
+       (10523, 105, 230, 0, -10033.509, 983.69183, 32.746986, 2.7217603, 0, 0, 1, 'Stormwind Response route node 230'),
+       (10524, 105, 240, 0, -10074.772, 1008.07996, 33.344276, 3.4600348, 0, 0, 1, 'Stormwind Response route node 240'),
+       (10525, 105, 250, 0, -10157.013, 986.91327, 33.982635, 3.1066055, 0, 0, 1, 'Stormwind Response route node 250'),
+       (10526, 105, 260, 0, -10243.153, 994.0679, 31.142061, 3.5974796, 0, 0, 1, 'Stormwind Response route node 260'),
+       (10527, 105, 270, 0, -10293.791, 967.9529, 31.141283, 2.9416718, 0, 0, 1, 'Stormwind Response route node 270'),
+       (10528, 105, 280, 0, -10413.858, 991.53467, 32.48077, 3.5817716, 0, 0, 1, 'Stormwind Response route node 280'),
+       (10529, 105, 290, 0, -10502.517,951.585,39.760075, 2.7728112, 0, 0, 1, 'Stormwind Response route node 290'),
+       (10530, 105, 300, 0, -10653.444, 1020.0141, 31.356035, 1.1902332, 0, 0, 1, 'Stormwind Response route node 300'),
+       (10531, 105, 310, 0, -10615.945, 1131.2982, 35.64402, 2.4507973, 0, 0, 1, 'Stormwind Response route node 310'),
+       (10532, 105, 320, 0, -10510.692, 1051.6083, 59.740383, 5.5138674, 0, 0, 1, 'Stormwind Response route node 320');
 
 -- ===========================================================================
 -- lwi_movement_profile(How is the spawn group moving toward it's target.):
@@ -255,7 +271,8 @@ VALUES (100, 'ScoutRouteComplete', 1, 'Emitted when the Defias scout movement ro
 INSERT INTO lwi_dialogue(id,name,text,chat_type,language,enabled,comment)
 VALUES (100, 'Defias Scout Warning', 'Keep your eyes open. Sentinel Hill is ahead.', 0, 0, 1, 'Defias Scout say at staging point.'),
        (101, 'Defias Leadership Warning', 'The Brotherhood have taken Westfall!', 1, 0, 1, 'Defias Leadership announcing they control Westfall.'),
-       (102, 'Commander Aldric Stoneward urges the column onward', 'Keep up men, Westfall needs our help!', 1, 0, 1, 'Commander Aldric Stoneward urges the column onward');
+       (102, 'Commander Aldric Stoneward urges the column onward', 'Keep up men, Westfall needs our help!', 1, 0, 1, 'Commander Aldric Stoneward urges the column onward'),
+       (103, 'Commander Aldric Stoneward sounds the battle cry', 'Soldiers of Stormwind! Drive these Defias dogs from Sentinel Hill! For Westfall! For the Alliance!', 1, 0, 1, 'Commander Aldric Stoneward sounds the battle cry');
 
 -- ===========================================================================
 -- lwi_announcement(Announcements to the world, limited by stage action parameters):
