@@ -282,19 +282,24 @@ bool MovementController::StartRouteSegment(
     }
 
     MovementDirection direction;
-    if (fromNodeId == segment->FromNodeId)
+    if (fromNodeId == segment->StartNodeId)
     {
         direction = MovementDirection::Forward;
     }
-    else if (fromNodeId == segment->ToNodeId && segment->Bidirectional)
+    else if (fromNodeId == segment->EndNodeId)
     {
         direction = MovementDirection::Reverse;
     }
     else
     {
         LOG_ERROR("server.loading",
-            "[LWI Movement] Runtime entity group #{} cannot enter route segment {} from route node {}.",
-            runtimeGroupId, routeSegmentId, fromNodeId);
+            "[LWI Movement] Runtime entity group #{} cannot enter route segment {} from route node {}; "
+            "expected start node {} or end node {}.",
+            runtimeGroupId,
+            routeSegmentId,
+            fromNodeId,
+            segment->StartNodeId,
+            segment->EndNodeId);
         return false;
     }
 
