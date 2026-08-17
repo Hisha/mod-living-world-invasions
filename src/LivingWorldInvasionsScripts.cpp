@@ -4,21 +4,28 @@
 #include "InvasionRuntimeManager.h"
 #include "InvasionSpawnManager.h"
 #include "LivingWorldInvasions.h"
+#include "MovementController.h"
+#include "RuntimeEntityGroup.h"
 #include "LwiCreatureTemplateManager.h"
 #include "CreatureAbilityManager.h"
 #include "RuntimeSignalManager.h"
 
 #include "ConfigValueCache.h"
+#include "Creature.h"
 #include "DatabaseEnv.h"
 #include "Field.h"
 #include "QueryResult.h"
 #include "Log.h"
 #include "ScriptMgr.h"
 
+#include <unordered_set>
+
 using namespace Acore::ChatCommands;
 
 namespace
 {
+std::unordered_set<uint64> routeTestGroupIds;
+
 enum class LwiConfig
 {
     Enabled,
@@ -131,6 +138,20 @@ public:
     void OnUpdate(uint32 diff) override
     {
         sInvasionRuntimeMgr.Update(diff);
+
+        for (auto itr = routeTestGroupIds.begin(); itr != routeTestGroupIds.end();)
+        {
+            uint64 const runtimeGroupId = *itr;
+            if (sMovementController.IsGroupMoving(runtimeGroupId))
+            {
+                ++itr;
+                continue;
+            }
+
+            sRuntimeEntityGroupMgr.RemoveGroup(runtimeGroupId);
+            itr = routeTestGroupIds.erase(itr);
+        }
+
         sInvasionScheduler.Update(diff);
     }
 };
@@ -158,6 +179,16 @@ public:
                 HandleAbortCommand,
                 rbac::RBAC_PERM_COMMAND_SERVER_INFO,
                 Console::Yes
+            }
+        };
+
+        static ChatCommandTable routeCommandTable =
+        {
+            {
+                "test",
+                HandleRouteTestCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
             }
         };
 
@@ -214,6 +245,10 @@ public:
             {
                 "abort",
                 abortCommandTable
+            },
+            {
+                "route",
+                routeCommandTable
             },
             {
                 "trigger",
@@ -461,6 +496,127 @@ private:
         handler->PSendSysMessage(
             "Living World Invasions emergency abort completed. {} runtime(s) were targeted. Scheduler remains stopped.",
             active);
+        return true;
+    }
+
+    static bool HandleRouteTestCommand(ChatHandler* handler, uint32 routeSegmentId, uint32 fromNodeId)
+    {
+        if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Debug))
+        {
+            handler->SendSysMessage(
+                "Living World Invasions debug commands are disabled. Set LWI.Debug = 1 to use .lwi route test.");
+            return false;
+        }
+
+        Creature* creature = handler->getSelectedCreature();
+        if (!creature)
+        {
+            handler->SendSysMessage(
+                "Select a creature to use as the route-test traveler, then use .lwi route test <segmentId> <fromNodeId>.");
+            return false;
+        }
+
+        lwi::RouteSegmentDefinition const* segment = sInvasionMgr.GetRouteSegment(routeSegmentId);
+        if (!segment)
+        {
+            handler->PSendSysMessage(
+                "Living World Invasions route segment {} does not exist or is disabled.",
+                routeSegmentId);
+            return false;
+        }
+
+        if (fromNodeId != segment->StartNodeId && fromNodeId != segment->EndNodeId)
+        {
+            handler->PSendSysMessage(
+                "Route segment {} ({}) connects route nodes {} and {}; {} is not an endpoint.",
+                segment->Id,
+                segment->Name,
+                segment->StartNodeId,
+                segment->EndNodeId,
+                fromNodeId);
+            return false;
+        }
+
+        lwi::RouteNodeDefinition const* fromNode = sInvasionMgr.GetRouteNode(fromNodeId);
+        uint32 const destinationNodeId = fromNodeId == segment->StartNodeId
+            ? segment->EndNodeId
+            : segment->StartNodeId;
+        lwi::RouteNodeDefinition const* destinationNode = sInvasionMgr.GetRouteNode(destinationNodeId);
+
+        if (!fromNode || !destinationNode)
+        {
+            handler->SendSysMessage(
+                "Living World Invasions route test could not resolve the route endpoint definitions.");
+            return false;
+        }
+
+        if (creature->GetMapId() != fromNode->MapId)
+        {
+            handler->PSendSysMessage(
+                "Selected creature is on map {}, but route node {} ({}) is on map {}.",
+                creature->GetMapId(),
+                fromNode->Id,
+                fromNode->Name,
+                fromNode->MapId);
+            return false;
+        }
+
+        for (uint64 const runtimeGroupId : routeTestGroupIds)
+        {
+            lwi::RuntimeEntityGroup const* existingGroup = sRuntimeEntityGroupMgr.GetGroup(runtimeGroupId);
+            if (!existingGroup)
+            {
+                continue;
+            }
+
+            for (lwi::RuntimeEntity const& entity : existingGroup->Entities)
+            {
+                if (entity.Guid == creature->GetGUID())
+                {
+                    handler->PSendSysMessage(
+                        "Selected creature is already being used by active route test group #{}.",
+                        runtimeGroupId);
+                    return false;
+                }
+            }
+        }
+
+        lwi::RuntimeEntityGroup& testGroup = sRuntimeEntityGroupMgr.CreateGroup(0, 0);
+
+        lwi::RuntimeEntity entity;
+        entity.EntityType = static_cast<uint8>(lwi::EntityProviderType::Creature);
+        entity.MapId = creature->GetMapId();
+        entity.Entry = creature->GetEntry();
+        entity.Guid = creature->GetGUID();
+        testGroup.Entities.push_back(entity);
+
+        uint64 const runtimeGroupId = testGroup.Id;
+        routeTestGroupIds.insert(runtimeGroupId);
+
+        if (!sMovementController.StartRouteSegment(
+                runtimeGroupId,
+                routeSegmentId,
+                fromNodeId))
+        {
+            routeTestGroupIds.erase(runtimeGroupId);
+            sRuntimeEntityGroupMgr.RemoveGroup(runtimeGroupId);
+
+            handler->PSendSysMessage(
+                "Living World Invasions failed to start route segment {} ({}) for the selected creature.",
+                segment->Id,
+                segment->Name);
+            return false;
+        }
+
+        handler->PSendSysMessage(
+            "Route test group #{} started segment {} ({}) from {} to {} using selected creature {} (entry {}).",
+            runtimeGroupId,
+            segment->Id,
+            segment->Name,
+            fromNode->Name,
+            destinationNode->Name,
+            creature->GetName(),
+            creature->GetEntry());
         return true;
     }
 
