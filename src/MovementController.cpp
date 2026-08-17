@@ -808,9 +808,39 @@ void MovementController::CompleteMovement(
     uint64 runtimeGroupId,
     ActiveRuntimeMovement& movement)
 {
+    // The final role-aware/MMAP destination becomes each surviving creature's
+    // new home position. If combat later pulls an invader away and its AI
+    // evades/resets, AzerothCore will return it to the objective it actually
+    // reached instead of the group's original spawn/staging position.
+    uint32 homesUpdated = 0;
+
+    for (RuntimeMovementDestination const& destination : movement.Destinations)
+    {
+        Map* map = sMapMgr->FindMap(destination.MapId, 0);
+        if (!map)
+        {
+            continue;
+        }
+
+        Creature* creature = map->GetCreature(destination.Guid);
+        if (!creature || !creature->IsAlive())
+        {
+            continue;
+        }
+
+        creature->SetHomePosition(
+            destination.X,
+            destination.Y,
+            destination.Z,
+            creature->GetOrientation());
+
+        ++homesUpdated;
+    }
+
     LOG_INFO("server.loading",
-        "[LWI Movement] Runtime entity group #{} completed movement path {}.",
-        runtimeGroupId, movement.PathId);
+        "[LWI Movement] Runtime entity group #{} completed movement path {}; "
+        "updated {} surviving creature home position(s) to their final formation destinations.",
+        runtimeGroupId, movement.PathId, homesUpdated);
 
     if (movement.CompletionSignalId != 0)
     {
