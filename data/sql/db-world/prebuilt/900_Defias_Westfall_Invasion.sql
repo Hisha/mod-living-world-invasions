@@ -263,14 +263,14 @@ VALUES (100, 'Defias Scout Warning', 'Keep your eyes open. Sentinel Hill is ahea
 INSERT INTO lwi_announcement(id,name,text,enabled,comment)
 VALUES (100, 'Westfall Alliance Warning', 'Defias activity has been reported near Sentinel Hill. Alliance forces in Westfall are advised to remain alert.', 1, 'Westfall area Defias warning.'),
        (101, 'Stormwind Response Force Leaving Stormwind', 'To arms! A Stormwind response force marches for Westfall. All able-bodied members of the Alliance are called to Sentinel Hill to aid in the fight against the Defias!', 1, 'Stormwind Response Force Leaving Stormwind.'),
-       (102, 'Storwind Response Force Rally Troops', 'To arms! A Stormwind response force marches for Westfall. All able-bodied members of the Alliance are called to Sentinel Hill to aid in the fight against the Defias!', 1, 'Storwind Response Force Rally Troops.'),
+       (102, 'Stormwind Response Force Rally Troops', 'To arms! A Stormwind response force marches for Westfall. All able-bodied members of the Alliance are called to Sentinel Hill to aid in the fight against the Defias!', 1, 'Stormwind Response Force Rally Troops.'),
        (103, 'Stormwind Response Force Enters Westfall', 'Stormwind Response Force has arrived in Westfall. All able-bodied Alliance members rally at Sentinel Hill!', 1, 'Stormwind Response Force Enters Westfall.');
 
 -- ===========================================================================
 -- lwi_movement_node_action(Say/Yells/Announcements and Sounds that are triggered in during movements instead of stage_actions):
 -- ===========================================================================
 INSERT INTO lwi_movement_node_action(id,node_id,action_order,action_type,target_id,parameter1,parameter2,parameter3,enabled,comment)
-VALUES (20001, 10501, 1, 2, 101, 2, 0, 1, 1, 'Stormwind Response Force departing Stormwind announcement.'),
-       (20002, 10508, 2, 2, 102, 2, 0, 1, 1, 'Stormwind Response Force rally troops from Elwynn Forest.'),
+VALUES (20001, 10501, 1, 2, 101, 1, 0, 1, 1, 'Stormwind Response Force departing Stormwind announcement.'),
+       (20002, 10508, 2, 2, 102, 2, 12, 1, 1, 'Stormwind Response Force rally troops from Elwynn Forest.'),
        (20003, 10515, 3, 1, 102, 100014, 0, 0, 1, 'Commander urging his troops forward.'),
        (20004, 10519, 4, 2, 103, 2, 0, 1, 1, 'Stormwind Response Force has entered Westfall.');
