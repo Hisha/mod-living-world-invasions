@@ -50,7 +50,7 @@ WHERE id IN (100,101,102,103,104,105);
 -- lwi_movement_node Clear Data
 -- ===========================================================================
 DELETE FROM lwi_movement_node
-WHERE id IN (10000,10001,10002,10003,10004,10005,10006,10007,10008,10009,10010,10011,10012,10013,10014,10015,10016,10017);
+WHERE id IN (10000,10001,10002,10003,10004,10005,10006,10007,10008,10009,10010,10011,10012,10013,10014,10015,10016,10017,10501,10502,10503,10504,10505,10506,10507,10508,10509,10510,10511,10512,10513,10514,10515,10516,10517,10518,10519);
 
 -- ===========================================================================
 -- lwi_movement_profile Clear Data
@@ -68,13 +68,19 @@ WHERE id IN (100,101,102,103,104);
 -- lwi_dialogue Clear Data
 -- ===========================================================================
 DELETE FROM lwi_dialogue
-WHERE id IN (100,101);
+WHERE id IN (100,101,102);
 
 -- ===========================================================================
 -- lwi_announcement Clear Data
 -- ===========================================================================
 DELETE FROM lwi_announcement
-WHERE id IN (100);
+WHERE id IN (100,101,102,103);
+
+-- ===========================================================================
+-- lwi_movement_node_action Clear Data
+-- ===========================================================================
+DELETE FROM lwi_movement_node_action
+WHERE id IN (20001,20002,20003,20004);
 
 -- ===========================================================================
 -- lwi_invasion table(Name the invasion):
@@ -189,24 +195,43 @@ VALUES (100, 'Defias Scout Route 1', 1, 'First Defias scout route to staging poi
 -- lwi_movement_node(The path broken down by each node of it.):
 -- ===========================================================================
 INSERT INTO lwi_movement_node(id,path_id,node_order,map_id,x,y,z,orientation,wait_ms,profile_override_id,enabled,comment)
-VALUES (10000, 100, 10, 0, -10898.128, 1466.9028, 42.519577, 5.4439473,   0, 0, 1, 'Defias Scout route node 10'),
-       (10001, 100, 20, 0, -10816.262, 1388.863, 34.848286, 5.5813813,  0, 0, 1, 'Defias Scout route node 20'),
-       (10002, 100, 30, 0, -10733.547, 1328.5238, 41.804104, 5.679553,   0, 0, 1, 'Defias Scout route node 30'),
-       (10003, 100, 40, 0, -10563.534, 1303.9185, 47.28148, 5.408586,   0, 0, 1, 'Defias Scout route node 40'),
+VALUES (10000, 100, 10, 0, -10898.128, 1466.9028, 42.519577, 5.4439473, 0, 0, 1, 'Defias Scout route node 10'),
+       (10001, 100, 20, 0, -10816.262, 1388.863, 34.848286, 5.5813813, 0, 0, 1, 'Defias Scout route node 20'),
+       (10002, 100, 30, 0, -10733.547, 1328.5238, 41.804104, 5.679553, 0, 0, 1, 'Defias Scout route node 30'),
+       (10003, 100, 40, 0, -10563.534, 1303.9185, 47.28148, 5.408586, 0, 0, 1, 'Defias Scout route node 40'),
        (10004, 100, 50, 0, -10490.681, 1212.7977, 67.30977, 4.8823605, 0, 0, 1, 'Defias Scout route node 50'),
-       (10005, 101, 10, 0, -10898.128, 1466.9028, 42.519577, 5.4439473,   0, 0, 1, 'Defias 2nd Scout route node 10'),
-       (10006, 101, 20, 0, -10816.262, 1388.863, 34.848286, 5.5813813,  0, 0, 1, 'Defias 2nd Scout route node 20'),
-       (10007, 101, 30, 0, -10733.547, 1328.5238, 41.804104, 5.679553,   0, 0, 1, 'Defias 2nd Scout route node 30'),
+       (10005, 101, 10, 0, -10898.128, 1466.9028, 42.519577, 5.4439473, 0, 0, 1, 'Defias 2nd Scout route node 10'),
+       (10006, 101, 20, 0, -10816.262, 1388.863, 34.848286, 5.5813813, 0, 0, 1, 'Defias 2nd Scout route node 20'),
+       (10007, 101, 30, 0, -10733.547, 1328.5238, 41.804104, 5.679553, 0, 0, 1, 'Defias 2nd Scout route node 30'),
        (10008, 101, 40, 0, -10711.868, 1192.233, 63.428204, 5.3473687, 0, 0, 1, 'Defias 2nd Scout route node 40'),
-       (10009, 102, 10, 0, -10497.578, 1145.7003, 44.997818, 4.261898,   0, 0, 1, 'Defias 1st move to SH route node 10'),
-       (10010, 102, 20, 0, -10517.282, 1067.6008, 54.94022, 5.0943923,   0, 0, 1, 'Defias 1st move to SH route node 20'),
-       (10011, 102, 30, 0, -10509.177, 1046.7267, 60.51838, 4.956951,   0, 0, 1, 'Defias 1st move to SH route node 30'),
-       (10012, 103, 10, 0, -10712.419, 1138.1829, 45.58178, 5.696045,   0, 0, 1, 'Defias 2nd Control move to SH route node 10'),
-       (10013, 103, 20, 0, -10658.855, 1150.3375, 33.672962, 5.994494,   0, 0, 1, 'Defias 2nd Control move to SH route node 20'),
-       (10014, 103, 30, 0, -10626.727, 1126.5358, 33.848064, 4.23914,   0, 0, 1, 'Defias 2nd Control move to SH route node 30'),
-       (10015, 104, 10, 0, -10712.419, 1138.1829, 45.58178, 5.696045,   0, 0, 1, 'Defias 3rd Control move to SH route node 10'),
-       (10016, 104, 20, 0, -10683.241, 1054.9269, 35.460896, 5.3897476,   0, 0, 1, 'Defias 3rd Control move to SH route node 20'),
-       (10017, 104, 30, 0, -10643.531, 1017.29474, 31.459375, 5.621436,   0, 0, 1, 'Defias 3rd Control move to SH route node 30');
+       (10009, 102, 10, 0, -10497.578, 1145.7003, 44.997818, 4.261898, 0, 0, 1, 'Defias 1st move to SH route node 10'),
+       (10010, 102, 20, 0, -10517.282, 1067.6008, 54.94022, 5.0943923, 0, 0, 1, 'Defias 1st move to SH route node 20'),
+       (10011, 102, 30, 0, -10509.177, 1046.7267, 60.51838, 4.956951, 0, 0, 1, 'Defias 1st move to SH route node 30'),
+       (10012, 103, 10, 0, -10712.419, 1138.1829, 45.58178, 5.696045, 0, 0, 1, 'Defias 2nd Control move to SH route node 10'),
+       (10013, 103, 20, 0, -10658.855, 1150.3375, 33.672962, 5.994494, 0, 0, 1, 'Defias 2nd Control move to SH route node 20'),
+       (10014, 103, 30, 0, -10626.727, 1126.5358, 33.848064, 4.23914, 0, 0, 1, 'Defias 2nd Control move to SH route node 30'),
+       (10015, 104, 10, 0, -10712.419, 1138.1829, 45.58178, 5.696045, 0, 0, 1, 'Defias 3rd Control move to SH route node 10'),
+       (10016, 104, 20, 0, -10683.241, 1054.9269, 35.460896, 5.3897476, 0, 0, 1, 'Defias 3rd Control move to SH route node 20'),
+       (10017, 104, 30, 0, -10643.531, 1017.29474, 31.459375, 5.621436, 0, 0, 1, 'Defias 3rd Control move to SH route node 30'),
+       (10501, 105, 10, 0, -9022.636, 466.54913, 94.790596, 3.801685, 0, 0, 1, 'Stormwind Response route node 10'),
+       (10502, 105, 20, 0, -9072.087, 428.16284, 93.05588, 3.801685, 0, 0, 1, 'Stormwind Response route node 20'),
+       (10503, 105, 30, 0, -9144.61, 372.81778, 90.60618, 3.884152, 0, 0, 1, 'Stormwind Response route node 30'),
+       (10504, 105, 40, 0, -9179.737, 324.23767, 80.91703, 4.5635047, 0, 0, 1, 'Stormwind Response route node 40'),
+       (10505, 105, 50, 0, -9187.357, 235.10648, 72.204056, 3.9391265, 0, 0, 1, 'Stormwind Response route node 50'),
+       (10506, 105, 60, 0, -9260.044, 158.09802, 67.499598, 3.5817702, 0, 0, 1, 'Stormwind Response route node 60'),
+       (10507, 105, 70, 0, -9406.268, 93.275276, 57.99298, 3.617113, 0, 0, 1, 'Stormwind Response route node 70'),
+       (10508, 105, 80, 0, -9452.742, 64.19041, 55.002647, 3.169436, 0, 0, 1, 'Stormwind Response route node 80'),
+       (10509, 105, 90, 0, -9486.736, 73.20328, 56.25167, 1.5004642, 0, 0, 1, 'Stormwind Response route node 90'),                             
+       (10510, 105, 100, 0, -9483.892, 184.66098, 55.19921, 2.128783, 0, 0, 1, 'Stormwind Response route node 100'),
+       (10511, 105, 110, 0, -9532.731, 242.8854, 50.77816, 2.9181085, 0, 0, 1, 'Stormwind Response route node 110'),
+       (10512, 105, 120, 0, -9663.722, 261.1404, 46.49109, 2.4272344, 0, 0, 1, 'Stormwind Response route node 120'),
+       (10513, 105, 130, 0, -9728.107, 337.24686, 43.485756, 1.9638493, 0, 0, 1, 'Stormwind Response route node 130'),
+       (10514, 105, 140, 0, -9759.019, 419.9956, 37.78114, 1.4101434, 0, 0, 1, 'Stormwind Response route node 140'),
+       (10515, 105, 150, 0, -9739.095, 602.27, 30.754177, 1.8106966, 0, 0, 1, 'Stormwind Response route node 150'),                              
+       (10516, 105, 160, 0, -9759.922, 678.2379, 27.01971, 1.5200992, 0, 0, 1, 'Stormwind Response route node 160'),
+       (10517, 105, 170, 0, -9751.139, 746.1365, 25.074335, 1.8499665, 0, 0, 1, 'Stormwind Response route node 170'),
+       (10518, 105, 180, 0, -9780.321, 808.8351, 25.547562, 2.2426658, 0, 0, 1, 'Stormwind Response route node 180'),
+       (10519, 105, 190, 0, -9832.013, 872.44147, 25.917767, 2.117002, 0, 0, 1, 'Stormwind Response route node 190');
 
 -- ===========================================================================
 -- lwi_movement_profile(How is the spawn group moving toward it's target.):
@@ -229,10 +254,23 @@ VALUES (100, 'ScoutRouteComplete', 1, 'Emitted when the Defias scout movement ro
 -- ===========================================================================
 INSERT INTO lwi_dialogue(id,name,text,chat_type,language,enabled,comment)
 VALUES (100, 'Defias Scout Warning', 'Keep your eyes open. Sentinel Hill is ahead.', 0, 0, 1, 'Defias Scout say at staging point.'),
-       (101, 'Defias Leadership Warning', 'The Brotherhood have taken Westfall!', 1, 0, 1, 'Defias Leadership announcing they control Westfall.');
+       (101, 'Defias Leadership Warning', 'The Brotherhood have taken Westfall!', 1, 0, 1, 'Defias Leadership announcing they control Westfall.'),
+       (102, 'Commander Aldric Stoneward urges the column onward', 'Keep up men, Westfall needs our help!', 1, 0, 1, 'Commander Aldric Stoneward urges the column onward');
 
 -- ===========================================================================
 -- lwi_announcement(Announcements to the world, limited by stage action parameters):
 -- ===========================================================================
 INSERT INTO lwi_announcement(id,name,text,enabled,comment)
-VALUES (100, 'Westfall Alliance Warning', 'Defias activity has been reported near Sentinel Hill. Alliance forces in Westfall are advised to remain alert.', 1, 'Westfall area Defias warning.');
+VALUES (100, 'Westfall Alliance Warning', 'Defias activity has been reported near Sentinel Hill. Alliance forces in Westfall are advised to remain alert.', 1, 'Westfall area Defias warning.'),
+       (101, 'Stormwind Response Force Leaving Stormwind', 'To arms! A Stormwind response force marches for Westfall. All able-bodied members of the Alliance are called to Sentinel Hill to aid in the fight against the Defias!', 1, 'Stormwind Response Force Leaving Stormwind.'),
+       (102, 'Storwind Response Force Rally Troops', 'To arms! A Stormwind response force marches for Westfall. All able-bodied members of the Alliance are called to Sentinel Hill to aid in the fight against the Defias!', 1, 'Storwind Response Force Rally Troops.'),
+       (103, 'Stormwind Response Force Enters Westfall', 'Stormwind Response Force has arrived in Westfall. All able-bodied Alliance members rally at Sentinel Hill!', 1, 'Stormwind Response Force Enters Westfall.');
+
+-- ===========================================================================
+-- lwi_movement_node_action(Say/Yells/Announcements and Sounds that are triggered in during movements instead of stage_actions):
+-- ===========================================================================
+INSERT INTO lwi_movement_node_action(id,node_id,action_order,action_type,target_id,parameter1,parameter2,parameter3,enabled,comment)
+VALUES (20001, 10501, 1, 2, 101, 2, 0, 1, 1, 'Stormwind Response Force departing Stormwind announcement.'),
+       (20002, 10508, 2, 2, 102, 2, 0, 1, 1, 'Stormwind Response Force rally troops from Elwynn Forest.'),
+       (20003, 10515, 3, 1, 102, 100014, 0, 0, 1, 'Commander urging his troops forward.'),
+       (20004, 10519, 4, 2, 103, 2, 0, 1, 1, 'Stormwind Response Force has entered Westfall.');
