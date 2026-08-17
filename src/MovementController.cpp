@@ -189,7 +189,7 @@ void MovementController::Reset()
     _updateTimerMs = 0;
 }
 
-bool MovementController::StartPath(uint64 runtimeGroupId, uint32 pathId, uint32 profileId, uint32 completionSignalId)
+bool MovementController::StartPath(uint64 runtimeGroupId, uint32 pathId, uint32 profileId, uint32 completionSignalId, MovementDirection direction)
 {
     RuntimeEntityGroup* group = sRuntimeEntityGroupMgr.GetGroup(runtimeGroupId);
     if (!group)
@@ -240,7 +240,8 @@ bool MovementController::StartPath(uint64 runtimeGroupId, uint32 pathId, uint32 
     movement.PathId = pathId;
     movement.ProfileId = profileId;
     movement.CompletionSignalId = completionSignalId;
-    movement.NodeIndex = 0;
+    movement.Direction = direction;
+    movement.NodeIndex = direction == MovementDirection::Forward ? 0 : nodes->size() - 1;
     movement.State = RuntimeMovementState::Moving;
 
     _activeMovements[runtimeGroupId] = movement;
@@ -261,6 +262,43 @@ bool MovementController::StartPath(uint64 runtimeGroupId, uint32 pathId, uint32 
         profileId != 0 ? " using a movement profile" : "");
 
     return true;
+}
+
+
+bool MovementController::StartRouteSegment(
+    uint64 runtimeGroupId,
+    uint32 routeSegmentId,
+    uint32 fromNodeId,
+    uint32 profileId,
+    uint32 completionSignalId)
+{
+    RouteSegmentDefinition const* segment = sInvasionMgr.GetRouteSegment(routeSegmentId);
+    if (!segment)
+    {
+        LOG_ERROR("server.loading",
+            "[LWI Movement] Runtime entity group #{} requested missing route segment {}.",
+            runtimeGroupId, routeSegmentId);
+        return false;
+    }
+
+    MovementDirection direction;
+    if (fromNodeId == segment->FromNodeId)
+    {
+        direction = MovementDirection::Forward;
+    }
+    else if (fromNodeId == segment->ToNodeId && segment->Bidirectional)
+    {
+        direction = MovementDirection::Reverse;
+    }
+    else
+    {
+        LOG_ERROR("server.loading",
+            "[LWI Movement] Runtime entity group #{} cannot enter route segment {} from route node {}.",
+            runtimeGroupId, routeSegmentId, fromNodeId);
+        return false;
+    }
+
+    return StartPath(runtimeGroupId, segment->MovementPathId, profileId, completionSignalId, direction);
 }
 
 bool MovementController::CancelGroup(uint64 runtimeGroupId)
@@ -478,15 +516,31 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
     // segment; for the first node use the outgoing segment. This keeps the column
     // centered on and trailing along the road.
     float formationOrientation = node.Orientation;
-    if (movement.NodeIndex > 0)
+    if (movement.Direction == MovementDirection::Forward)
     {
-        MovementNodeDefinition const& previous = (*nodes)[movement.NodeIndex - 1];
-        formationOrientation = std::atan2(node.Y - previous.Y, node.X - previous.X);
+        if (movement.NodeIndex > 0)
+        {
+            MovementNodeDefinition const& previous = (*nodes)[movement.NodeIndex - 1];
+            formationOrientation = std::atan2(node.Y - previous.Y, node.X - previous.X);
+        }
+        else if (nodes->size() > 1)
+        {
+            MovementNodeDefinition const& next = (*nodes)[1];
+            formationOrientation = std::atan2(next.Y - node.Y, next.X - node.X);
+        }
     }
-    else if (nodes->size() > 1)
+    else
     {
-        MovementNodeDefinition const& next = (*nodes)[1];
-        formationOrientation = std::atan2(next.Y - node.Y, next.X - node.X);
+        if (movement.NodeIndex + 1 < nodes->size())
+        {
+            MovementNodeDefinition const& previous = (*nodes)[movement.NodeIndex + 1];
+            formationOrientation = std::atan2(node.Y - previous.Y, node.X - previous.X);
+        }
+        else if (movement.NodeIndex > 0)
+        {
+            MovementNodeDefinition const& next = (*nodes)[movement.NodeIndex - 1];
+            formationOrientation = std::atan2(next.Y - node.Y, next.X - node.X);
+        }
     }
 
     uint32 profileId = node.ProfileOverrideId != 0 ? node.ProfileOverrideId : movement.ProfileId;
@@ -831,7 +885,10 @@ bool MovementController::HasGroupReachedCurrentNode(
     }
 
     MovementNodeDefinition const& node = (*nodes)[movement.NodeIndex];
-    bool const isFinalNode = movement.NodeIndex + 1 >= nodes->size();
+    bool const isFinalNode =
+        movement.Direction == MovementDirection::Forward
+            ? movement.NodeIndex + 1 >= nodes->size()
+            : movement.NodeIndex == 0;
 
     uint32 living = 0;
     uint32 formationArrivals = 0;
@@ -931,12 +988,24 @@ void MovementController::AdvanceOrComplete(
         return;
     }
 
-    ++movement.NodeIndex;
-
-    if (movement.NodeIndex >= nodes->size())
+    if (movement.Direction == MovementDirection::Forward)
     {
-        CompleteMovement(runtimeGroupId, movement);
-        return;
+        ++movement.NodeIndex;
+        if (movement.NodeIndex >= nodes->size())
+        {
+            CompleteMovement(runtimeGroupId, movement);
+            return;
+        }
+    }
+    else
+    {
+        if (movement.NodeIndex == 0)
+        {
+            CompleteMovement(runtimeGroupId, movement);
+            return;
+        }
+
+        --movement.NodeIndex;
     }
 
     if (!BeginCurrentNode(movement))
