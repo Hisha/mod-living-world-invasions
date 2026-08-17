@@ -4,6 +4,7 @@
 #include "Field.h"
 #include "Log.h"
 #include "QueryResult.h"
+#include <algorithm>
 
 namespace lwi
 {
@@ -23,6 +24,7 @@ void InvasionMgr::Clear()
     _spawnMembersByGroup.clear();
     _movementPaths.clear();
     _movementNodesByPath.clear();
+    _movementNodeActionsByNode.clear();
     _movementProfiles.clear();
     _runtimeSignals.clear();
     _dialogues.clear();
@@ -451,6 +453,60 @@ void InvasionMgr::LoadDefinitions()
         } while (result->NextRow());
     }
 
+    std::size_t movementNodeActionCount = 0;
+    if (QueryResult result = WorldDatabase.Query(
+        "SELECT `id`, `node_id`, `action_order`, `action_type`, `target_id`, `parameter1`, `parameter2`, `parameter3`, `enabled`, `comment` "
+        "FROM `lwi_movement_node_action` WHERE `enabled` = 1 ORDER BY `node_id`, `action_order`, `id`"))
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            MovementNodeActionDefinition action;
+            action.Id = fields[0].Get<uint32>();
+            action.NodeId = fields[1].Get<uint32>();
+            action.ActionOrder = fields[2].Get<uint16>();
+            action.ActionType = fields[3].Get<uint8>();
+            action.TargetId = fields[4].Get<uint32>();
+            action.Parameter1 = fields[5].Get<uint32>();
+            action.Parameter2 = fields[6].Get<uint32>();
+            action.Parameter3 = fields[7].Get<uint32>();
+            action.Enabled = fields[8].Get<bool>();
+            if (!fields[9].IsNull())
+                action.Comment = fields[9].Get<std::string>();
+
+            bool nodeExists = false;
+            for (auto const& [pathId, nodes] : _movementNodesByPath)
+            {
+                (void)pathId;
+                if (std::any_of(nodes.begin(), nodes.end(), [&action](MovementNodeDefinition const& node)
+                    { return node.Id == action.NodeId; }))
+                {
+                    nodeExists = true;
+                    break;
+                }
+            }
+
+            if (!nodeExists)
+            {
+                LOG_ERROR("server.loading",
+                    "[LWI Movement] Node action {} references missing or disabled movement node {}; action ignored.",
+                    action.Id, action.NodeId);
+                continue;
+            }
+
+            if (action.ActionType < 1 || action.ActionType > 3)
+            {
+                LOG_ERROR("server.loading",
+                    "[LWI Movement] Node action {} on node {} uses unsupported action type {}; action ignored.",
+                    action.Id, action.NodeId, action.ActionType);
+                continue;
+            }
+
+            _movementNodeActionsByNode[action.NodeId].push_back(std::move(action));
+            ++movementNodeActionCount;
+        } while (result->NextRow());
+    }
+
     if (QueryResult result = WorldDatabase.Query(
         "SELECT `id`, `name`, `default_mode`, `walk_speed_multiplier`, `run_speed_multiplier`, "
         "`stealth_enabled`, `enabled`, `comment` "
@@ -475,6 +531,7 @@ void InvasionMgr::LoadDefinitions()
 
     LOG_INFO("server.loading", "[LWI Movement] Loaded {} movement path(s).", _movementPaths.size());
     LOG_INFO("server.loading", "[LWI Movement] Loaded {} movement node(s).", movementNodeCount);
+    LOG_INFO("server.loading", "[LWI Movement] Loaded {} movement node action(s).", movementNodeActionCount);
     LOG_INFO("server.loading", "[LWI Movement] Loaded {} movement profile(s).", _movementProfiles.size());
 }
 
@@ -541,6 +598,12 @@ std::vector<MovementNodeDefinition> const* InvasionMgr::GetMovementNodes(uint32 
 {
     auto it = _movementNodesByPath.find(pathId);
     return it != _movementNodesByPath.end() ? &it->second : nullptr;
+}
+
+std::vector<MovementNodeActionDefinition> const* InvasionMgr::GetMovementNodeActions(uint32 nodeId) const
+{
+    auto it = _movementNodeActionsByNode.find(nodeId);
+    return it != _movementNodeActionsByNode.end() ? &it->second : nullptr;
 }
 
 MovementProfileDefinition const* InvasionMgr::GetMovementProfile(uint32 id) const
@@ -622,6 +685,17 @@ std::size_t InvasionMgr::GetMovementNodeCount() const
     {
         (void)pathId;
         count += nodes.size();
+    }
+    return count;
+}
+
+std::size_t InvasionMgr::GetMovementNodeActionCount() const
+{
+    std::size_t count = 0;
+    for (auto const& [nodeId, actions] : _movementNodeActionsByNode)
+    {
+        (void)nodeId;
+        count += actions.size();
     }
     return count;
 }

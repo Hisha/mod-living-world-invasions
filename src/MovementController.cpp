@@ -1,6 +1,8 @@
 #include "MovementController.h"
 
 #include "Creature.h"
+#include "AnnouncementManager.h"
+#include "DialogueManager.h"
 #include "IEntityProvider.h"
 #include "LivingWorldInvasions.h"
 #include "InvasionRuntimeManager.h"
@@ -11,6 +13,7 @@
 #include "PathGenerator.h"
 #include "RuntimeEntityGroup.h"
 #include "RuntimeSignalManager.h"
+#include "SoundManager.h"
 #include "Timer.h"
 
 #include <algorithm>
@@ -79,6 +82,78 @@ void BuildFormationDestination(
     x = node.X + forwardX * offset.Forward + rightX * offset.Right;
     y = node.Y + forwardY * offset.Forward + rightY * offset.Right;
     z = node.Z;
+}
+
+void ExecuteNodeActions(ActiveRuntimeMovement const& movement, RuntimeEntityGroup const& group, MovementNodeDefinition const& node)
+{
+    auto const* actions = sInvasionMgr.GetMovementNodeActions(node.Id);
+    if (!actions || actions->empty())
+    {
+        return;
+    }
+
+    InvasionRuntime const* runtime = sInvasionRuntimeMgr.GetRuntime(movement.RuntimeId);
+
+    for (MovementNodeActionDefinition const& action : *actions)
+    {
+        bool success = false;
+
+        switch (action.ActionType)
+        {
+            case 1: // Dialogue: target_id=dialogue, parameter1=speaker member id.
+                success = sDialogueManager.Execute(
+                    movement.RuntimeId,
+                    group.SpawnGroupId,
+                    action.TargetId,
+                    action.Parameter1);
+                break;
+
+            case 2: // Announcement: target_id=announcement, p1=scope, p2=scope id, p3=faction.
+                if (!runtime)
+                {
+                    LOG_ERROR("server.loading",
+                        "[LWI Movement] Runtime entity group #{} cannot execute announcement node action {} because runtime #{} was not found.",
+                        movement.RuntimeGroupId, action.Id, movement.RuntimeId);
+                    continue;
+                }
+
+                success = sAnnouncementManager.Execute(
+                    movement.RuntimeId,
+                    runtime->GetInvasionId(),
+                    action.TargetId,
+                    action.Parameter1,
+                    action.Parameter2,
+                    action.Parameter3);
+                break;
+
+            case 3: // Sound: target_id=sound, parameter1=source member id, parameter2=playback mode.
+                success = sSoundManager.Execute(
+                    movement.RuntimeId,
+                    group.SpawnGroupId,
+                    action.TargetId,
+                    action.Parameter1,
+                    action.Parameter2);
+                break;
+
+            default:
+                LOG_ERROR("server.loading",
+                    "[LWI Movement] Runtime entity group #{} encountered unsupported node action type {} for action {}.",
+                    movement.RuntimeGroupId, action.ActionType, action.Id);
+                continue;
+        }
+
+        if (!success)
+        {
+            LOG_ERROR("server.loading",
+                "[LWI Movement] Runtime entity group #{} failed node action {} type {} at path {} node {}.",
+                movement.RuntimeGroupId, action.Id, action.ActionType, movement.PathId, node.NodeOrder);
+            continue;
+        }
+
+        LOG_INFO("server.loading",
+            "[LWI Movement] Runtime entity group #{} executed node action {} type {} at path {} node {}.",
+            movement.RuntimeGroupId, action.Id, action.ActionType, movement.PathId, node.NodeOrder);
+    }
 }
 }
 
@@ -324,6 +399,13 @@ void MovementController::Update(uint32 diff)
         }
 
         MovementNodeDefinition const& node = (*nodes)[movement.NodeIndex];
+
+        RuntimeEntityGroup* arrivedGroup = sRuntimeEntityGroupMgr.GetGroup(runtimeGroupId);
+        if (arrivedGroup)
+        {
+            ExecuteNodeActions(movement, *arrivedGroup, node);
+        }
+
         if (node.WaitMs > 0)
         {
             movement.State = RuntimeMovementState::Waiting;

@@ -102,6 +102,20 @@ struct RuntimeSignalDefinition
     std::string Comment;
 };
 
+struct MovementNodeActionDefinition
+{
+    uint32 Id = 0;
+    uint32 NodeId = 0;
+    uint16 ActionOrder = 0;
+    uint8 ActionType = 1;
+    uint32 TargetId = 0;
+    uint32 Parameter1 = 0;
+    uint32 Parameter2 = 0;
+    uint32 Parameter3 = 0;
+    bool Enabled = false;
+    std::string Comment;
+};
+
 struct MovementPathDefinition
 {
     uint32 Id = 0;
@@ -186,6 +200,7 @@ public:
     [[nodiscard]] std::vector<SpawnMemberDefinition> const* GetSpawnMembers(uint32 id) const;
     [[nodiscard]] MovementPathDefinition const* GetMovementPath(uint32 id) const;
     [[nodiscard]] std::vector<MovementNodeDefinition> const* GetMovementNodes(uint32 pathId) const;
+    [[nodiscard]] std::vector<MovementNodeActionDefinition> const* GetMovementNodeActions(uint32 nodeId) const;
     [[nodiscard]] MovementProfileDefinition const* GetMovementProfile(uint32 id) const;
     [[nodiscard]] RuntimeSignalDefinition const* GetRuntimeSignal(uint32 id) const;
     [[nodiscard]] DialogueDefinition const* GetDialogue(uint32 id) const;
@@ -199,6 +214,7 @@ public:
     [[nodiscard]] std::size_t GetSpawnMemberCount() const;
     [[nodiscard]] std::size_t GetMovementPathCount() const;
     [[nodiscard]] std::size_t GetMovementNodeCount() const;
+    [[nodiscard]] std::size_t GetMovementNodeActionCount() const;
     [[nodiscard]] std::size_t GetMovementProfileCount() const;
     [[nodiscard]] std::size_t GetRuntimeSignalCount() const;
     [[nodiscard]] std::size_t GetDialogueCount() const;
@@ -215,6 +231,7 @@ private:
     std::unordered_map<uint32, std::vector<SpawnMemberDefinition>> _spawnMembersByGroup;
     std::unordered_map<uint32, MovementPathDefinition> _movementPaths;
     std::unordered_map<uint32, std::vector<MovementNodeDefinition>> _movementNodesByPath;
+    std::unordered_map<uint32, std::vector<MovementNodeActionDefinition>> _movementNodeActionsByNode;
     std::unordered_map<uint32, MovementProfileDefinition> _movementProfiles;
     std::unordered_map<uint32, RuntimeSignalDefinition> _runtimeSignals;
     std::unordered_map<uint32, DialogueDefinition> _dialogues;
