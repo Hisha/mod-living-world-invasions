@@ -29,7 +29,6 @@ constexpr uint32 MovementUpdateIntervalMs = 250;
 constexpr float ArrivalTolerance = 2.0f;
 constexpr float FormationArrivalTolerance = 10.0f;
 constexpr uint32 FormationArrivalPercent = 75;
-constexpr float FinalObjectiveArrivalRadius = 20.0f;
 
 // Large invasion groups should march as a compact road column instead of allowing
 // role-slot offsets to expand indefinitely sideways. Six abreast keeps a 100-creature
@@ -887,7 +886,6 @@ bool MovementController::HasGroupReachedCurrentNode(
 
     uint32 living = 0;
     uint32 formationArrivals = 0;
-    uint32 objectiveArrivals = 0;
 
     for (RuntimeMovementDestination const& destination : movement.Destinations)
     {
@@ -909,11 +907,6 @@ bool MovementController::HasGroupReachedCurrentNode(
         {
             ++formationArrivals;
         }
-
-        if (creature->GetDistance(node.X, node.Y, node.Z) <= FinalObjectiveArrivalRadius)
-        {
-            ++objectiveArrivals;
-        }
     }
 
     if (living == 0)
@@ -925,24 +918,27 @@ bool MovementController::HasGroupReachedCurrentNode(
     uint32 const requiredArrivals =
         std::max<uint32>(1, (living * FormationArrivalPercent + 99) / 100);
 
-    // The final strategic node remains an objective-area check. Combat does not
-    // prevent route completion once enough survivors physically reach the objective.
+    // The final node uses the same formation-destination test as intermediate nodes.
+    // Large groups can legitimately extend well beyond a fixed radius around the
+    // authored node center, so requiring most of the force to crowd inside one
+    // objective circle can prevent route completion even when the formation has
+    // actually arrived.
     if (isFinalNode)
     {
-        if (objectiveArrivals < requiredArrivals)
+        if (formationArrivals < requiredArrivals)
         {
             return false;
         }
 
         LOG_INFO("server.loading",
-            "[LWI Movement] Runtime entity group #{} reached final objective for path {} node {}: "
-            "{}/{} surviving creature(s) within {:.1f} yards. Combat does not block final arrival.",
+            "[LWI Movement] Runtime entity group #{} reached final formation for path {} node {}: "
+            "{}/{} surviving creature(s) within {:.1f} yards of their final formation destinations.",
             movement.RuntimeGroupId,
             movement.PathId,
             node.NodeOrder,
-            objectiveArrivals,
+            formationArrivals,
             living,
-            FinalObjectiveArrivalRadius);
+            FormationArrivalTolerance);
 
         movement.ArrivalGraceStartedAtMs = 0;
         return true;
