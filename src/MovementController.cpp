@@ -180,7 +180,8 @@ bool MovementController::StartPath(
     uint32 pathId,
     uint32 profileId,
     uint32 completionSignalId,
-    MovementDirection direction)
+    MovementDirection direction,
+    bool directPathing)
 {
     RuntimeEntityGroup* group = sRuntimeEntityGroupMgr.GetGroup(runtimeGroupId);
     if (!group)
@@ -232,6 +233,7 @@ bool MovementController::StartPath(
     movement.ProfileId = profileId;
     movement.CompletionSignalId = completionSignalId;
     movement.Direction = direction;
+    movement.DirectPathing = directPathing;
     movement.NodeIndex = direction == MovementDirection::Reverse ? nodes->size() - 1 : 0;
     movement.State = RuntimeMovementState::Moving;
 
@@ -313,7 +315,8 @@ bool MovementController::StartRouteSegment(
             segment->MovementPathId,
             profileId,
             completionSignalId,
-            direction))
+            direction,
+            true))
     {
         LOG_ERROR("server.loading",
             "[LWI Route] Runtime entity group #{} failed to start route segment {} ({}) from {} to {} using movement path {}.",
@@ -787,46 +790,62 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
         float targetZ = node.Z;
         BuildFormationDestination(node, movement.Direction, entity.TacticalRole, roleSlot, targetX, targetY, targetZ);
 
-        PathGenerator path(creature);
+        Movement::PointsArray pathPoints;
 
-        // Do not force the destination. We want the navmesh to choose a valid,
-        // terrain-aware endpoint rather than extending a failed path directly
-        // through terrain to the requested XYZ.
-        bool const pathFound = path.CalculatePath(
-            targetX,
-            targetY,
-            targetZ,
-            false);
-
-        if (!pathFound || (path.GetPathType() & PATHFIND_NOPATH))
+        if (movement.DirectPathing)
         {
-            LOG_ERROR("server.loading",
-                "[LWI Movement] Runtime entity group #{} creature {} member {} could not find an MMAP path "
-                "to path {} node {} formation destination ({:.2f}, {:.2f}, {:.2f}); creature skipped for this node.",
-                movement.RuntimeGroupId,
-                entity.Entry,
-                entity.MemberId,
-                movement.PathId,
-                node.NodeOrder,
+            // Shared route segments are explicitly authored point-by-point in game.
+            // Preserve that authored road geometry by feeding MoveSplinePath only
+            // the creature's current position and the recorded formation target,
+            // bypassing PathGenerator/MMAP route selection entirely.
+            pathPoints.emplace_back(
+                creature->GetPositionX(),
+                creature->GetPositionY(),
+                creature->GetPositionZ());
+            pathPoints.emplace_back(targetX, targetY, targetZ);
+        }
+        else
+        {
+            PathGenerator path(creature);
+
+            // Normal LWI movement continues to use MMAP so existing invasions and
+            // generic movement paths retain their terrain-aware navigation.
+            bool const pathFound = path.CalculatePath(
                 targetX,
                 targetY,
-                targetZ);
-            continue;
-        }
+                targetZ,
+                false);
 
-        Movement::PointsArray pathPoints = path.GetPath();
-        if (pathPoints.size() < 2)
-        {
-            LOG_ERROR("server.loading",
-                "[LWI Movement] Runtime entity group #{} creature {} member {} produced an unusable MMAP path "
-                "with {} point(s) for path {} node {}; creature skipped for this node.",
-                movement.RuntimeGroupId,
-                entity.Entry,
-                entity.MemberId,
-                pathPoints.size(),
-                movement.PathId,
-                node.NodeOrder);
-            continue;
+            if (!pathFound || (path.GetPathType() & PATHFIND_NOPATH))
+            {
+                LOG_ERROR("server.loading",
+                    "[LWI Movement] Runtime entity group #{} creature {} member {} could not find an MMAP path "
+                    "to path {} node {} formation destination ({:.2f}, {:.2f}, {:.2f}); creature skipped for this node.",
+                    movement.RuntimeGroupId,
+                    entity.Entry,
+                    entity.MemberId,
+                    movement.PathId,
+                    node.NodeOrder,
+                    targetX,
+                    targetY,
+                    targetZ);
+                continue;
+            }
+
+            pathPoints = path.GetPath();
+            if (pathPoints.size() < 2)
+            {
+                LOG_ERROR("server.loading",
+                    "[LWI Movement] Runtime entity group #{} creature {} member {} produced an unusable MMAP path "
+                    "with {} point(s) for path {} node {}; creature skipped for this node.",
+                    movement.RuntimeGroupId,
+                    entity.Entry,
+                    entity.MemberId,
+                    pathPoints.size(),
+                    movement.PathId,
+                    node.NodeOrder);
+                continue;
+            }
         }
 
         G3D::Vector3 const& actualEnd = pathPoints.back();
@@ -839,9 +858,6 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
         destination.Z = actualEnd.z;
         movement.Destinations.push_back(destination);
 
-        // MoveSplinePath consumes the terrain-aware point list generated by
-        // AzerothCore's PathGenerator/MMAP system. This avoids PointMovement's
-        // straight-line fallback when a requested destination cannot be reached.
         creature->GetMotionMaster()->MoveSplinePath(
             &pathPoints,
             FORCED_MOVEMENT_NONE);
@@ -861,9 +877,10 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
     movement.WaitEndsAtMs = 0;
 
     LOG_INFO("server.loading",
-        "[LWI Movement] Runtime entity group #{} moving {} creature(s) via MMAP in role-aware formation to path {} node {} ({:.2f}, {:.2f}, {:.2f}).",
+        "[LWI Movement] Runtime entity group #{} moving {} creature(s) via {} in role-aware formation to path {} node {} ({:.2f}, {:.2f}, {:.2f}).",
         movement.RuntimeGroupId,
         moved,
+        movement.DirectPathing ? "direct authored route" : "MMAP",
         movement.PathId,
         node.NodeOrder,
         node.X,
@@ -931,44 +948,57 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
             destination.WasInCombat,
             creature->GetDistance(destination.X, destination.Y, destination.Z));
 
-        PathGenerator path(creature);
-        bool const pathFound = path.CalculatePath(
-            destination.X,
-            destination.Y,
-            destination.Z,
-            false);
+        Movement::PointsArray pathPoints;
 
-        if (!pathFound || (path.GetPathType() & PATHFIND_NOPATH))
+        if (movement.DirectPathing)
         {
-            LOG_ERROR("server.loading",
-                "[LWI Movement] Runtime entity group #{} creature {} could not resume MMAP movement "
-                "toward path {} node {} after combat.",
-                movement.RuntimeGroupId,
-                creature->GetEntry(),
-                movement.PathId,
-                node.NodeOrder);
-            destination.WasInCombat = false;
-            continue;
+            pathPoints.emplace_back(
+                creature->GetPositionX(),
+                creature->GetPositionY(),
+                creature->GetPositionZ());
+            pathPoints.emplace_back(destination.X, destination.Y, destination.Z);
         }
-
-        Movement::PointsArray pathPoints = path.GetPath();
-        if (pathPoints.size() < 2)
+        else
         {
-            LOG_ERROR("server.loading",
-                "[LWI Movement] Runtime entity group #{} creature {} produced an unusable MMAP path "
-                "while resuming path {} node {} after combat.",
-                movement.RuntimeGroupId,
-                creature->GetEntry(),
-                movement.PathId,
-                node.NodeOrder);
-            destination.WasInCombat = false;
-            continue;
-        }
+            PathGenerator path(creature);
+            bool const pathFound = path.CalculatePath(
+                destination.X,
+                destination.Y,
+                destination.Z,
+                false);
 
-        G3D::Vector3 const& actualEnd = pathPoints.back();
-        destination.X = actualEnd.x;
-        destination.Y = actualEnd.y;
-        destination.Z = actualEnd.z;
+            if (!pathFound || (path.GetPathType() & PATHFIND_NOPATH))
+            {
+                LOG_ERROR("server.loading",
+                    "[LWI Movement] Runtime entity group #{} creature {} could not resume MMAP movement "
+                    "toward path {} node {} after combat.",
+                    movement.RuntimeGroupId,
+                    creature->GetEntry(),
+                    movement.PathId,
+                    node.NodeOrder);
+                destination.WasInCombat = false;
+                continue;
+            }
+
+            pathPoints = path.GetPath();
+            if (pathPoints.size() < 2)
+            {
+                LOG_ERROR("server.loading",
+                    "[LWI Movement] Runtime entity group #{} creature {} produced an unusable MMAP path "
+                    "while resuming path {} node {} after combat.",
+                    movement.RuntimeGroupId,
+                    creature->GetEntry(),
+                    movement.PathId,
+                    node.NodeOrder);
+                destination.WasInCombat = false;
+                continue;
+            }
+
+            G3D::Vector3 const& actualEnd = pathPoints.back();
+            destination.X = actualEnd.x;
+            destination.Y = actualEnd.y;
+            destination.Z = actualEnd.z;
+        }
         destination.WasInCombat = false;
 
         creature->GetMotionMaster()->MoveSplinePath(
@@ -976,10 +1006,11 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
             FORCED_MOVEMENT_NONE);
 
         LOG_INFO("server.loading",
-            "[LWI Movement] Runtime entity group #{} creature {} resumed MMAP movement toward "
+            "[LWI Movement] Runtime entity group #{} creature {} resumed {} movement toward "
             "path {} node {} after combat.",
             movement.RuntimeGroupId,
             creature->GetEntry(),
+            movement.DirectPathing ? "direct authored route" : "MMAP",
             movement.PathId,
             node.NodeOrder);
     }

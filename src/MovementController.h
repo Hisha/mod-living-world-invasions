@@ -61,6 +61,7 @@ struct ActiveRuntimeMovement
     uint32 ProfileId = 0;
     uint32 CompletionSignalId = 0;
     MovementDirection Direction = MovementDirection::Forward;
+    bool DirectPathing = false;
     std::size_t NodeIndex = 0;
     RuntimeMovementState State = RuntimeMovementState::Moving;
     uint64 WaitEndsAtMs = 0;
@@ -81,7 +82,8 @@ public:
         uint32 pathId,
         uint32 profileId = 0,
         uint32 completionSignalId = 0,
-        MovementDirection direction = MovementDirection::Forward);
+        MovementDirection direction = MovementDirection::Forward,
+        bool directPathing = false);
 
     bool StartRouteSegment(
         uint64 runtimeGroupId,
