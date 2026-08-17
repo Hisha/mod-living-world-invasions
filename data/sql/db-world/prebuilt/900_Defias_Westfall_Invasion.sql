@@ -14,7 +14,7 @@ WHERE id IN (1001,1002,1003,1004,1005,1006);
 -- lwi_stage_action Clear Data
 -- ===========================================================================
 DELETE FROM lwi_stage_action
-WHERE id IN (10001,10002,10003,10004,10005,10006,10007,10008,10009,10010,10011,10012,10013,10014,10015,10016,10017,10018,10019,10020,10021,10022,10023,10024,10025,10026,10027,10028);
+WHERE id IN (10001,10002,10003,10004,10005,10006,10007,10008,10009,10010,10011,10012,10013,10014,10015,10016,10017,10018,10019,10020,10021,10022,10023,10024,10025,10026,10027,10028,10029,10030,10031,10032,10033,10034,10035);
 
 -- ===========================================================================
 -- lwi_spawn_group Clear Data
@@ -128,9 +128,16 @@ VALUES (10001, 1001, 1, 1, 100, 0, 0, 0, 0, 1, 'Spawn Defias Scout group.'),
        (10023, 1004, 1, 1, 105, 0, 0, 0, 0, 1, 'Spawn Defias Leadership.'),
        (10024, 1004, 2, 3, 105, 101, 100012, 0, 0, 1, 'Defias Leadership yells a warning.'),
        (10025, 1004, 3, 7, 105, 75, 2000, 7, 0, 1, 'Defias Leadership assaults Sentinel Hill.'),
-       (10026, 1005, 1, 2, 106, 105, 100, 103, 0, 1, 'Move Stormwind Response Force group to Sentinel Hill.'),
-       (10027, 1006, 1, 3, 106, 103, 100014, 0, 0, 1, 'Commander Aldric yells the battle cry.'),
-       (10028, 1006, 2, 7, 106, 100, 2000, 0, 0, 1, 'Stormwind Response Force assaults the Defias.');
+       (10026, 1005, 1, 1, 106, 0, 0, 0, 0, 1, 'Spawn Stormwind Response Force.'),
+       (10027, 1005, 1, 2, 106, 105, 100, 103, 0, 1, 'Move Stormwind Response Force group to Sentinel Hill.'),
+       (10028, 1006, 1, 3, 106, 103, 100014, 0, 0, 1, 'Commander Aldric yells the battle cry.'),
+       (10029, 1006, 2, 7, 106, 100, 2000, 0, 0, 1, 'Stormwind Response Force assaults the Defias.'),
+       (10030, 1006, 3, 8, 100, 104, 1, 0, 0, 1, 'Stormwind victory watch - Defias Scouts'),
+       (10031, 1006, 4, 8, 101, 104, 1, 0, 0, 1, 'Stormwind victory watch - Defias 2nd Scouts'),
+       (10032, 1006, 5, 8, 102, 104, 1, 0, 0, 1, 'Stormwind victory watch - Defias Control Team'),
+       (10033, 1006, 6, 8, 103, 104, 1, 0, 0, 1, 'Stormwind victory watch - Defias 2nd Control Team'),
+       (10034, 1006, 7, 8, 104, 104, 1, 0, 0, 1, 'Stormwind victory watch - Defias 3rd Control Team'),
+       (10035, 1006, 8, 8, 105, 104, 1, 0, 0, 1, 'Stormwind victory watch - Defias Leadership');
 
 -- ===========================================================================
 -- lwi_spawn_group(Allows for grouping of spawned NPCs.):
@@ -235,7 +242,7 @@ VALUES (10000, 100, 10, 0, -10898.128, 1466.9028, 42.519577, 5.4439473, 0, 0, 1,
        (10517, 105, 170, 0, -9751.139, 746.1365, 25.074335, 1.8499665, 0, 0, 1, 'Stormwind Response route node 170'),
        (10518, 105, 180, 0, -9780.321, 808.8351, 25.547562, 2.2426658, 0, 0, 1, 'Stormwind Response route node 180'),
        (10519, 105, 190, 0, -9832.013, 872.44147, 25.917767, 2.117002, 0, 0, 1, 'Stormwind Response route node 190'),
-       (10520, 105, 200, 0, -0969.042, 933.22217, 30.57748, 2.0777338, 0, 0, 1, 'Stormwind Response route node 200'),
+       (10520, 105, 200, 0, -9869.042, 933.22217, 30.57748, 2.0777338, 0, 0, 1, 'Stormwind Response route node 200'),
        (10521, 105, 210, 0, -9883.874, 977.924, 31.13226, 2.7728112, 0, 0, 1, 'Stormwind Response route node 210'),
        (10522, 105, 220, 0, -9960.343, 1004.00635, 31.448572, 3.346152, 0, 0, 1, 'Stormwind Response route node 220'),
        (10523, 105, 230, 0, -10033.509, 983.69183, 32.746986, 2.7217603, 0, 0, 1, 'Stormwind Response route node 230'),
@@ -244,7 +251,7 @@ VALUES (10000, 100, 10, 0, -10898.128, 1466.9028, 42.519577, 5.4439473, 0, 0, 1,
        (10526, 105, 260, 0, -10243.153, 994.0679, 31.142061, 3.5974796, 0, 0, 1, 'Stormwind Response route node 260'),
        (10527, 105, 270, 0, -10293.791, 967.9529, 31.141283, 2.9416718, 0, 0, 1, 'Stormwind Response route node 270'),
        (10528, 105, 280, 0, -10413.858, 991.53467, 32.48077, 3.5817716, 0, 0, 1, 'Stormwind Response route node 280'),
-       (10529, 105, 290, 0, -10502.517,951.585,39.760075, 2.7728112, 0, 0, 1, 'Stormwind Response route node 290'),
+       (10529, 105, 290, 0, -10502.517, 951.585, 39.760075, 2.7728112, 0, 0, 1, 'Stormwind Response route node 290'),
        (10530, 105, 300, 0, -10653.444, 1020.0141, 31.356035, 1.1902332, 0, 0, 1, 'Stormwind Response route node 300'),
        (10531, 105, 310, 0, -10615.945, 1131.2982, 35.64402, 2.4507973, 0, 0, 1, 'Stormwind Response route node 310'),
        (10532, 105, 320, 0, -10510.692, 1051.6083, 59.740383, 5.5138674, 0, 0, 1, 'Stormwind Response route node 320');
