@@ -272,8 +272,36 @@ public:
             }
         };
 
+        static ChatCommandTable routeNodeCommandTable =
+        {
+            {
+                "add",
+                HandleRouteNodeAddCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            }
+        };
+
+        static ChatCommandTable routeSegmentCommandTable =
+        {
+            {
+                "add",
+                HandleRouteSegmentAddCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            }
+        };
+
         static ChatCommandTable routeCommandTable =
         {
+            {
+                "node",
+                routeNodeCommandTable
+            },
+            {
+                "segment",
+                routeSegmentCommandTable
+            },
             {
                 "test",
                 HandleRouteTestCommand,
@@ -881,6 +909,229 @@ private:
             "Canceled route recording and deleted unfinished movement path {} ({}).",
             pathId,
             pathName);
+        return true;
+    }
+
+    static bool HandleRouteNodeAddCommand(ChatHandler* handler, uint32 nodeId, std::string nodeName)
+    {
+        if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Debug))
+        {
+            handler->SendSysMessage(
+                "Living World Invasions debug commands are disabled. Set LWI.Debug = 1 to use .lwi route node add.");
+            return false;
+        }
+
+        Player* player = GetCommandPlayer(handler);
+        if (!player)
+            return false;
+
+        if (!IsSafeRouteRecordName(nodeName))
+        {
+            handler->SendSysMessage(
+                "Route node name must be 1-120 characters and may contain only letters, numbers, underscores, and hyphens.");
+            return false;
+        }
+
+        if (WorldDatabase.Query("SELECT 1 FROM `lwi_route_node` WHERE `id` = {} LIMIT 1", nodeId))
+        {
+            handler->PSendSysMessage(
+                "Route node ID {} already exists. Choose an unused node ID; this command will never overwrite an existing route node.",
+                nodeId);
+            return false;
+        }
+
+        if (WorldDatabase.Query("SELECT 1 FROM `lwi_route_node` WHERE `name` = '{}' LIMIT 1", nodeName))
+        {
+            handler->PSendSysMessage(
+                "Route node name {} already exists. Choose a unique route node name.",
+                nodeName);
+            return false;
+        }
+
+        WorldDatabase.Execute(
+            "INSERT INTO `lwi_route_node` "
+            "(`id`, `name`, `map_id`, `x`, `y`, `z`, `orientation`, `arrival_radius`, `enabled`, `comment`) "
+            "VALUES ({}, '{}', {}, {}, {}, {}, {}, 5.0, 1, 'Created in-game with .lwi route node add')",
+            nodeId,
+            nodeName,
+            player->GetMapId(),
+            player->GetPositionX(),
+            player->GetPositionY(),
+            player->GetPositionZ(),
+            player->GetOrientation());
+
+        handler->PSendSysMessage(
+            "Created route node {} ({}) on map {} at X {:.3f} Y {:.3f} Z {:.3f} O {:.3f}. Use .lwi reload before using it in loaded route definitions.",
+            nodeId,
+            nodeName,
+            player->GetMapId(),
+            player->GetPositionX(),
+            player->GetPositionY(),
+            player->GetPositionZ(),
+            player->GetOrientation());
+        return true;
+    }
+
+    static bool HandleRouteSegmentAddCommand(
+        ChatHandler* handler,
+        uint32 segmentId,
+        std::string segmentName,
+        uint32 startNodeId,
+        uint32 endNodeId,
+        uint32 movementPathId)
+    {
+        if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Debug))
+        {
+            handler->SendSysMessage(
+                "Living World Invasions debug commands are disabled. Set LWI.Debug = 1 to use .lwi route segment add.");
+            return false;
+        }
+
+        if (!GetCommandPlayer(handler))
+            return false;
+
+        if (!IsSafeRouteRecordName(segmentName))
+        {
+            handler->SendSysMessage(
+                "Route segment name must be 1-120 characters and may contain only letters, numbers, underscores, and hyphens.");
+            return false;
+        }
+
+        if (startNodeId == endNodeId)
+        {
+            handler->SendSysMessage("A route segment must connect two different route nodes.");
+            return false;
+        }
+
+        if (WorldDatabase.Query("SELECT 1 FROM `lwi_route_segment` WHERE `id` = {} LIMIT 1", segmentId))
+        {
+            handler->PSendSysMessage(
+                "Route segment ID {} already exists. Choose an unused segment ID; this command will never overwrite an existing route segment.",
+                segmentId);
+            return false;
+        }
+
+        if (WorldDatabase.Query("SELECT 1 FROM `lwi_route_segment` WHERE `name` = '{}' LIMIT 1", segmentName))
+        {
+            handler->PSendSysMessage(
+                "Route segment name {} already exists. Choose a unique route segment name.",
+                segmentName);
+            return false;
+        }
+
+        QueryResult startNodeResult = WorldDatabase.Query(
+            "SELECT `name`, `map_id` FROM `lwi_route_node` WHERE `id` = {} AND `enabled` = 1 LIMIT 1",
+            startNodeId);
+        if (!startNodeResult)
+        {
+            handler->PSendSysMessage(
+                "Start route node {} does not exist or is disabled.",
+                startNodeId);
+            return false;
+        }
+
+        QueryResult endNodeResult = WorldDatabase.Query(
+            "SELECT `name`, `map_id` FROM `lwi_route_node` WHERE `id` = {} AND `enabled` = 1 LIMIT 1",
+            endNodeId);
+        if (!endNodeResult)
+        {
+            handler->PSendSysMessage(
+                "End route node {} does not exist or is disabled.",
+                endNodeId);
+            return false;
+        }
+
+        Field* startFields = startNodeResult->Fetch();
+        Field* endFields = endNodeResult->Fetch();
+        std::string const startNodeName = startFields[0].Get<std::string>();
+        uint16 const startMapId = startFields[1].Get<uint16>();
+        std::string const endNodeName = endFields[0].Get<std::string>();
+        uint16 const endMapId = endFields[1].Get<uint16>();
+
+        if (startMapId != endMapId)
+        {
+            handler->PSendSysMessage(
+                "Route nodes {} ({}, map {}) and {} ({}, map {}) are on different maps. A movement-path segment must remain on one map.",
+                startNodeId,
+                startNodeName,
+                startMapId,
+                endNodeId,
+                endNodeName,
+                endMapId);
+            return false;
+        }
+
+        QueryResult pathResult = WorldDatabase.Query(
+            "SELECT `name` FROM `lwi_movement_path` WHERE `id` = {} AND `enabled` = 1 LIMIT 1",
+            movementPathId);
+        if (!pathResult)
+        {
+            handler->PSendSysMessage(
+                "Movement path {} does not exist or is disabled.",
+                movementPathId);
+            return false;
+        }
+
+        QueryResult pathMapResult = WorldDatabase.Query(
+            "SELECT MIN(`map_id`), MAX(`map_id`), COUNT(*) FROM `lwi_movement_node` "
+            "WHERE `path_id` = {} AND `enabled` = 1",
+            movementPathId);
+        if (!pathMapResult)
+        {
+            handler->PSendSysMessage(
+                "Movement path {} has no enabled movement nodes.",
+                movementPathId);
+            return false;
+        }
+
+        Field* pathMapFields = pathMapResult->Fetch();
+        uint64 const pathNodeCount = pathMapFields[2].Get<uint64>();
+        if (pathNodeCount < 2)
+        {
+            handler->PSendSysMessage(
+                "Movement path {} has only {} enabled node(s). A route segment requires at least two movement nodes.",
+                movementPathId,
+                pathNodeCount);
+            return false;
+        }
+
+        uint16 const pathMinMapId = pathMapFields[0].Get<uint16>();
+        uint16 const pathMaxMapId = pathMapFields[1].Get<uint16>();
+        if (pathMinMapId != pathMaxMapId || pathMinMapId != startMapId)
+        {
+            handler->PSendSysMessage(
+                "Movement path {} is on map {}-{}, but route nodes {} and {} are on map {}. Segment not created.",
+                movementPathId,
+                pathMinMapId,
+                pathMaxMapId,
+                startNodeId,
+                endNodeId,
+                startMapId);
+            return false;
+        }
+
+        std::string const movementPathName = pathResult->Fetch()[0].Get<std::string>();
+
+        WorldDatabase.Execute(
+            "INSERT INTO `lwi_route_segment` "
+            "(`id`, `name`, `start_node_id`, `end_node_id`, `movement_path_id`, `enabled`, `comment`) "
+            "VALUES ({}, '{}', {}, {}, {}, 1, 'Created in-game with .lwi route segment add')",
+            segmentId,
+            segmentName,
+            startNodeId,
+            endNodeId,
+            movementPathId);
+
+        handler->PSendSysMessage(
+            "Created route segment {} ({}) from node {} ({}) to node {} ({}) using movement path {} ({}). Use .lwi reload before testing it.",
+            segmentId,
+            segmentName,
+            startNodeId,
+            startNodeName,
+            endNodeId,
+            endNodeName,
+            movementPathId,
+            movementPathName);
         return true;
     }
 
