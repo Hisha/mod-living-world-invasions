@@ -738,6 +738,11 @@ RouteSegmentDefinition const* InvasionMgr::GetRouteSegment(uint32 id) const
     return iterator != _routeSegments.end() ? &iterator->second : nullptr;
 }
 
+std::unordered_map<uint32, RouteSegmentDefinition> const& InvasionMgr::GetRouteSegments() const
+{
+    return _routeSegments;
+}
+
 RuntimeSignalDefinition const* InvasionMgr::GetRuntimeSignal(uint32 id) const
 {
     auto it = _runtimeSignals.find(id);

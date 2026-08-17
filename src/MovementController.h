@@ -33,6 +33,26 @@ struct RuntimeMovementDestination
     bool WasInCombat = false;
 };
 
+
+struct RouteJourneyStep
+{
+    uint32 SegmentId = 0;
+    uint32 FromNodeId = 0;
+    uint32 ToNodeId = 0;
+};
+
+struct ActiveRouteJourney
+{
+    uint64 RuntimeGroupId = 0;
+    uint64 RuntimeId = 0;
+    uint32 StartNodeId = 0;
+    uint32 DestinationNodeId = 0;
+    uint32 ProfileId = 0;
+    uint32 CompletionSignalId = 0;
+    std::size_t StepIndex = 0;
+    std::vector<RouteJourneyStep> Steps;
+};
+
 struct ActiveRuntimeMovement
 {
     uint64 RuntimeGroupId = 0;
@@ -70,6 +90,13 @@ public:
         uint32 profileId = 0,
         uint32 completionSignalId = 0);
 
+    bool StartRouteJourney(
+        uint64 runtimeGroupId,
+        uint32 fromNodeId,
+        uint32 destinationNodeId,
+        uint32 profileId = 0,
+        uint32 completionSignalId = 0);
+
     bool CancelGroup(uint64 runtimeGroupId);
     void CancelRuntime(uint64 runtimeId);
 
@@ -83,8 +110,10 @@ private:
     bool HasGroupReachedCurrentNode(ActiveRuntimeMovement& movement, uint64 nowMs);
     void AdvanceOrComplete(uint64 runtimeGroupId, ActiveRuntimeMovement& movement, uint64 nowMs);
     void CompleteMovement(uint64 runtimeGroupId, ActiveRuntimeMovement& movement);
+    bool BuildRouteJourney(uint32 fromNodeId, uint32 destinationNodeId, std::vector<RouteJourneyStep>& steps) const;
 
     std::unordered_map<uint64, ActiveRuntimeMovement> _activeMovements;
+    std::unordered_map<uint64, ActiveRouteJourney> _activeRouteJourneys;
     uint32 _updateTimerMs = 0;
 };
 }

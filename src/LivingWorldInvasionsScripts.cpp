@@ -303,6 +303,12 @@ public:
                 routeSegmentCommandTable
             },
             {
+                "travel",
+                HandleRouteTravelCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
                 "test",
                 HandleRouteTestCommand,
                 rbac::RBAC_PERM_COMMAND_SERVER_INFO,
@@ -1132,6 +1138,119 @@ private:
             endNodeName,
             movementPathId,
             movementPathName);
+        return true;
+    }
+
+    static bool HandleRouteTravelCommand(ChatHandler* handler, uint32 fromNodeId, uint32 destinationNodeId)
+    {
+        if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Debug))
+        {
+            handler->SendSysMessage(
+                "Living World Invasions debug commands are disabled. Set LWI.Debug = 1 to use .lwi route travel.");
+            return false;
+        }
+
+        if (fromNodeId == destinationNodeId)
+        {
+            handler->SendSysMessage("Route travel requires two different route nodes.");
+            return false;
+        }
+
+        Creature* creature = handler->getSelectedCreature();
+        if (!creature)
+        {
+            handler->SendSysMessage(
+                "Select a creature to use as the route traveler, then use .lwi route travel <fromNodeId> <destinationNodeId>.");
+            return false;
+        }
+
+        lwi::RouteNodeDefinition const* fromNode = sInvasionMgr.GetRouteNode(fromNodeId);
+        if (!fromNode)
+        {
+            handler->PSendSysMessage(
+                "Living World Invasions route node {} does not exist or is disabled.",
+                fromNodeId);
+            return false;
+        }
+
+        lwi::RouteNodeDefinition const* destinationNode = sInvasionMgr.GetRouteNode(destinationNodeId);
+        if (!destinationNode)
+        {
+            handler->PSendSysMessage(
+                "Living World Invasions route node {} does not exist or is disabled.",
+                destinationNodeId);
+            return false;
+        }
+
+        if (creature->GetMapId() != fromNode->MapId)
+        {
+            handler->PSendSysMessage(
+                "Selected creature is on map {}, but starting route node {} ({}) is on map {}.",
+                creature->GetMapId(),
+                fromNode->Id,
+                fromNode->Name,
+                fromNode->MapId);
+            return false;
+        }
+
+        for (uint64 const runtimeGroupId : routeTestGroupIds)
+        {
+            lwi::RuntimeEntityGroup const* existingGroup = sRuntimeEntityGroupMgr.GetGroup(runtimeGroupId);
+            if (!existingGroup)
+            {
+                continue;
+            }
+
+            for (lwi::RuntimeEntity const& entity : existingGroup->Entities)
+            {
+                if (entity.Guid == creature->GetGUID())
+                {
+                    handler->PSendSysMessage(
+                        "Selected creature is already being used by active route test group #{}.",
+                        runtimeGroupId);
+                    return false;
+                }
+            }
+        }
+
+        lwi::RuntimeEntityGroup& testGroup = sRuntimeEntityGroupMgr.CreateGroup(0, 0);
+
+        lwi::RuntimeEntity entity;
+        entity.EntityType = static_cast<uint8>(lwi::EntityProviderType::Creature);
+        entity.MapId = creature->GetMapId();
+        entity.Entry = creature->GetEntry();
+        entity.Guid = creature->GetGUID();
+        testGroup.Entities.push_back(entity);
+
+        uint64 const runtimeGroupId = testGroup.Id;
+        routeTestGroupIds.insert(runtimeGroupId);
+
+        if (!sMovementController.StartRouteJourney(
+                runtimeGroupId,
+                fromNodeId,
+                destinationNodeId))
+        {
+            routeTestGroupIds.erase(runtimeGroupId);
+            sRuntimeEntityGroupMgr.RemoveGroup(runtimeGroupId);
+
+            handler->PSendSysMessage(
+                "Living World Invasions could not find/start a connected route from {} ({}) to {} ({}).",
+                fromNode->Name,
+                fromNode->Id,
+                destinationNode->Name,
+                destinationNode->Id);
+            return false;
+        }
+
+        handler->PSendSysMessage(
+            "Route travel group #{} started from {} ({}) to {} ({}) using selected creature {} (entry {}).",
+            runtimeGroupId,
+            fromNode->Name,
+            fromNode->Id,
+            destinationNode->Name,
+            destinationNode->Id,
+            creature->GetName(),
+            creature->GetEntry());
         return true;
     }
 

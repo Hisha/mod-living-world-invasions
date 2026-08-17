@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <queue>
 #include <unordered_map>
 #include <vector>
 
@@ -27,15 +28,11 @@ namespace
 {
 constexpr uint32 MovementUpdateIntervalMs = 250;
 constexpr float ArrivalTolerance = 2.0f;
-constexpr float FormationArrivalTolerance = 25.0f;
+constexpr float FormationArrivalTolerance = 10.0f;
 constexpr uint32 FormationArrivalPercent = 75;
-
-// Large invasion groups should march as a compact road column instead of allowing
-// role-slot offsets to expand indefinitely sideways. Six abreast keeps a 100-creature
-// force narrow enough for normal roads while allowing the formation to grow backward.
-constexpr uint32 MarchingColumns = 6;
-constexpr float MarchingColumnSpacing = 2.4f;
-constexpr float MarchingRowSpacing = 2.4f;
+constexpr uint32 FormationArrivalGraceMs = 3000;
+constexpr float FinalObjectiveArrivalRadius = 20.0f;
+constexpr float Pi = 3.14159265358979323846f;
 
 struct FormationOffset
 {
@@ -43,58 +40,47 @@ struct FormationOffset
     float Right = 0.0f;
 };
 
-uint8 GetRoleSortOrder(uint8 tacticalRole)
-{
-    switch (static_cast<TacticalRole>(tacticalRole))
-    {
-        case TacticalRole::Commander: return 0;
-        case TacticalRole::Protector: return 1;
-        case TacticalRole::MeleeDps:  return 2;
-        case TacticalRole::RangedDps: return 3;
-        case TacticalRole::Healer:    return 4;
-        case TacticalRole::Support:   return 5;
-        case TacticalRole::Default:
-        default:                      return 6;
-    }
-}
-
-FormationOffset GetFormationOffset(uint8 tacticalRole, uint32 formationSlot)
+FormationOffset GetFormationOffset(uint8 tacticalRole, uint32 roleSlot)
 {
     TacticalRole const role = static_cast<TacticalRole>(tacticalRole);
+    float const side = (roleSlot % 2U == 0U ? -1.0f : 1.0f);
+    float const rank = static_cast<float>(roleSlot / 2U);
 
-    // The commander owns the front-center position. Any additional commanders
-    // will also remain near the front rather than being pushed to the rear.
-    if (role == TacticalRole::Commander)
+    switch (role)
     {
-        return { 0.0f, 0.0f };
+        case TacticalRole::Commander:
+            return { 0.0f, side * rank * 1.5f };
+        case TacticalRole::Protector:
+            return { 2.5f + rank, side * (1.5f + rank * 0.75f) };
+        case TacticalRole::MeleeDps:
+            return { 4.0f + rank, side * (2.0f + rank * 1.25f) };
+        case TacticalRole::RangedDps:
+            return { -4.0f - rank, side * (2.5f + rank * 1.5f) };
+        case TacticalRole::Healer:
+            return { -6.0f - rank, side * (1.5f + rank) };
+        case TacticalRole::Support:
+            return { -5.0f - rank, side * (4.0f + rank) };
+        case TacticalRole::Default:
+        default:
+            return { 0.0f, 0.0f };
     }
-
-    uint32 const column = formationSlot % MarchingColumns;
-    uint32 const row = formationSlot / MarchingColumns + 1U;
-
-    float const centeredColumn =
-        static_cast<float>(column) - (static_cast<float>(MarchingColumns) - 1.0f) * 0.5f;
-
-    return
-    {
-        -static_cast<float>(row) * MarchingRowSpacing,
-        centeredColumn * MarchingColumnSpacing
-    };
 }
 
 void BuildFormationDestination(
     MovementNodeDefinition const& node,
-    float formationOrientation,
+    MovementDirection direction,
     uint8 tacticalRole,
-    uint32 formationSlot,
+    uint32 roleSlot,
     float& x,
     float& y,
     float& z)
 {
-    FormationOffset const offset = GetFormationOffset(tacticalRole, formationSlot);
+    FormationOffset const offset = GetFormationOffset(tacticalRole, roleSlot);
 
-    float const forwardX = std::cos(formationOrientation);
-    float const forwardY = std::sin(formationOrientation);
+    float const travelOrientation = node.Orientation +
+        (direction == MovementDirection::Reverse ? Pi : 0.0f);
+    float const forwardX = std::cos(travelOrientation);
+    float const forwardY = std::sin(travelOrientation);
     float const rightX = -forwardY;
     float const rightY = forwardX;
 
@@ -185,10 +171,16 @@ MovementController& MovementController::Instance()
 void MovementController::Reset()
 {
     _activeMovements.clear();
+    _activeRouteJourneys.clear();
     _updateTimerMs = 0;
 }
 
-bool MovementController::StartPath(uint64 runtimeGroupId, uint32 pathId, uint32 profileId, uint32 completionSignalId, MovementDirection direction)
+bool MovementController::StartPath(
+    uint64 runtimeGroupId,
+    uint32 pathId,
+    uint32 profileId,
+    uint32 completionSignalId,
+    MovementDirection direction)
 {
     RuntimeEntityGroup* group = sRuntimeEntityGroupMgr.GetGroup(runtimeGroupId);
     if (!group)
@@ -240,7 +232,7 @@ bool MovementController::StartPath(uint64 runtimeGroupId, uint32 pathId, uint32 
     movement.ProfileId = profileId;
     movement.CompletionSignalId = completionSignalId;
     movement.Direction = direction;
-    movement.NodeIndex = direction == MovementDirection::Forward ? 0 : nodes->size() - 1;
+    movement.NodeIndex = direction == MovementDirection::Reverse ? nodes->size() - 1 : 0;
     movement.State = RuntimeMovementState::Moving;
 
     _activeMovements[runtimeGroupId] = movement;
@@ -253,16 +245,16 @@ bool MovementController::StartPath(uint64 runtimeGroupId, uint32 pathId, uint32 
     }
 
     LOG_INFO("server.loading",
-        "[LWI Movement] Runtime entity group #{} started path {} ({}) with {} node(s){}.",
+        "[LWI Movement] Runtime entity group #{} started path {} ({}) {} with {} node(s){}.",
         runtimeGroupId,
         pathId,
         path->Name,
+        direction == MovementDirection::Reverse ? "in reverse" : "forward",
         nodes->size(),
         profileId != 0 ? " using a movement profile" : "");
 
     return true;
 }
-
 
 bool MovementController::StartRouteSegment(
     uint64 runtimeGroupId,
@@ -275,34 +267,262 @@ bool MovementController::StartRouteSegment(
     if (!segment)
     {
         LOG_ERROR("server.loading",
-            "[LWI Movement] Runtime entity group #{} requested missing route segment {}.",
+            "[LWI Route] Runtime entity group #{} requested missing route segment {}.",
             runtimeGroupId, routeSegmentId);
         return false;
     }
 
-    MovementDirection direction;
+    MovementDirection direction = MovementDirection::Forward;
+    uint32 destinationNodeId = 0;
+
     if (fromNodeId == segment->StartNodeId)
     {
         direction = MovementDirection::Forward;
+        destinationNodeId = segment->EndNodeId;
     }
     else if (fromNodeId == segment->EndNodeId)
     {
         direction = MovementDirection::Reverse;
+        destinationNodeId = segment->StartNodeId;
     }
     else
     {
         LOG_ERROR("server.loading",
-            "[LWI Movement] Runtime entity group #{} cannot enter route segment {} from route node {}; "
-            "expected start node {} or end node {}.",
+            "[LWI Route] Runtime entity group #{} cannot start route segment {} ({}) from route node {} because the segment connects nodes {} and {}.",
             runtimeGroupId,
-            routeSegmentId,
+            segment->Id,
+            segment->Name,
             fromNodeId,
             segment->StartNodeId,
             segment->EndNodeId);
         return false;
     }
 
-    return StartPath(runtimeGroupId, segment->MovementPathId, profileId, completionSignalId, direction);
+    RouteNodeDefinition const* fromNode = sInvasionMgr.GetRouteNode(fromNodeId);
+    RouteNodeDefinition const* destinationNode = sInvasionMgr.GetRouteNode(destinationNodeId);
+    if (!fromNode || !destinationNode)
+    {
+        LOG_ERROR("server.loading",
+            "[LWI Route] Route segment {} ({}) references unavailable route node data; movement was not started.",
+            segment->Id, segment->Name);
+        return false;
+    }
+
+    if (!StartPath(
+            runtimeGroupId,
+            segment->MovementPathId,
+            profileId,
+            completionSignalId,
+            direction))
+    {
+        LOG_ERROR("server.loading",
+            "[LWI Route] Runtime entity group #{} failed to start route segment {} ({}) from {} to {} using movement path {}.",
+            runtimeGroupId,
+            segment->Id,
+            segment->Name,
+            fromNode->Name,
+            destinationNode->Name,
+            segment->MovementPathId);
+        return false;
+    }
+
+    LOG_INFO("server.loading",
+        "[LWI Route] Runtime entity group #{} started route segment {} ({}) from {} to {} using movement path {} {}.",
+        runtimeGroupId,
+        segment->Id,
+        segment->Name,
+        fromNode->Name,
+        destinationNode->Name,
+        segment->MovementPathId,
+        direction == MovementDirection::Reverse ? "in reverse" : "forward");
+
+    return true;
+}
+
+bool MovementController::BuildRouteJourney(
+    uint32 fromNodeId,
+    uint32 destinationNodeId,
+    std::vector<RouteJourneyStep>& steps) const
+{
+    steps.clear();
+
+    if (fromNodeId == destinationNodeId)
+    {
+        return false;
+    }
+
+    if (!sInvasionMgr.GetRouteNode(fromNodeId) || !sInvasionMgr.GetRouteNode(destinationNodeId))
+    {
+        return false;
+    }
+
+    struct PreviousHop
+    {
+        uint32 PreviousNodeId = 0;
+        uint32 SegmentId = 0;
+    };
+
+    std::queue<uint32> pending;
+    std::unordered_map<uint32, PreviousHop> previous;
+
+    previous.emplace(fromNodeId, PreviousHop{});
+    pending.push(fromNodeId);
+
+    while (!pending.empty())
+    {
+        uint32 const currentNodeId = pending.front();
+        pending.pop();
+
+        if (currentNodeId == destinationNodeId)
+        {
+            break;
+        }
+
+        for (auto const& [segmentId, segment] : sInvasionMgr.GetRouteSegments())
+        {
+            uint32 nextNodeId = 0;
+
+            if (segment.StartNodeId == currentNodeId)
+            {
+                nextNodeId = segment.EndNodeId;
+            }
+            else if (segment.EndNodeId == currentNodeId)
+            {
+                nextNodeId = segment.StartNodeId;
+            }
+            else
+            {
+                continue;
+            }
+
+            if (previous.find(nextNodeId) != previous.end())
+            {
+                continue;
+            }
+
+            previous.emplace(nextNodeId, PreviousHop{ currentNodeId, segmentId });
+            pending.push(nextNodeId);
+        }
+    }
+
+    if (previous.find(destinationNodeId) == previous.end())
+    {
+        return false;
+    }
+
+    uint32 currentNodeId = destinationNodeId;
+    while (currentNodeId != fromNodeId)
+    {
+        auto const previousItr = previous.find(currentNodeId);
+        if (previousItr == previous.end() || previousItr->second.SegmentId == 0)
+        {
+            steps.clear();
+            return false;
+        }
+
+        RouteJourneyStep step;
+        step.SegmentId = previousItr->second.SegmentId;
+        step.FromNodeId = previousItr->second.PreviousNodeId;
+        step.ToNodeId = currentNodeId;
+        steps.push_back(step);
+
+        currentNodeId = previousItr->second.PreviousNodeId;
+    }
+
+    std::reverse(steps.begin(), steps.end());
+    return !steps.empty();
+}
+
+bool MovementController::StartRouteJourney(
+    uint64 runtimeGroupId,
+    uint32 fromNodeId,
+    uint32 destinationNodeId,
+    uint32 profileId,
+    uint32 completionSignalId)
+{
+    RuntimeEntityGroup* group = sRuntimeEntityGroupMgr.GetGroup(runtimeGroupId);
+    if (!group)
+    {
+        LOG_ERROR("server.loading",
+            "[LWI Route] Cannot start route journey because runtime entity group #{} does not exist.",
+            runtimeGroupId);
+        return false;
+    }
+
+    RouteNodeDefinition const* fromNode = sInvasionMgr.GetRouteNode(fromNodeId);
+    RouteNodeDefinition const* destinationNode = sInvasionMgr.GetRouteNode(destinationNodeId);
+    if (!fromNode || !destinationNode)
+    {
+        LOG_ERROR("server.loading",
+            "[LWI Route] Runtime entity group #{} requested a route journey using unavailable node(s) {} -> {}.",
+            runtimeGroupId, fromNodeId, destinationNodeId);
+        return false;
+    }
+
+    if (profileId != 0 && !sInvasionMgr.GetMovementProfile(profileId))
+    {
+        LOG_ERROR("server.loading",
+            "[LWI Route] Runtime entity group #{} requested missing movement profile {} for route journey.",
+            runtimeGroupId, profileId);
+        return false;
+    }
+
+    if (completionSignalId != 0 && !sInvasionMgr.GetRuntimeSignal(completionSignalId))
+    {
+        LOG_ERROR("server.loading",
+            "[LWI Route] Runtime entity group #{} requested missing completion signal {} for route journey.",
+            runtimeGroupId, completionSignalId);
+        return false;
+    }
+
+    std::vector<RouteJourneyStep> steps;
+    if (!BuildRouteJourney(fromNodeId, destinationNodeId, steps))
+    {
+        LOG_ERROR("server.loading",
+            "[LWI Route] No connected route exists from node {} ({}) to node {} ({}).",
+            fromNodeId, fromNode->Name, destinationNodeId, destinationNode->Name);
+        return false;
+    }
+
+    ActiveRouteJourney journey;
+    journey.RuntimeGroupId = runtimeGroupId;
+    journey.RuntimeId = group->RuntimeId;
+    journey.StartNodeId = fromNodeId;
+    journey.DestinationNodeId = destinationNodeId;
+    journey.ProfileId = profileId;
+    journey.CompletionSignalId = completionSignalId;
+    journey.StepIndex = 0;
+    journey.Steps = std::move(steps);
+
+    _activeRouteJourneys[runtimeGroupId] = std::move(journey);
+
+    ActiveRouteJourney const& activeJourney = _activeRouteJourneys[runtimeGroupId];
+    RouteJourneyStep const& firstStep = activeJourney.Steps.front();
+    uint32 const firstCompletionSignalId = activeJourney.Steps.size() == 1
+        ? activeJourney.CompletionSignalId
+        : 0;
+
+    if (!StartRouteSegment(
+            runtimeGroupId,
+            firstStep.SegmentId,
+            firstStep.FromNodeId,
+            activeJourney.ProfileId,
+            firstCompletionSignalId))
+    {
+        _activeRouteJourneys.erase(runtimeGroupId);
+        return false;
+    }
+
+    LOG_INFO("server.loading",
+        "[LWI Route] Runtime entity group #{} started route journey from {} ({}) to {} ({}) across {} segment(s).",
+        runtimeGroupId,
+        fromNode->Name,
+        fromNodeId,
+        destinationNode->Name,
+        destinationNodeId,
+        activeJourney.Steps.size());
+
+    return true;
 }
 
 bool MovementController::CancelGroup(uint64 runtimeGroupId)
@@ -314,6 +534,7 @@ bool MovementController::CancelGroup(uint64 runtimeGroupId)
     }
 
     _activeMovements.erase(itr);
+    _activeRouteJourneys.erase(runtimeGroupId);
 
     LOG_INFO("server.loading",
         "[LWI Movement] Cancelled movement for runtime entity group #{}.",
@@ -336,6 +557,7 @@ void MovementController::CancelRuntime(uint64 runtimeId)
     for (uint64 runtimeGroupId : cancelled)
     {
         _activeMovements.erase(runtimeGroupId);
+        _activeRouteJourneys.erase(runtimeGroupId);
     }
 
     if (!cancelled.empty())
@@ -367,6 +589,7 @@ void MovementController::Update(uint32 diff)
     _updateTimerMs = MovementUpdateIntervalMs;
     uint64 const nowMs = static_cast<uint64>(getMSTime());
     std::vector<uint64> completed;
+    std::vector<uint64> defeatedRuntimes;
 
     for (auto& [runtimeGroupId, movement] : _activeMovements)
     {
@@ -402,12 +625,12 @@ void MovementController::Update(uint32 diff)
         {
             LOG_INFO("server.loading",
                 "[LWI Movement] Runtime entity group #{} was defeated while following path {}. "
-                "Cancelling movement for this group without failing runtime #{}.",
+                "No living creature entities remain.",
                 runtimeGroupId,
-                movement.PathId,
-                movement.RuntimeId);
+                movement.PathId);
 
             completed.push_back(runtimeGroupId);
+            defeatedRuntimes.push_back(movement.RuntimeId);
             continue;
         }
 
@@ -489,8 +712,18 @@ void MovementController::Update(uint32 diff)
     for (uint64 runtimeGroupId : completed)
     {
         _activeMovements.erase(runtimeGroupId);
+        _activeRouteJourneys.erase(runtimeGroupId);
     }
 
+    std::sort(defeatedRuntimes.begin(), defeatedRuntimes.end());
+    defeatedRuntimes.erase(
+        std::unique(defeatedRuntimes.begin(), defeatedRuntimes.end()),
+        defeatedRuntimes.end());
+
+    for (uint64 runtimeId : defeatedRuntimes)
+    {
+        sInvasionRuntimeMgr.FailRuntime(runtimeId, "active movement force defeated");
+    }
 }
 
 bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
@@ -505,83 +738,22 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
 
     MovementNodeDefinition const& node = (*nodes)[movement.NodeIndex];
 
-    // Align the marching column with the route itself, not with whatever facing
-    // happened to be recorded on the waypoint. For normal nodes use the incoming
-    // segment; for the first node use the outgoing segment. This keeps the column
-    // centered on and trailing along the road.
-    float formationOrientation = node.Orientation;
-    if (movement.Direction == MovementDirection::Forward)
-    {
-        if (movement.NodeIndex > 0)
-        {
-            MovementNodeDefinition const& previous = (*nodes)[movement.NodeIndex - 1];
-            formationOrientation = std::atan2(node.Y - previous.Y, node.X - previous.X);
-        }
-        else if (nodes->size() > 1)
-        {
-            MovementNodeDefinition const& next = (*nodes)[1];
-            formationOrientation = std::atan2(next.Y - node.Y, next.X - node.X);
-        }
-    }
-    else
-    {
-        if (movement.NodeIndex + 1 < nodes->size())
-        {
-            MovementNodeDefinition const& previous = (*nodes)[movement.NodeIndex + 1];
-            formationOrientation = std::atan2(node.Y - previous.Y, node.X - previous.X);
-        }
-        else if (movement.NodeIndex > 0)
-        {
-            MovementNodeDefinition const& next = (*nodes)[movement.NodeIndex - 1];
-            formationOrientation = std::atan2(next.Y - node.Y, next.X - node.X);
-        }
-    }
-
     uint32 profileId = node.ProfileOverrideId != 0 ? node.ProfileOverrideId : movement.ProfileId;
     MovementProfileDefinition const* profile = profileId != 0
         ? sInvasionMgr.GetMovementProfile(profileId)
         : nullptr;
 
-    std::vector<RuntimeEntity const*> creatures;
-    creatures.reserve(group->Entities.size());
-
-    for (RuntimeEntity const& entity : group->Entities)
-    {
-        if (entity.EntityType == static_cast<uint8>(EntityProviderType::Creature))
-        {
-            creatures.push_back(&entity);
-        }
-    }
-
-    // Put commanders first, then front-line combat roles, then ranged/healing/support
-    // roles. The actual slot geometry is one compact six-wide marching column.
-    std::stable_sort(creatures.begin(), creatures.end(), [](RuntimeEntity const* left, RuntimeEntity const* right)
-    {
-        uint8 const leftOrder = GetRoleSortOrder(left->TacticalRole);
-        uint8 const rightOrder = GetRoleSortOrder(right->TacticalRole);
-
-        if (leftOrder != rightOrder)
-        {
-            return leftOrder < rightOrder;
-        }
-
-        if (left->MemberId != right->MemberId)
-        {
-            return left->MemberId < right->MemberId;
-        }
-
-        return false;
-    });
-
     uint32 moved = 0;
-    uint32 tracked = 0;
-    uint32 formationSlot = 0;
+    std::unordered_map<uint8, uint32> roleSlots;
     movement.Destinations.clear();
     movement.ArrivalGraceStartedAtMs = 0;
 
-    for (RuntimeEntity const* entityPtr : creatures)
+    for (RuntimeEntity const& entity : group->Entities)
     {
-        RuntimeEntity const& entity = *entityPtr;
+        if (entity.EntityType != static_cast<uint8>(EntityProviderType::Creature))
+        {
+            continue;
+        }
 
         Map* map = sMapMgr->FindMap(entity.MapId, 0);
         if (!map)
@@ -608,74 +780,37 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
             }
         }
 
-        uint32 slot = formationSlot;
-        if (static_cast<TacticalRole>(entity.TacticalRole) != TacticalRole::Commander)
-        {
-            ++formationSlot;
-        }
+        uint32 const roleSlot = roleSlots[entity.TacticalRole]++;
 
         float targetX = node.X;
         float targetY = node.Y;
         float targetZ = node.Z;
-        BuildFormationDestination(node, formationOrientation, entity.TacticalRole, slot, targetX, targetY, targetZ);
+        BuildFormationDestination(node, movement.Direction, entity.TacticalRole, roleSlot, targetX, targetY, targetZ);
 
         PathGenerator path(creature);
-        bool pathFound = path.CalculatePath(targetX, targetY, targetZ, false);
 
-        // Formation slots near terrain edges can occasionally miss the navmesh.
-        // Fall back to the authored node center rather than dropping that creature
-        // from the movement controller entirely.
+        // Do not force the destination. We want the navmesh to choose a valid,
+        // terrain-aware endpoint rather than extending a failed path directly
+        // through terrain to the requested XYZ.
+        bool const pathFound = path.CalculatePath(
+            targetX,
+            targetY,
+            targetZ,
+            false);
+
         if (!pathFound || (path.GetPathType() & PATHFIND_NOPATH))
         {
-            LOG_INFO("server.loading",
-                "[LWI Movement] Runtime entity group #{} creature {} member {} could not path to compact formation slot "
-                "for path {} node {}; retrying authored node center.",
+            LOG_ERROR("server.loading",
+                "[LWI Movement] Runtime entity group #{} creature {} member {} could not find an MMAP path "
+                "to path {} node {} formation destination ({:.2f}, {:.2f}, {:.2f}); creature skipped for this node.",
                 movement.RuntimeGroupId,
                 entity.Entry,
                 entity.MemberId,
                 movement.PathId,
-                node.NodeOrder);
-
-            PathGenerator fallback(creature);
-            pathFound = fallback.CalculatePath(node.X, node.Y, node.Z, false);
-
-            if (!pathFound || (fallback.GetPathType() & PATHFIND_NOPATH))
-            {
-                LOG_ERROR("server.loading",
-                    "[LWI Movement] Runtime entity group #{} creature {} member {} could not find an MMAP path "
-                    "to path {} node {} or its formation slot; creature skipped for this node.",
-                    movement.RuntimeGroupId,
-                    entity.Entry,
-                    entity.MemberId,
-                    movement.PathId,
-                    node.NodeOrder);
-                continue;
-            }
-
-            Movement::PointsArray fallbackPoints = fallback.GetPath();
-            if (fallbackPoints.size() < 2)
-            {
-                continue;
-            }
-
-            G3D::Vector3 const& actualEnd = fallbackPoints.back();
-
-            RuntimeMovementDestination destination;
-            destination.Guid = entity.Guid;
-            destination.MapId = entity.MapId;
-            destination.X = actualEnd.x;
-            destination.Y = actualEnd.y;
-            destination.Z = actualEnd.z;
-            destination.WasInCombat = creature->IsInCombat() || creature->GetVictim();
-            movement.Destinations.push_back(destination);
-            ++tracked;
-
-            if (!destination.WasInCombat)
-            {
-                creature->GetMotionMaster()->MoveSplinePath(&fallbackPoints, FORCED_MOVEMENT_NONE);
-                ++moved;
-            }
-
+                node.NodeOrder,
+                targetX,
+                targetY,
+                targetZ);
             continue;
         }
 
@@ -702,19 +837,11 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
         destination.X = actualEnd.x;
         destination.Y = actualEnd.y;
         destination.Z = actualEnd.z;
-        destination.WasInCombat = creature->IsInCombat() || creature->GetVictim();
         movement.Destinations.push_back(destination);
-        ++tracked;
 
-        // Do not stomp chase/combat movement. The destination is still updated to
-        // this newest node, so ResumeInterruptedCreatures() sends the creature to
-        // the current column position as soon as combat ends instead of back to an
-        // obsolete node.
-        if (destination.WasInCombat)
-        {
-            continue;
-        }
-
+        // MoveSplinePath consumes the terrain-aware point list generated by
+        // AzerothCore's PathGenerator/MMAP system. This avoids PointMovement's
+        // straight-line fallback when a requested destination cannot be reached.
         creature->GetMotionMaster()->MoveSplinePath(
             &pathPoints,
             FORCED_MOVEMENT_NONE);
@@ -722,10 +849,10 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
         ++moved;
     }
 
-    if (tracked == 0)
+    if (moved == 0)
     {
         LOG_ERROR("server.loading",
-            "[LWI Movement] Runtime entity group #{} has no living trackable creature entities for path {} node {}.",
+            "[LWI Movement] Runtime entity group #{} has no living movable creature entities for path {} node {}.",
             movement.RuntimeGroupId, movement.PathId, node.NodeOrder);
         return false;
     }
@@ -734,12 +861,9 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
     movement.WaitEndsAtMs = 0;
 
     LOG_INFO("server.loading",
-        "[LWI Movement] Runtime entity group #{} tracking {} creature(s), immediately moving {} creature(s) "
-        "in a compact {}-wide marching column to path {} node {} ({:.2f}, {:.2f}, {:.2f}).",
+        "[LWI Movement] Runtime entity group #{} moving {} creature(s) via MMAP in role-aware formation to path {} node {} ({:.2f}, {:.2f}, {:.2f}).",
         movement.RuntimeGroupId,
-        tracked,
         moved,
-        MarchingColumns,
         movement.PathId,
         node.NodeOrder,
         node.X,
@@ -781,7 +905,7 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
             continue;
         }
 
-        if (creature->GetDistance(destination.X, destination.Y, destination.Z) <= FormationArrivalTolerance)
+        if (creature->GetDistance(destination.X, destination.Y, destination.Z) <= ArrivalTolerance)
         {
             destination.WasInCombat = false;
             continue;
@@ -863,7 +987,7 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
 
 bool MovementController::HasGroupReachedCurrentNode(
     ActiveRuntimeMovement& movement,
-    uint64 /*nowMs*/)
+    uint64 nowMs)
 {
     if (movement.Destinations.empty())
     {
@@ -879,13 +1003,15 @@ bool MovementController::HasGroupReachedCurrentNode(
     }
 
     MovementNodeDefinition const& node = (*nodes)[movement.NodeIndex];
-    bool const isFinalNode =
-        movement.Direction == MovementDirection::Forward
-            ? movement.NodeIndex + 1 >= nodes->size()
-            : movement.NodeIndex == 0;
+    bool const isFinalNode = movement.Direction == MovementDirection::Reverse
+        ? movement.NodeIndex == 0
+        : movement.NodeIndex + 1 >= nodes->size();
 
     uint32 living = 0;
+    uint32 exactArrivals = 0;
     uint32 formationArrivals = 0;
+    uint32 objectiveArrivals = 0;
+    bool anyInCombat = false;
 
     for (RuntimeMovementDestination const& destination : movement.Destinations)
     {
@@ -903,9 +1029,29 @@ bool MovementController::HasGroupReachedCurrentNode(
 
         ++living;
 
-        if (creature->GetDistance(destination.X, destination.Y, destination.Z) <= FormationArrivalTolerance)
+        if (creature->IsInCombat())
+        {
+            anyInCombat = true;
+        }
+
+        float const formationDistance = creature->GetDistance(
+            destination.X,
+            destination.Y,
+            destination.Z);
+
+        if (formationDistance <= ArrivalTolerance)
+        {
+            ++exactArrivals;
+            ++formationArrivals;
+        }
+        else if (formationDistance <= FormationArrivalTolerance)
         {
             ++formationArrivals;
+        }
+
+        if (creature->GetDistance(node.X, node.Y, node.Z) <= FinalObjectiveArrivalRadius)
+        {
+            ++objectiveArrivals;
         }
     }
 
@@ -918,50 +1064,81 @@ bool MovementController::HasGroupReachedCurrentNode(
     uint32 const requiredArrivals =
         std::max<uint32>(1, (living * FormationArrivalPercent + 99) / 100);
 
-    // The final node uses the same formation-destination test as intermediate nodes.
-    // Large groups can legitimately extend well beyond a fixed radius around the
-    // authored node center, so requiring most of the force to crowd inside one
-    // objective circle can prevent route completion even when the formation has
-    // actually arrived.
-    if (isFinalNode)
+    // The final strategic node is an objective area, not another parade-ground
+    // formation check. Once enough surviving members reach the objective radius,
+    // the route is complete even if they are already fighting defenders.
+    if (isFinalNode && objectiveArrivals >= requiredArrivals)
     {
-        if (formationArrivals < requiredArrivals)
-        {
-            return false;
-        }
-
         LOG_INFO("server.loading",
-            "[LWI Movement] Runtime entity group #{} reached final formation for path {} node {}: "
-            "{}/{} surviving creature(s) within {:.1f} yards of their final formation destinations.",
+            "[LWI Movement] Runtime entity group #{} reached final objective for path {} node {}: "
+            "{}/{} surviving creature(s) within {:.1f} yards. Combat does not block final arrival.",
             movement.RuntimeGroupId,
             movement.PathId,
             node.NodeOrder,
-            formationArrivals,
+            objectiveArrivals,
             living,
-            FormationArrivalTolerance);
+            FinalObjectiveArrivalRadius);
 
         movement.ArrivalGraceStartedAtMs = 0;
         return true;
     }
 
-    // Ordinary road nodes are pass-through waypoints. As soon as the authored
-    // threshold of the surviving force reaches the current formation area, issue
-    // the next node immediately. There is intentionally no regroup grace and combat
-    // among stragglers does not hold the entire column at the old waypoint.
+    // Ideal intermediate-node case: every survivor reached its exact endpoint.
+    if (!isFinalNode && exactArrivals == living)
+    {
+        movement.ArrivalGraceStartedAtMs = 0;
+        return true;
+    }
+
+    // Intermediate travel nodes should not advance while survivors are fighting.
+    if (!isFinalNode && anyInCombat)
+    {
+        movement.ArrivalGraceStartedAtMs = 0;
+        return false;
+    }
+
+    // Final node has not yet reached the objective threshold.
+    if (isFinalNode)
+    {
+        movement.ArrivalGraceStartedAtMs = 0;
+        return false;
+    }
+
     if (formationArrivals < requiredArrivals)
+    {
+        movement.ArrivalGraceStartedAtMs = 0;
+        return false;
+    }
+
+    if (movement.ArrivalGraceStartedAtMs == 0)
+    {
+        movement.ArrivalGraceStartedAtMs = nowMs;
+
+        LOG_INFO("server.loading",
+            "[LWI Movement] Runtime entity group #{} has {}/{} surviving creature(s) within {:.1f} yards "
+            "of their path {} node formation destinations; starting {} ms regroup grace.",
+            movement.RuntimeGroupId,
+            formationArrivals,
+            living,
+            FormationArrivalTolerance,
+            movement.PathId,
+            FormationArrivalGraceMs);
+
+        return false;
+    }
+
+    if (nowMs - movement.ArrivalGraceStartedAtMs < FormationArrivalGraceMs)
     {
         return false;
     }
 
     LOG_INFO("server.loading",
-        "[LWI Movement] Runtime entity group #{} flowing through path {} node {} with "
-        "{}/{} surviving creature(s) within {:.1f} yards; advancing without regroup pause.",
+        "[LWI Movement] Runtime entity group #{} accepted formation arrival at path {} node with "
+        "{}/{} surviving creature(s) in position after regroup grace.",
         movement.RuntimeGroupId,
         movement.PathId,
-        node.NodeOrder,
         formationArrivals,
-        living,
-        FormationArrivalTolerance);
+        living);
 
     movement.ArrivalGraceStartedAtMs = 0;
     return true;
@@ -979,16 +1156,7 @@ void MovementController::AdvanceOrComplete(
         return;
     }
 
-    if (movement.Direction == MovementDirection::Forward)
-    {
-        ++movement.NodeIndex;
-        if (movement.NodeIndex >= nodes->size())
-        {
-            CompleteMovement(runtimeGroupId, movement);
-            return;
-        }
-    }
-    else
+    if (movement.Direction == MovementDirection::Reverse)
     {
         if (movement.NodeIndex == 0)
         {
@@ -997,6 +1165,16 @@ void MovementController::AdvanceOrComplete(
         }
 
         --movement.NodeIndex;
+    }
+    else
+    {
+        ++movement.NodeIndex;
+
+        if (movement.NodeIndex >= nodes->size())
+        {
+            CompleteMovement(runtimeGroupId, movement);
+            return;
+        }
     }
 
     if (!BeginCurrentNode(movement))
@@ -1045,6 +1223,54 @@ void MovementController::CompleteMovement(
         "[LWI Movement] Runtime entity group #{} completed movement path {}; "
         "updated {} surviving creature home position(s) to their final formation destinations.",
         runtimeGroupId, movement.PathId, homesUpdated);
+
+    auto journeyItr = _activeRouteJourneys.find(runtimeGroupId);
+    if (journeyItr != _activeRouteJourneys.end())
+    {
+        ActiveRouteJourney& journey = journeyItr->second;
+
+        if (journey.StepIndex + 1 < journey.Steps.size())
+        {
+            ++journey.StepIndex;
+            RouteJourneyStep const nextStep = journey.Steps[journey.StepIndex];
+            uint32 const nextCompletionSignalId = journey.StepIndex + 1 == journey.Steps.size()
+                ? journey.CompletionSignalId
+                : 0;
+
+            if (StartRouteSegment(
+                    runtimeGroupId,
+                    nextStep.SegmentId,
+                    nextStep.FromNodeId,
+                    journey.ProfileId,
+                    nextCompletionSignalId))
+            {
+                LOG_INFO("server.loading",
+                    "[LWI Route] Runtime entity group #{} advanced to route journey segment {}/{} (segment {}, node {} -> {}).",
+                    runtimeGroupId,
+                    journey.StepIndex + 1,
+                    journey.Steps.size(),
+                    nextStep.SegmentId,
+                    nextStep.FromNodeId,
+                    nextStep.ToNodeId);
+                return;
+            }
+
+            LOG_ERROR("server.loading",
+                "[LWI Route] Runtime entity group #{} failed to continue route journey on segment {} from node {}; journey aborted.",
+                runtimeGroupId, nextStep.SegmentId, nextStep.FromNodeId);
+            _activeRouteJourneys.erase(journeyItr);
+            movement.State = RuntimeMovementState::Completed;
+            return;
+        }
+
+        LOG_INFO("server.loading",
+            "[LWI Route] Runtime entity group #{} completed route journey from node {} to node {} across {} segment(s).",
+            runtimeGroupId,
+            journey.StartNodeId,
+            journey.DestinationNodeId,
+            journey.Steps.size());
+        _activeRouteJourneys.erase(journeyItr);
+    }
 
     if (movement.CompletionSignalId != 0)
     {

@@ -229,6 +229,7 @@ public:
     [[nodiscard]] MovementProfileDefinition const* GetMovementProfile(uint32 id) const;
     [[nodiscard]] RouteNodeDefinition const* GetRouteNode(uint32 id) const;
     [[nodiscard]] RouteSegmentDefinition const* GetRouteSegment(uint32 id) const;
+    [[nodiscard]] std::unordered_map<uint32, RouteSegmentDefinition> const& GetRouteSegments() const;
     [[nodiscard]] RuntimeSignalDefinition const* GetRuntimeSignal(uint32 id) const;
     [[nodiscard]] DialogueDefinition const* GetDialogue(uint32 id) const;
     [[nodiscard]] AnnouncementDefinition const* GetAnnouncement(uint32 id) const;
