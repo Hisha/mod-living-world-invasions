@@ -26,7 +26,7 @@ WHERE id IN (100,101,102,103,104,105,106);
 -- lwi_creature_template Clear Data
 -- ===========================================================================
 DELETE FROM lwi_creature_ability
-WHERE id IN (100);
+WHERE id IN (100,101);
 
 -- ===========================================================================
 -- lwi_creature_template Clear Data
@@ -150,7 +150,8 @@ VALUES (1, 'Defias Ogre Brute', 644, 'Defias Ogre Brute', 'Defias Brotherhood', 
 -- lwi_creature_ability(Data-driven combat abilities for LWI templates.):
 -- ===========================================================================
 INSERT INTO lwi_creature_ability(id,lwi_template_id,spell_id,target_type,priority,health_threshold_pct,cooldown_ms,range_yards,require_combat,enabled,comment)
-VALUES (100, 3, 2054, 1, 100, 70.0, 4000, 30.0, 1, 1, 'Defias Field Medic heals the lowest-health LWI ally at or below 70%.');
+VALUES (100, 3, 2054, 1, 100, 70.0, 4000, 30.0, 1, 1, 'Defias Field Medic heals the lowest-health LWI ally at or below 70%.'),
+       (101, 5, 2054, 1, 100, 70.0, 4000, 30.0, 1, 1, 'Stormwind Battle Chaplain heals the lowest-health LWI ally at or below 70%.');
 
 -- ===========================================================================
 -- lwi_spawn_member(Gives the spawn list of NPCs being used in invasion.):
