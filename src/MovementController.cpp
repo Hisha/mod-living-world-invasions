@@ -368,7 +368,6 @@ void MovementController::Update(uint32 diff)
     _updateTimerMs = MovementUpdateIntervalMs;
     uint64 const nowMs = static_cast<uint64>(getMSTime());
     std::vector<uint64> completed;
-    std::vector<uint64> defeatedRuntimes;
 
     for (auto& [runtimeGroupId, movement] : _activeMovements)
     {
@@ -404,12 +403,12 @@ void MovementController::Update(uint32 diff)
         {
             LOG_INFO("server.loading",
                 "[LWI Movement] Runtime entity group #{} was defeated while following path {}. "
-                "No living creature entities remain.",
+                "Cancelling movement for this group without failing runtime #{}.",
                 runtimeGroupId,
-                movement.PathId);
+                movement.PathId,
+                movement.RuntimeId);
 
             completed.push_back(runtimeGroupId);
-            defeatedRuntimes.push_back(movement.RuntimeId);
             continue;
         }
 
@@ -493,15 +492,6 @@ void MovementController::Update(uint32 diff)
         _activeMovements.erase(runtimeGroupId);
     }
 
-    std::sort(defeatedRuntimes.begin(), defeatedRuntimes.end());
-    defeatedRuntimes.erase(
-        std::unique(defeatedRuntimes.begin(), defeatedRuntimes.end()),
-        defeatedRuntimes.end());
-
-    for (uint64 runtimeId : defeatedRuntimes)
-    {
-        sInvasionRuntimeMgr.FailRuntime(runtimeId, "active movement force defeated");
-    }
 }
 
 bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
