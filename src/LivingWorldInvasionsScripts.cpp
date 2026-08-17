@@ -385,12 +385,14 @@ private:
         sInvasionRuntimeMgr.Initialize();
 
         handler->PSendSysMessage(
-            "Living World Invasions reloaded: {} invasion(s), {} stage(s), {} action(s), {} spawn group(s), {} movement path(s), {} dialogue(s), {} signal(s). Scheduler restarted.",
+            "Living World Invasions reloaded: {} invasion(s), {} stage(s), {} action(s), {} spawn group(s), {} movement path(s), {} route node(s), {} route segment(s), {} dialogue(s), {} signal(s). Scheduler restarted.",
             sInvasionMgr.GetDefinitionCount(),
             sInvasionMgr.GetStageCount(),
             sInvasionMgr.GetActionCount(),
             sInvasionMgr.GetSpawnGroupCount(),
             sInvasionMgr.GetMovementPathCount(),
+            sInvasionMgr.GetRouteNodeCount(),
+            sInvasionMgr.GetRouteSegmentCount(),
             sInvasionMgr.GetDialogueCount(),
             sInvasionMgr.GetRuntimeSignalCount());
 
@@ -431,6 +433,8 @@ private:
         handler->PSendSysMessage("  Movement paths: {}", sInvasionMgr.GetMovementPathCount());
         handler->PSendSysMessage("  Movement nodes: {}", sInvasionMgr.GetMovementNodeCount());
         handler->PSendSysMessage("  Movement profiles: {}", sInvasionMgr.GetMovementProfileCount());
+        handler->PSendSysMessage("  Route nodes: {}", sInvasionMgr.GetRouteNodeCount());
+        handler->PSendSysMessage("  Route segments: {}", sInvasionMgr.GetRouteSegmentCount());
         handler->PSendSysMessage("  Dialogues: {}", sInvasionMgr.GetDialogueCount());
         handler->PSendSysMessage("  Runtime signals: {}", sInvasionMgr.GetRuntimeSignalCount());
         return true;

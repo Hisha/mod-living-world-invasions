@@ -26,6 +26,8 @@ void InvasionMgr::Clear()
     _movementNodesByPath.clear();
     _movementNodeActionsByNode.clear();
     _movementProfiles.clear();
+    _routeNodes.clear();
+    _routeSegments.clear();
     _runtimeSignals.clear();
     _dialogues.clear();
     _announcements.clear();
@@ -533,6 +535,118 @@ void InvasionMgr::LoadDefinitions()
     LOG_INFO("server.loading", "[LWI Movement] Loaded {} movement node(s).", movementNodeCount);
     LOG_INFO("server.loading", "[LWI Movement] Loaded {} movement node action(s).", movementNodeActionCount);
     LOG_INFO("server.loading", "[LWI Movement] Loaded {} movement profile(s).", _movementProfiles.size());
+
+
+    if (QueryResult result = WorldDatabase.Query(
+        "SELECT `id`, `name`, `map_id`, `x`, `y`, `z`, `orientation`, `arrival_radius`, `enabled`, `comment` "
+        "FROM `lwi_route_node` WHERE `enabled` = 1 ORDER BY `id`"))
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+
+            RouteNodeDefinition node;
+            node.Id = fields[0].Get<uint32>();
+            node.Name = fields[1].Get<std::string>();
+            node.MapId = fields[2].Get<uint16>();
+            node.X = fields[3].Get<float>();
+            node.Y = fields[4].Get<float>();
+            node.Z = fields[5].Get<float>();
+            node.Orientation = fields[6].Get<float>();
+            node.ArrivalRadius = fields[7].Get<float>();
+            node.Enabled = fields[8].Get<bool>();
+            if (!fields[9].IsNull())
+                node.Comment = fields[9].Get<std::string>();
+
+            if (node.Name.empty())
+            {
+                LOG_ERROR("server.loading", "[LWI Route] Route node {} has an empty name and was ignored.", node.Id);
+                continue;
+            }
+
+            if (node.ArrivalRadius <= 0.0f)
+            {
+                LOG_ERROR("server.loading",
+                    "[LWI Route] Route node {} ({}) has invalid arrival radius {}; node ignored.",
+                    node.Id, node.Name, node.ArrivalRadius);
+                continue;
+            }
+
+            auto [iterator, inserted] = _routeNodes.emplace(node.Id, std::move(node));
+            if (!inserted)
+            {
+                LOG_ERROR("server.loading", "[LWI Route] Duplicate route node definition id {} ignored.", iterator->first);
+            }
+        } while (result->NextRow());
+    }
+
+    LOG_INFO("server.loading", "[LWI Route] Loaded {} route node definition(s).", _routeNodes.size());
+
+    if (QueryResult result = WorldDatabase.Query(
+        "SELECT `id`, `name`, `start_node_id`, `end_node_id`, `movement_path_id`, `enabled`, `comment` "
+        "FROM `lwi_route_segment` WHERE `enabled` = 1 ORDER BY `id`"))
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+
+            RouteSegmentDefinition segment;
+            segment.Id = fields[0].Get<uint32>();
+            segment.Name = fields[1].Get<std::string>();
+            segment.StartNodeId = fields[2].Get<uint32>();
+            segment.EndNodeId = fields[3].Get<uint32>();
+            segment.MovementPathId = fields[4].Get<uint32>();
+            segment.Enabled = fields[5].Get<bool>();
+            if (!fields[6].IsNull())
+                segment.Comment = fields[6].Get<std::string>();
+
+            if (segment.Name.empty())
+            {
+                LOG_ERROR("server.loading", "[LWI Route] Route segment {} has an empty name and was ignored.", segment.Id);
+                continue;
+            }
+
+            if (segment.StartNodeId == segment.EndNodeId)
+            {
+                LOG_ERROR("server.loading",
+                    "[LWI Route] Route segment {} ({}) uses route node {} as both its start and end; segment ignored.",
+                    segment.Id, segment.Name, segment.StartNodeId);
+                continue;
+            }
+
+            if (_routeNodes.find(segment.StartNodeId) == _routeNodes.end())
+            {
+                LOG_ERROR("server.loading",
+                    "[LWI Route] Route segment {} ({}) references missing or disabled start route node {}; segment ignored.",
+                    segment.Id, segment.Name, segment.StartNodeId);
+                continue;
+            }
+
+            if (_routeNodes.find(segment.EndNodeId) == _routeNodes.end())
+            {
+                LOG_ERROR("server.loading",
+                    "[LWI Route] Route segment {} ({}) references missing or disabled end route node {}; segment ignored.",
+                    segment.Id, segment.Name, segment.EndNodeId);
+                continue;
+            }
+
+            if (_movementPaths.find(segment.MovementPathId) == _movementPaths.end())
+            {
+                LOG_ERROR("server.loading",
+                    "[LWI Route] Route segment {} ({}) references missing or disabled movement path {}; segment ignored.",
+                    segment.Id, segment.Name, segment.MovementPathId);
+                continue;
+            }
+
+            auto [iterator, inserted] = _routeSegments.emplace(segment.Id, std::move(segment));
+            if (!inserted)
+            {
+                LOG_ERROR("server.loading", "[LWI Route] Duplicate route segment definition id {} ignored.", iterator->first);
+            }
+        } while (result->NextRow());
+    }
+
+    LOG_INFO("server.loading", "[LWI Route] Loaded {} route segment definition(s).", _routeSegments.size());
 }
 
 ResponseOriginDefinition const* InvasionMgr::GetResponseOrigin(uint32 responseOriginId) const
@@ -610,6 +724,18 @@ MovementProfileDefinition const* InvasionMgr::GetMovementProfile(uint32 id) cons
 {
     auto it = _movementProfiles.find(id);
     return it != _movementProfiles.end() ? &it->second : nullptr;
+}
+
+RouteNodeDefinition const* InvasionMgr::GetRouteNode(uint32 id) const
+{
+    auto const iterator = _routeNodes.find(id);
+    return iterator != _routeNodes.end() ? &iterator->second : nullptr;
+}
+
+RouteSegmentDefinition const* InvasionMgr::GetRouteSegment(uint32 id) const
+{
+    auto const iterator = _routeSegments.find(id);
+    return iterator != _routeSegments.end() ? &iterator->second : nullptr;
 }
 
 RuntimeSignalDefinition const* InvasionMgr::GetRuntimeSignal(uint32 id) const
@@ -703,6 +829,16 @@ std::size_t InvasionMgr::GetMovementNodeActionCount() const
 std::size_t InvasionMgr::GetMovementProfileCount() const
 {
     return _movementProfiles.size();
+}
+
+std::size_t InvasionMgr::GetRouteNodeCount() const
+{
+    return _routeNodes.size();
+}
+
+std::size_t InvasionMgr::GetRouteSegmentCount() const
+{
+    return _routeSegments.size();
 }
 
 std::size_t InvasionMgr::GetRuntimeSignalCount() const

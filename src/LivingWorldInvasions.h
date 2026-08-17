@@ -152,6 +152,31 @@ struct MovementProfileDefinition
     std::string Comment;
 };
 
+struct RouteNodeDefinition
+{
+    uint32 Id = 0;
+    std::string Name;
+    uint16 MapId = 0;
+    float X = 0.0f;
+    float Y = 0.0f;
+    float Z = 0.0f;
+    float Orientation = 0.0f;
+    float ArrivalRadius = 5.0f;
+    bool Enabled = false;
+    std::string Comment;
+};
+
+struct RouteSegmentDefinition
+{
+    uint32 Id = 0;
+    std::string Name;
+    uint32 StartNodeId = 0;
+    uint32 EndNodeId = 0;
+    uint32 MovementPathId = 0;
+    bool Enabled = false;
+    std::string Comment;
+};
+
 struct InvasionStageDefinition
 {
     uint32 Id = 0;
@@ -202,6 +227,8 @@ public:
     [[nodiscard]] std::vector<MovementNodeDefinition> const* GetMovementNodes(uint32 pathId) const;
     [[nodiscard]] std::vector<MovementNodeActionDefinition> const* GetMovementNodeActions(uint32 nodeId) const;
     [[nodiscard]] MovementProfileDefinition const* GetMovementProfile(uint32 id) const;
+    [[nodiscard]] RouteNodeDefinition const* GetRouteNode(uint32 id) const;
+    [[nodiscard]] RouteSegmentDefinition const* GetRouteSegment(uint32 id) const;
     [[nodiscard]] RuntimeSignalDefinition const* GetRuntimeSignal(uint32 id) const;
     [[nodiscard]] DialogueDefinition const* GetDialogue(uint32 id) const;
     [[nodiscard]] AnnouncementDefinition const* GetAnnouncement(uint32 id) const;
@@ -216,6 +243,8 @@ public:
     [[nodiscard]] std::size_t GetMovementNodeCount() const;
     [[nodiscard]] std::size_t GetMovementNodeActionCount() const;
     [[nodiscard]] std::size_t GetMovementProfileCount() const;
+    [[nodiscard]] std::size_t GetRouteNodeCount() const;
+    [[nodiscard]] std::size_t GetRouteSegmentCount() const;
     [[nodiscard]] std::size_t GetRuntimeSignalCount() const;
     [[nodiscard]] std::size_t GetDialogueCount() const;
     [[nodiscard]] std::size_t GetAnnouncementCount() const;
@@ -233,6 +262,8 @@ private:
     std::unordered_map<uint32, std::vector<MovementNodeDefinition>> _movementNodesByPath;
     std::unordered_map<uint32, std::vector<MovementNodeActionDefinition>> _movementNodeActionsByNode;
     std::unordered_map<uint32, MovementProfileDefinition> _movementProfiles;
+    std::unordered_map<uint32, RouteNodeDefinition> _routeNodes;
+    std::unordered_map<uint32, RouteSegmentDefinition> _routeSegments;
     std::unordered_map<uint32, RuntimeSignalDefinition> _runtimeSignals;
     std::unordered_map<uint32, DialogueDefinition> _dialogues;
     std::unordered_map<uint32, AnnouncementDefinition> _announcements;
