@@ -31,6 +31,7 @@ constexpr float FormationArrivalTolerance = 10.0f;
 constexpr uint32 FormationArrivalPercent = 75;
 constexpr uint32 FormationArrivalGraceMs = 3000;
 constexpr float FinalObjectiveArrivalRadius = 20.0f;
+constexpr float Pi = 3.14159265358979323846f;
 
 struct FormationOffset
 {
@@ -66,6 +67,7 @@ FormationOffset GetFormationOffset(uint8 tacticalRole, uint32 roleSlot)
 
 void BuildFormationDestination(
     MovementNodeDefinition const& node,
+    MovementDirection direction,
     uint8 tacticalRole,
     uint32 roleSlot,
     float& x,
@@ -74,8 +76,10 @@ void BuildFormationDestination(
 {
     FormationOffset const offset = GetFormationOffset(tacticalRole, roleSlot);
 
-    float const forwardX = std::cos(node.Orientation);
-    float const forwardY = std::sin(node.Orientation);
+    float const travelOrientation = node.Orientation +
+        (direction == MovementDirection::Reverse ? Pi : 0.0f);
+    float const forwardX = std::cos(travelOrientation);
+    float const forwardY = std::sin(travelOrientation);
     float const rightX = -forwardY;
     float const rightY = forwardX;
 
@@ -169,7 +173,12 @@ void MovementController::Reset()
     _updateTimerMs = 0;
 }
 
-bool MovementController::StartPath(uint64 runtimeGroupId, uint32 pathId, uint32 profileId, uint32 completionSignalId)
+bool MovementController::StartPath(
+    uint64 runtimeGroupId,
+    uint32 pathId,
+    uint32 profileId,
+    uint32 completionSignalId,
+    MovementDirection direction)
 {
     RuntimeEntityGroup* group = sRuntimeEntityGroupMgr.GetGroup(runtimeGroupId);
     if (!group)
@@ -220,7 +229,8 @@ bool MovementController::StartPath(uint64 runtimeGroupId, uint32 pathId, uint32 
     movement.PathId = pathId;
     movement.ProfileId = profileId;
     movement.CompletionSignalId = completionSignalId;
-    movement.NodeIndex = 0;
+    movement.Direction = direction;
+    movement.NodeIndex = direction == MovementDirection::Reverse ? nodes->size() - 1 : 0;
     movement.State = RuntimeMovementState::Moving;
 
     _activeMovements[runtimeGroupId] = movement;
@@ -233,10 +243,11 @@ bool MovementController::StartPath(uint64 runtimeGroupId, uint32 pathId, uint32 
     }
 
     LOG_INFO("server.loading",
-        "[LWI Movement] Runtime entity group #{} started path {} ({}) with {} node(s){}.",
+        "[LWI Movement] Runtime entity group #{} started path {} ({}) {} with {} node(s){}.",
         runtimeGroupId,
         pathId,
         path->Name,
+        direction == MovementDirection::Reverse ? "in reverse" : "forward",
         nodes->size(),
         profileId != 0 ? " using a movement profile" : "");
 
@@ -500,7 +511,7 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
         float targetX = node.X;
         float targetY = node.Y;
         float targetZ = node.Z;
-        BuildFormationDestination(node, entity.TacticalRole, roleSlot, targetX, targetY, targetZ);
+        BuildFormationDestination(node, movement.Direction, entity.TacticalRole, roleSlot, targetX, targetY, targetZ);
 
         PathGenerator path(creature);
 
@@ -718,7 +729,9 @@ bool MovementController::HasGroupReachedCurrentNode(
     }
 
     MovementNodeDefinition const& node = (*nodes)[movement.NodeIndex];
-    bool const isFinalNode = movement.NodeIndex + 1 >= nodes->size();
+    bool const isFinalNode = movement.Direction == MovementDirection::Reverse
+        ? movement.NodeIndex == 0
+        : movement.NodeIndex + 1 >= nodes->size();
 
     uint32 living = 0;
     uint32 exactArrivals = 0;
@@ -869,12 +882,25 @@ void MovementController::AdvanceOrComplete(
         return;
     }
 
-    ++movement.NodeIndex;
-
-    if (movement.NodeIndex >= nodes->size())
+    if (movement.Direction == MovementDirection::Reverse)
     {
-        CompleteMovement(runtimeGroupId, movement);
-        return;
+        if (movement.NodeIndex == 0)
+        {
+            CompleteMovement(runtimeGroupId, movement);
+            return;
+        }
+
+        --movement.NodeIndex;
+    }
+    else
+    {
+        ++movement.NodeIndex;
+
+        if (movement.NodeIndex >= nodes->size())
+        {
+            CompleteMovement(runtimeGroupId, movement);
+            return;
+        }
     }
 
     if (!BeginCurrentNode(movement))

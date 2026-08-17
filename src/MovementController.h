@@ -17,6 +17,12 @@ enum class RuntimeMovementState : uint8
     Completed = 2
 };
 
+enum class MovementDirection : uint8
+{
+    Forward = 0,
+    Reverse = 1
+};
+
 struct RuntimeMovementDestination
 {
     ObjectGuid Guid;
@@ -34,6 +40,7 @@ struct ActiveRuntimeMovement
     uint32 PathId = 0;
     uint32 ProfileId = 0;
     uint32 CompletionSignalId = 0;
+    MovementDirection Direction = MovementDirection::Forward;
     std::size_t NodeIndex = 0;
     RuntimeMovementState State = RuntimeMovementState::Moving;
     uint64 WaitEndsAtMs = 0;
@@ -49,7 +56,12 @@ public:
     void Reset();
     void Update(uint32 diff);
 
-    bool StartPath(uint64 runtimeGroupId, uint32 pathId, uint32 profileId = 0, uint32 completionSignalId = 0);
+    bool StartPath(
+        uint64 runtimeGroupId,
+        uint32 pathId,
+        uint32 profileId = 0,
+        uint32 completionSignalId = 0,
+        MovementDirection direction = MovementDirection::Forward);
     bool CancelGroup(uint64 runtimeGroupId);
     void CancelRuntime(uint64 runtimeId);
 
