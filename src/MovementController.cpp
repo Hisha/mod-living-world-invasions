@@ -1141,162 +1141,55 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
 
 bool MovementController::HasGroupReachedCurrentNode(
     ActiveRuntimeMovement& movement,
-    uint64 nowMs)
+    uint64 /*nowMs*/)
 {
     if (movement.Destinations.empty())
     {
-        movement.ArrivalGraceStartedAtMs = 0;
         return false;
     }
 
     auto const* nodes = sInvasionMgr.GetMovementNodes(movement.PathId);
     if (!nodes || movement.NodeIndex >= nodes->size())
     {
-        movement.ArrivalGraceStartedAtMs = 0;
         return false;
     }
 
     MovementNodeDefinition const& node = (*nodes)[movement.NodeIndex];
-    bool const isFinalNode = movement.Direction == MovementDirection::Reverse
-        ? movement.NodeIndex == 0
-        : movement.NodeIndex + 1 >= nodes->size();
 
-    uint32 living = 0;
-    uint32 exactArrivals = 0;
-    uint32 formationArrivals = 0;
-    uint32 objectiveArrivals = 0;
-    bool anyInCombat = false;
+    // Route travel is leader-driven. The route describes where the group goes;
+    // formations are visual and should never block progression because one
+    // follower is slightly displaced or correcting its position.
+    RuntimeMovementDestination const& leader = movement.Destinations.front();
 
-    for (RuntimeMovementDestination const& destination : movement.Destinations)
+    Map* map = sMapMgr->FindMap(leader.MapId, 0);
+    if (!map)
     {
-        Map* map = sMapMgr->FindMap(destination.MapId, 0);
-        if (!map)
-        {
-            continue;
-        }
-
-        Creature* creature = map->GetCreature(destination.Guid);
-        if (!creature || !creature->IsAlive())
-        {
-            continue;
-        }
-
-        ++living;
-
-        if (creature->IsInCombat())
-        {
-            anyInCombat = true;
-        }
-
-        float const formationDistance = creature->GetDistance(
-            destination.X,
-            destination.Y,
-            destination.Z);
-
-        if (formationDistance <= ArrivalTolerance)
-        {
-            ++exactArrivals;
-            ++formationArrivals;
-        }
-        else if (formationDistance <= FormationArrivalTolerance)
-        {
-            ++formationArrivals;
-        }
-
-        if (creature->GetDistance(node.X, node.Y, node.Z) <= FinalObjectiveArrivalRadius)
-        {
-            ++objectiveArrivals;
-        }
-    }
-
-    if (living == 0)
-    {
-        movement.ArrivalGraceStartedAtMs = 0;
         return false;
     }
 
-    uint32 const requiredArrivals =
-        std::max<uint32>(1, (living * FormationArrivalPercent + 99) / 100);
-
-    // The final strategic node is an objective area, not another parade-ground
-    // formation check. Once enough surviving members reach the objective radius,
-    // the route is complete even if they are already fighting defenders.
-    if (isFinalNode && objectiveArrivals >= requiredArrivals)
+    Creature* creature = map->GetCreature(leader.Guid);
+    if (!creature || !creature->IsAlive())
     {
-        LOG_INFO("server.loading",
-            "[LWI Movement] Runtime entity group #{} reached final objective for path {} node {}: "
-            "{}/{} surviving creature(s) within {:.1f} yards. Combat does not block final arrival.",
-            movement.RuntimeGroupId,
-            movement.PathId,
-            node.NodeOrder,
-            objectiveArrivals,
-            living,
-            FinalObjectiveArrivalRadius);
-
-        movement.ArrivalGraceStartedAtMs = 0;
-        return true;
-    }
-
-    // Ideal intermediate-node case: every survivor reached its exact endpoint.
-    if (!isFinalNode && exactArrivals == living)
-    {
-        movement.ArrivalGraceStartedAtMs = 0;
-        return true;
-    }
-
-    // Intermediate travel nodes should not advance while survivors are fighting.
-    if (!isFinalNode && anyInCombat)
-    {
-        movement.ArrivalGraceStartedAtMs = 0;
         return false;
     }
 
-    // Final node has not yet reached the objective threshold.
-    if (isFinalNode)
-    {
-        movement.ArrivalGraceStartedAtMs = 0;
-        return false;
-    }
+    float const distance = creature->GetDistance(node.X, node.Y, node.Z);
 
-    if (formationArrivals < requiredArrivals)
+    if (distance <= ArrivalTolerance)
     {
-        movement.ArrivalGraceStartedAtMs = 0;
-        return false;
-    }
-
-    if (movement.ArrivalGraceStartedAtMs == 0)
-    {
-        movement.ArrivalGraceStartedAtMs = nowMs;
-
         LOG_DEBUG("server.loading",
-            "[LWI Movement] Runtime entity group #{} has {}/{} surviving creature(s) within {:.1f} yards "
-            "of their path {} node formation destinations; starting {} ms regroup grace.",
+            "[LWI Movement] Runtime entity group {} leader reached path {} node {}. "
+            "Advancing route without waiting for formation members.",
             movement.RuntimeGroupId,
-            formationArrivals,
-            living,
-            FormationArrivalTolerance,
             movement.PathId,
-            FormationArrivalGraceMs);
+            node.NodeOrder);
 
-        return false;
+        return true;
     }
 
-    if (nowMs - movement.ArrivalGraceStartedAtMs < FormationArrivalGraceMs)
-    {
-        return false;
-    }
-
-    LOG_DEBUG("server.loading",
-        "[LWI Movement] Runtime entity group #{} accepted formation arrival at path {} node with "
-        "{}/{} surviving creature(s) in position after regroup grace.",
-        movement.RuntimeGroupId,
-        movement.PathId,
-        formationArrivals,
-        living);
-
-    movement.ArrivalGraceStartedAtMs = 0;
-    return true;
+    return false;
 }
+
 
 void MovementController::AdvanceOrComplete(
     uint64 runtimeGroupId,
