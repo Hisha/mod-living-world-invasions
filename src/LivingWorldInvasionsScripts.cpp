@@ -25,6 +25,7 @@
 #include "MapMgr.h"
 #include "MotionMaster.h"
 #include "MoveSplineInit.h"
+#include "MoveSpline.h"
 
 #include <algorithm>
 #include <cctype>
@@ -59,6 +60,22 @@ bool routeMovementLabActive = false;
 ObjectGuid routeMovementLabCreatureGuid;
 uint16 routeMovementLabMapId = 0;
 RouteBreadcrumbState routeMovementLabBreadcrumbState;
+
+struct RouteBypassPlaybackState
+{
+    bool Active = false;
+    ObjectGuid CreatureGuid;
+    uint16 MapId = 0;
+    uint32 PathId = 0;
+    bool Reverse = false;
+    std::vector<lwi::MovementNodeDefinition> Nodes;
+    std::size_t NodeIndex = 0;
+    bool MovementStarted = false;
+    uint32 WaitRemainingMs = 0;
+    RouteBreadcrumbState BreadcrumbState;
+};
+
+RouteBypassPlaybackState routeBypassPlayback;
 
 constexpr uint32 RouteDebugMarkerLifetimeMs = 600000;
 constexpr uint32 RouteDebugSampleIntervalMs = 500;
@@ -130,6 +147,74 @@ Creature* SpawnRouteDebugMarker(WorldObject* summoner, float x, float y, float z
 
     marker->SetObjectScale(scale);
     return marker;
+}
+
+void ResetRouteBypassPlayback(bool stopCreature)
+{
+    if (routeBypassPlayback.Active && stopCreature)
+    {
+        if (Map* map = sMapMgr->FindMap(routeBypassPlayback.MapId, 0))
+        {
+            if (Creature* creature = map->GetCreature(routeBypassPlayback.CreatureGuid))
+            {
+                creature->StopMoving();
+                creature->GetMotionMaster()->Clear();
+            }
+        }
+    }
+
+    routeBypassPlayback = RouteBypassPlaybackState{};
+}
+
+bool LaunchRouteBypassNode(Creature* creature)
+{
+    if (!creature || !routeBypassPlayback.Active || routeBypassPlayback.NodeIndex >= routeBypassPlayback.Nodes.size())
+        return false;
+
+    lwi::MovementNodeDefinition const& node = routeBypassPlayback.Nodes[routeBypassPlayback.NodeIndex];
+    if (creature->GetMapId() != node.MapId)
+    {
+        LOG_ERROR("server.loading",
+            "[LWI Route Bypass] Path {} node order {} is on map {}, but creature {} is on map {}; playback stopped.",
+            routeBypassPlayback.PathId,
+            node.NodeOrder,
+            node.MapId,
+            creature->GetGUID().GetCounter(),
+            creature->GetMapId());
+        ResetRouteBypassPlayback(true);
+        return false;
+    }
+
+    float const startX = creature->GetPositionX();
+    float const startY = creature->GetPositionY();
+    float const startZ = creature->GetPositionZ();
+
+    creature->CombatStop(true);
+    creature->GetMotionMaster()->Clear();
+    creature->StopMoving();
+
+    std::vector<G3D::Vector3> points;
+    points.reserve(2);
+    points.emplace_back(startX, startY, startZ);
+    points.emplace_back(node.X, node.Y, node.Z);
+    creature->GetMotionMaster()->MoveSplinePath(&points, FORCED_MOVEMENT_NONE);
+
+    routeBypassPlayback.MovementStarted = true;
+
+    LOG_INFO("server.loading",
+        "[LWI Route Bypass] Path {} node order {} ({}/{}) launched standalone escort from=({:.3f}, {:.3f}, {:.3f}) to=({:.3f}, {:.3f}, {:.3f}); MovementController BYPASSED.",
+        routeBypassPlayback.PathId,
+        node.NodeOrder,
+        routeBypassPlayback.NodeIndex + 1,
+        routeBypassPlayback.Nodes.size(),
+        startX,
+        startY,
+        startZ,
+        node.X,
+        node.Y,
+        node.Z);
+
+    return true;
 }
 
 enum class LwiConfig
@@ -245,6 +330,79 @@ public:
     {
         sInvasionRuntimeMgr.Update(diff);
 
+        // Standalone path playback used to prove whether MovementController is
+        // responsible for route deviations. This intentionally does not create
+        // or update any LWI runtime entity group and does not call
+        // MovementController at any point.
+        if (routeBypassPlayback.Active)
+        {
+            Map* map = sMapMgr->FindMap(routeBypassPlayback.MapId, 0);
+            Creature* creature = map ? map->GetCreature(routeBypassPlayback.CreatureGuid) : nullptr;
+
+            if (!creature || !creature->IsAlive())
+            {
+                LOG_ERROR("server.loading",
+                    "[LWI Route Bypass] Playback creature is missing or dead; playback stopped.");
+                ResetRouteBypassPlayback(false);
+            }
+            else if (routeBypassPlayback.WaitRemainingMs > 0)
+            {
+                if (routeBypassPlayback.WaitRemainingMs > diff)
+                    routeBypassPlayback.WaitRemainingMs -= diff;
+                else
+                {
+                    routeBypassPlayback.WaitRemainingMs = 0;
+                    LaunchRouteBypassNode(creature);
+                }
+            }
+            else if (!routeBypassPlayback.MovementStarted)
+            {
+                LaunchRouteBypassNode(creature);
+            }
+            else if (creature->movespline && creature->movespline->Finalized())
+            {
+                lwi::MovementNodeDefinition const& completedNode =
+                    routeBypassPlayback.Nodes[routeBypassPlayback.NodeIndex];
+
+                float const dx = creature->GetPositionX() - completedNode.X;
+                float const dy = creature->GetPositionY() - completedNode.Y;
+                float const dz = creature->GetPositionZ() - completedNode.Z;
+                float const distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+
+                LOG_INFO("server.loading",
+                    "[LWI Route Bypass] Path {} node order {} spline FINALIZED at actual=({:.3f}, {:.3f}, {:.3f}) target=({:.3f}, {:.3f}, {:.3f}) distance={:.3f} yd.",
+                    routeBypassPlayback.PathId,
+                    completedNode.NodeOrder,
+                    creature->GetPositionX(),
+                    creature->GetPositionY(),
+                    creature->GetPositionZ(),
+                    completedNode.X,
+                    completedNode.Y,
+                    completedNode.Z,
+                    distance);
+
+                routeBypassPlayback.MovementStarted = false;
+                ++routeBypassPlayback.NodeIndex;
+
+                if (routeBypassPlayback.NodeIndex >= routeBypassPlayback.Nodes.size())
+                {
+                    LOG_INFO("server.loading",
+                        "[LWI Route Bypass] Path {} playback COMPLETE; {} node(s) traversed with MovementController bypassed.",
+                        routeBypassPlayback.PathId,
+                        routeBypassPlayback.Nodes.size());
+                    ResetRouteBypassPlayback(false);
+                }
+                else if (completedNode.WaitMs > 0)
+                {
+                    routeBypassPlayback.WaitRemainingMs = completedNode.WaitMs;
+                }
+                else
+                {
+                    LaunchRouteBypassNode(creature);
+                }
+            }
+        }
+
         if (routeDebugEnabled)
         {
             if (routeDebugSampleTimerMs > diff)
@@ -331,6 +489,41 @@ public:
                                 routeMovementLabBreadcrumbState.X = creature->GetPositionX();
                                 routeMovementLabBreadcrumbState.Y = creature->GetPositionY();
                                 routeMovementLabBreadcrumbState.Z = creature->GetPositionZ();
+                            }
+                        }
+                    }
+                }
+
+
+                if (routeBypassPlayback.Active)
+                {
+                    if (Map* map = sMapMgr->FindMap(routeBypassPlayback.MapId, 0))
+                    {
+                        if (Creature* creature = map->GetCreature(routeBypassPlayback.CreatureGuid))
+                        {
+                            RouteBreadcrumbState& state = routeBypassPlayback.BreadcrumbState;
+                            float const dx = creature->GetPositionX() - state.X;
+                            float const dy = creature->GetPositionY() - state.Y;
+                            float const dz = creature->GetPositionZ() - state.Z;
+                            float const distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+
+                            if (!state.HasPosition || distance >= RouteDebugBreadcrumbDistance)
+                            {
+                                if (Creature* breadcrumb = SpawnRouteDebugMarker(
+                                        creature,
+                                        creature->GetPositionX(),
+                                        creature->GetPositionY(),
+                                        creature->GetPositionZ(),
+                                        creature->GetOrientation(),
+                                        0.30f))
+                                {
+                                    routeBreadcrumbMarkerGuids.push_back(breadcrumb->GetGUID());
+                                }
+
+                                state.HasPosition = true;
+                                state.X = creature->GetPositionX();
+                                state.Y = creature->GetPositionY();
+                                state.Z = creature->GetPositionZ();
                             }
                         }
                     }
@@ -512,8 +705,40 @@ public:
             }
         };
 
+        static ChatCommandTable routeDebugBypassCommandTable =
+        {
+            {
+                "forward",
+                HandleRouteDebugBypassForwardCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "reverse",
+                HandleRouteDebugBypassReverseCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "stop",
+                HandleRouteDebugBypassStopCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "status",
+                HandleRouteDebugBypassStatusCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            }
+        };
+
         static ChatCommandTable routeDebugCommandTable =
         {
+            {
+                "bypass",
+                routeDebugBypassCommandTable
+            },
             {
                 "straight",
                 routeDebugStraightCommandTable
@@ -1633,6 +1858,129 @@ private:
         routeMovementLabCreatureGuid = ObjectGuid::Empty;
         routeMovementLabBreadcrumbState = RouteBreadcrumbState{};
         handler->SendSysMessage("LWI straight movement lab stopped.");
+        return true;
+    }
+
+    static bool StartRouteDebugBypassPlayback(ChatHandler* handler, uint32 pathId, bool reverse)
+    {
+        if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Debug))
+        {
+            handler->SendSysMessage("Living World Invasions debug commands are disabled. Set LWI.Debug = 1 first.");
+            return false;
+        }
+
+        if (routeBypassPlayback.Active)
+        {
+            handler->PSendSysMessage(
+                "A MovementController-bypass playback is already active on path {}. Use .lwi route debug bypass stop first.",
+                routeBypassPlayback.PathId);
+            return false;
+        }
+
+        Creature* creature = handler->getSelectedCreature();
+        if (!creature)
+        {
+            handler->SendSysMessage(
+                "Select a creature, then use .lwi route debug bypass forward <pathId> or reverse <pathId>.");
+            return false;
+        }
+
+        lwi::MovementPathDefinition const* path = sInvasionMgr.GetMovementPath(pathId);
+        auto const* loadedNodes = sInvasionMgr.GetMovementNodes(pathId);
+        if (!path || !loadedNodes || loadedNodes->empty())
+        {
+            handler->PSendSysMessage("Movement path {} does not exist, is disabled, or has no loaded nodes.", pathId);
+            return false;
+        }
+
+        std::vector<lwi::MovementNodeDefinition> traversal = *loadedNodes;
+        if (reverse)
+            std::reverse(traversal.begin(), traversal.end());
+
+        if (creature->GetMapId() != traversal.front().MapId)
+        {
+            handler->PSendSysMessage(
+                "Selected creature is on map {}, but the first traversal node for path {} is on map {}.",
+                creature->GetMapId(),
+                pathId,
+                traversal.front().MapId);
+            return false;
+        }
+
+        routeBypassPlayback.Active = true;
+        routeBypassPlayback.CreatureGuid = creature->GetGUID();
+        routeBypassPlayback.MapId = creature->GetMapId();
+        routeBypassPlayback.PathId = pathId;
+        routeBypassPlayback.Reverse = reverse;
+        routeBypassPlayback.Nodes = std::move(traversal);
+        routeBypassPlayback.NodeIndex = 0;
+        routeBypassPlayback.MovementStarted = false;
+        routeBypassPlayback.WaitRemainingMs = 0;
+        routeBypassPlayback.BreadcrumbState = RouteBreadcrumbState{};
+
+        LOG_INFO("server.loading",
+            "[LWI Route Bypass] START path {} ({}) direction={} creature={} with {} node(s). MovementController is NOT involved.",
+            pathId,
+            path->Name,
+            reverse ? "REVERSE" : "FORWARD",
+            creature->GetGUID().GetCounter(),
+            routeBypassPlayback.Nodes.size());
+
+        handler->PSendSysMessage(
+            "MovementController-bypass playback started for path {} ({}) {} with {} node(s). This test does not create a runtime group or call MovementController.",
+            pathId,
+            path->Name,
+            reverse ? "REVERSE" : "FORWARD",
+            routeBypassPlayback.Nodes.size());
+
+        return LaunchRouteBypassNode(creature);
+    }
+
+    static bool HandleRouteDebugBypassForwardCommand(ChatHandler* handler, uint32 pathId)
+    {
+        return StartRouteDebugBypassPlayback(handler, pathId, false);
+    }
+
+    static bool HandleRouteDebugBypassReverseCommand(ChatHandler* handler, uint32 pathId)
+    {
+        return StartRouteDebugBypassPlayback(handler, pathId, true);
+    }
+
+    static bool HandleRouteDebugBypassStopCommand(ChatHandler* handler)
+    {
+        if (!routeBypassPlayback.Active)
+        {
+            handler->SendSysMessage("No MovementController-bypass playback is active.");
+            return true;
+        }
+
+        uint32 const pathId = routeBypassPlayback.PathId;
+        ResetRouteBypassPlayback(true);
+        handler->PSendSysMessage("MovementController-bypass playback for path {} stopped.", pathId);
+        return true;
+    }
+
+    static bool HandleRouteDebugBypassStatusCommand(ChatHandler* handler)
+    {
+        if (!routeBypassPlayback.Active)
+        {
+            handler->SendSysMessage("MovementController-bypass playback: INACTIVE.");
+            return true;
+        }
+
+        uint16 nodeOrder = 0;
+        if (routeBypassPlayback.NodeIndex < routeBypassPlayback.Nodes.size())
+            nodeOrder = routeBypassPlayback.Nodes[routeBypassPlayback.NodeIndex].NodeOrder;
+
+        handler->PSendSysMessage(
+            "MovementController-bypass playback: ACTIVE path={} direction={} node={}/{} (order {}) movementStarted={} waitMs={}.",
+            routeBypassPlayback.PathId,
+            routeBypassPlayback.Reverse ? "REVERSE" : "FORWARD",
+            routeBypassPlayback.NodeIndex + 1,
+            routeBypassPlayback.Nodes.size(),
+            nodeOrder,
+            routeBypassPlayback.MovementStarted ? "yes" : "no",
+            routeBypassPlayback.WaitRemainingMs);
         return true;
     }
 
