@@ -20,6 +20,7 @@
 #include <cmath>
 #include <queue>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace lwi
@@ -32,6 +33,8 @@ constexpr float FormationArrivalTolerance = 10.0f;
 constexpr uint32 FormationArrivalPercent = 75;
 constexpr uint32 FormationArrivalGraceMs = 3000;
 constexpr float FinalObjectiveArrivalRadius = 20.0f;
+constexpr float RouteRejoinCatchupDistance = 12.0f;
+constexpr float RouteRejoinFollowDistance = 4.0f;
 constexpr float Pi = 3.14159265358979323846f;
 
 struct FormationOffset
@@ -950,6 +953,22 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
         ? sInvasionMgr.GetMovementProfile(profileId)
         : nullptr;
 
+    // Route followers can be in combat or actively catching the route leader
+    // when the leader advances to the next dense 5-yard node. Preserve those
+    // states across the destination rebuild so a node advance never yanks a
+    // fighting/rejoining follower toward a new waypoint.
+    std::unordered_map<uint64, std::pair<bool, bool>> previousRouteStates;
+    if (movement.RouteMovement)
+    {
+        previousRouteStates.reserve(movement.Destinations.size());
+        for (RuntimeMovementDestination const& previous : movement.Destinations)
+        {
+            previousRouteStates.emplace(
+                previous.Guid.GetRawValue(),
+                std::make_pair(previous.WasInCombat, previous.RejoiningLeader));
+        }
+    }
+
     uint32 moved = 0;
     std::unordered_map<uint8, uint32> roleSlots;
     uint32 marchSlot = 0;
@@ -989,15 +1008,52 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
         }
 
         uint32 const roleSlot = roleSlots[entity.TacticalRole]++;
+        uint32 const thisMarchSlot = marchSlot++;
 
         float targetX = node.X;
         float targetY = node.Y;
         float targetZ = node.Z;
 
         if (movement.RouteMovement)
-            BuildMarchDestination(node, movement.Direction, marchSlot++, targetX, targetY, targetZ);
+            BuildMarchDestination(node, movement.Direction, thisMarchSlot, targetX, targetY, targetZ);
         else
             BuildFormationDestination(node, movement.Direction, entity.TacticalRole, roleSlot, targetX, targetY, targetZ);
+
+        RuntimeMovementDestination destination;
+        destination.Guid = entity.Guid;
+        destination.MapId = entity.MapId;
+        destination.X = targetX;
+        destination.Y = targetY;
+        destination.Z = targetZ;
+
+        if (movement.RouteMovement)
+        {
+            auto const stateItr = previousRouteStates.find(entity.Guid.GetRawValue());
+            if (stateItr != previousRouteStates.end())
+            {
+                destination.WasInCombat = stateItr->second.first;
+                destination.RejoiningLeader = stateItr->second.second;
+            }
+
+            // Do not overwrite chase/combat movement, and do not replace a
+            // follower's MoveFollow catch-up movement every time the leader
+            // advances another 5-yard route node.
+            if (creature->IsInCombat() || creature->GetVictim())
+            {
+                destination.WasInCombat = true;
+                destination.RejoiningLeader = false;
+                movement.Destinations.push_back(destination);
+                ++moved;
+                continue;
+            }
+
+            if (destination.RejoiningLeader)
+            {
+                movement.Destinations.push_back(destination);
+                ++moved;
+                continue;
+            }
+        }
 
         PathGenerator path(creature);
 
@@ -1042,10 +1098,6 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
         }
 
         G3D::Vector3 const& actualEnd = pathPoints.back();
-
-        RuntimeMovementDestination destination;
-        destination.Guid = entity.Guid;
-        destination.MapId = entity.MapId;
         destination.X = actualEnd.x;
         destination.Y = actualEnd.y;
         destination.Z = actualEnd.z;
@@ -1096,6 +1148,30 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
 
     MovementNodeDefinition const& node = (*nodes)[movement.NodeIndex];
 
+    // Route travel has one navigation owner: the first surviving destination.
+    // Followers that leave combat do not resume toward the stale/current route
+    // waypoint. They follow the moving leader until they are close enough to
+    // be folded back into the compact MARCH formation on a later node.
+    Creature* routeLeader = nullptr;
+    ObjectGuid routeLeaderGuid;
+    if (movement.RouteMovement)
+    {
+        for (RuntimeMovementDestination const& candidate : movement.Destinations)
+        {
+            Map* map = sMapMgr->FindMap(candidate.MapId, 0);
+            if (!map)
+                continue;
+
+            Creature* creature = map->GetCreature(candidate.Guid);
+            if (!creature || !creature->IsAlive())
+                continue;
+
+            routeLeader = creature;
+            routeLeaderGuid = candidate.Guid;
+            break;
+        }
+    }
+
     for (RuntimeMovementDestination& destination : movement.Destinations)
     {
         Map* map = sMapMgr->FindMap(destination.MapId, 0);
@@ -1112,21 +1188,83 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
 
         // Combat/assault owns this creature's movement while it is actively in
         // combat OR still has an assigned victim. Do not replace AI/chase
-        // movement with the invasion route until both states are clear.
+        // movement with route/follow movement until both states are clear.
         if (creature->IsInCombat() || creature->GetVictim())
         {
+            destination.WasInCombat = true;
             continue;
         }
 
+        if (movement.RouteMovement && routeLeader && destination.Guid != routeLeaderGuid)
+        {
+            // If the route leader is still fighting, there is no moving column
+            // to catch yet. Keep the follower latched as interrupted and retry
+            // once the leader is free to resume the authored road.
+            if (routeLeader->IsInCombat() || routeLeader->GetVictim())
+            {
+                continue;
+            }
+
+            // A follower that is already catching up keeps its MoveFollow
+            // generator instead of receiving a fresh MMAP command every node.
+            if (destination.RejoiningLeader)
+            {
+                float const leaderDistance = creature->GetDistance(routeLeader);
+                if (leaderDistance <= RouteRejoinCatchupDistance)
+                {
+                    destination.RejoiningLeader = false;
+                    destination.WasInCombat = false;
+                    LOG_DEBUG("server.loading",
+                        "[LWI Movement] Runtime entity group #{} creature {} rejoined route leader "
+                        "within {:.2f} yd; normal MARCH placement will resume on the next node.",
+                        movement.RuntimeGroupId,
+                        creature->GetEntry(),
+                        leaderDistance);
+                }
+                continue;
+            }
+
+            if (!destination.WasInCombat)
+            {
+                continue;
+            }
+
+            destination.WasInCombat = false;
+            destination.RejoiningLeader = true;
+
+            // Use AzerothCore's follow movement for catch-up. This follows the
+            // leader's continually changing, already-authored road position
+            // instead of drawing a one-shot MMAP chord to a waypoint that may
+            // now be tens or hundreds of yards away.
+            creature->GetMotionMaster()->MoveFollow(
+                routeLeader,
+                RouteRejoinFollowDistance,
+                Pi,
+                MOTION_SLOT_ACTIVE,
+                true,
+                true);
+
+            LOG_INFO("server.loading",
+                "[LWI Movement] Runtime entity group #{} creature {} left combat and is now "
+                "rejoining route leader {} with MoveFollow instead of resuming stale path {} node {}.",
+                movement.RuntimeGroupId,
+                creature->GetEntry(),
+                routeLeader->GetEntry(),
+                movement.PathId,
+                node.NodeOrder);
+            continue;
+        }
+
+        // The route leader must resume the current authored route node because
+        // route progression intentionally pauses while the leader is in combat.
+        // Non-route movement retains the original exact-destination resume.
         if (creature->GetDistance(destination.X, destination.Y, destination.Z) <= ArrivalTolerance)
         {
             destination.WasInCombat = false;
+            destination.RejoiningLeader = false;
             continue;
         }
 
-        // Only resume a creature that this controller actually observed in combat.
-        // This prevents us from continually replacing normal movement while the
-        // original MMAP spline is still active.
         if (!destination.WasInCombat)
         {
             continue;
@@ -1144,6 +1282,12 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
             destination.WasInCombat,
             creature->GetDistance(destination.X, destination.Y, destination.Z));
 
+        // Latch the transition before calculating a path. A failed path must
+        // not cause the same post-combat resume command to be emitted every
+        // 250 ms forever.
+        destination.WasInCombat = false;
+        destination.RejoiningLeader = false;
+
         PathGenerator path(creature);
         bool const pathFound = path.CalculatePath(
             destination.X,
@@ -1160,7 +1304,6 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
                 creature->GetEntry(),
                 movement.PathId,
                 node.NodeOrder);
-            destination.WasInCombat = false;
             continue;
         }
 
@@ -1174,7 +1317,6 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
                 creature->GetEntry(),
                 movement.PathId,
                 node.NodeOrder);
-            destination.WasInCombat = false;
             continue;
         }
 
@@ -1182,7 +1324,6 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
         destination.X = actualEnd.x;
         destination.Y = actualEnd.y;
         destination.Z = actualEnd.z;
-        destination.WasInCombat = false;
 
         creature->GetMotionMaster()->MoveSplinePath(
             &pathPoints,
