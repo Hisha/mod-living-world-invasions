@@ -1173,16 +1173,26 @@ bool MovementController::HasGroupReachedCurrentNode(
         return false;
     }
 
-    float const distance = creature->GetDistance(node.X, node.Y, node.Z);
+    // The leader was sent to its role/slot-adjusted formation destination, not
+    // necessarily the raw movement-node center.  Arrival must therefore be
+    // measured against the exact destination we issued.  Comparing against
+    // node.X/Y/Z can deadlock a moving formation after combat (or at any node)
+    // when the leader's formation offset is larger than ArrivalTolerance.
+    float const distance = creature->GetDistance(
+        leader.X,
+        leader.Y,
+        leader.Z);
 
     if (distance <= ArrivalTolerance)
     {
         LOG_DEBUG("server.loading",
-            "[LWI Movement] Runtime entity group {} leader reached path {} node {}. "
-            "Advancing route without waiting for formation members.",
+            "[LWI Movement] Runtime entity group {} leader reached path {} node {} "
+            "formation destination (distance {:.2f}). Advancing route without "
+            "waiting for formation members.",
             movement.RuntimeGroupId,
             movement.PathId,
-            node.NodeOrder);
+            node.NodeOrder,
+            distance);
 
         return true;
     }
