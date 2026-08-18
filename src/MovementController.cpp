@@ -798,7 +798,6 @@ void MovementController::Update(uint32 diff)
     _updateTimerMs = MovementUpdateIntervalMs;
     uint64 const nowMs = static_cast<uint64>(getMSTime());
     std::vector<uint64> completed;
-    std::vector<uint64> defeatedRuntimes;
 
     for (auto& [runtimeGroupId, movement] : _activeMovements)
     {
@@ -838,8 +837,11 @@ void MovementController::Update(uint32 diff)
                 runtimeGroupId,
                 movement.PathId);
 
+            // A single runtime entity group being wiped out does not mean the
+            // invasion itself has failed. MovementController only owns movement
+            // lifecycle; invasion victory/defeat conditions are handled by the
+            // configured GroupDefeatWatcher (including require-all semantics).
             completed.push_back(runtimeGroupId);
-            defeatedRuntimes.push_back(movement.RuntimeId);
             continue;
         }
 
@@ -930,15 +932,6 @@ void MovementController::Update(uint32 diff)
         _triggeredRouteActionIdsByGroup.erase(runtimeGroupId);
     }
 
-    std::sort(defeatedRuntimes.begin(), defeatedRuntimes.end());
-    defeatedRuntimes.erase(
-        std::unique(defeatedRuntimes.begin(), defeatedRuntimes.end()),
-        defeatedRuntimes.end());
-
-    for (uint64 runtimeId : defeatedRuntimes)
-    {
-        sInvasionRuntimeMgr.FailRuntime(runtimeId, "active movement force defeated");
-    }
 }
 
 bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
