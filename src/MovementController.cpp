@@ -790,19 +790,28 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
         float targetZ = node.Z;
         BuildFormationDestination(node, movement.Direction, entity.TacticalRole, roleSlot, targetX, targetY, targetZ);
 
-        Movement::PointsArray pathPoints;
+        RuntimeMovementDestination destination;
+        destination.Guid = entity.Guid;
+        destination.MapId = entity.MapId;
 
         if (movement.DirectPathing)
         {
             // Shared route segments are explicitly authored point-by-point in game.
-            // Preserve that authored road geometry by feeding MoveSplinePath only
-            // the creature's current position and the recorded formation target,
-            // bypassing PathGenerator/MMAP route selection entirely.
-            pathPoints.emplace_back(
-                creature->GetPositionX(),
-                creature->GetPositionY(),
-                creature->GetPositionZ());
-            pathPoints.emplace_back(targetX, targetY, targetZ);
+            // MovePoint(..., generatePath = false) tells AzerothCore to move directly
+            // to the recorded formation destination without invoking PathGenerator/MMAP.
+            destination.X = targetX;
+            destination.Y = targetY;
+            destination.Z = targetZ;
+
+            creature->GetMotionMaster()->MovePoint(
+                node.NodeOrder,
+                targetX,
+                targetY,
+                targetZ,
+                FORCED_MOVEMENT_NONE,
+                0.0f,
+                node.Orientation,
+                false);
         }
         else
         {
@@ -832,7 +841,7 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
                 continue;
             }
 
-            pathPoints = path.GetPath();
+            Movement::PointsArray pathPoints = path.GetPath();
             if (pathPoints.size() < 2)
             {
                 LOG_ERROR("server.loading",
@@ -846,21 +855,18 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
                     node.NodeOrder);
                 continue;
             }
+
+            G3D::Vector3 const& actualEnd = pathPoints.back();
+            destination.X = actualEnd.x;
+            destination.Y = actualEnd.y;
+            destination.Z = actualEnd.z;
+
+            creature->GetMotionMaster()->MoveSplinePath(
+                &pathPoints,
+                FORCED_MOVEMENT_NONE);
         }
 
-        G3D::Vector3 const& actualEnd = pathPoints.back();
-
-        RuntimeMovementDestination destination;
-        destination.Guid = entity.Guid;
-        destination.MapId = entity.MapId;
-        destination.X = actualEnd.x;
-        destination.Y = actualEnd.y;
-        destination.Z = actualEnd.z;
         movement.Destinations.push_back(destination);
-
-        creature->GetMotionMaster()->MoveSplinePath(
-            &pathPoints,
-            FORCED_MOVEMENT_NONE);
 
         ++moved;
     }
@@ -948,15 +954,17 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
             destination.WasInCombat,
             creature->GetDistance(destination.X, destination.Y, destination.Z));
 
-        Movement::PointsArray pathPoints;
-
         if (movement.DirectPathing)
         {
-            pathPoints.emplace_back(
-                creature->GetPositionX(),
-                creature->GetPositionY(),
-                creature->GetPositionZ());
-            pathPoints.emplace_back(destination.X, destination.Y, destination.Z);
+            creature->GetMotionMaster()->MovePoint(
+                node.NodeOrder,
+                destination.X,
+                destination.Y,
+                destination.Z,
+                FORCED_MOVEMENT_NONE,
+                0.0f,
+                node.Orientation,
+                false);
         }
         else
         {
@@ -980,7 +988,7 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
                 continue;
             }
 
-            pathPoints = path.GetPath();
+            Movement::PointsArray pathPoints = path.GetPath();
             if (pathPoints.size() < 2)
             {
                 LOG_ERROR("server.loading",
@@ -998,12 +1006,12 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
             destination.X = actualEnd.x;
             destination.Y = actualEnd.y;
             destination.Z = actualEnd.z;
+
+            creature->GetMotionMaster()->MoveSplinePath(
+                &pathPoints,
+                FORCED_MOVEMENT_NONE);
         }
         destination.WasInCombat = false;
-
-        creature->GetMotionMaster()->MoveSplinePath(
-            &pathPoints,
-            FORCED_MOVEMENT_NONE);
 
         LOG_INFO("server.loading",
             "[LWI Movement] Runtime entity group #{} creature {} resumed {} movement toward "
