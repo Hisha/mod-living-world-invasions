@@ -23,6 +23,8 @@
 #include "TemporarySummon.h"
 #include "Map.h"
 #include "MapMgr.h"
+#include "MotionMaster.h"
+#include "MoveSplineInit.h"
 
 #include <algorithm>
 #include <cctype>
@@ -52,6 +54,11 @@ struct RouteBreadcrumbState
 };
 
 std::unordered_map<uint64, RouteBreadcrumbState> routeBreadcrumbStates;
+
+bool routeMovementLabActive = false;
+ObjectGuid routeMovementLabCreatureGuid;
+uint16 routeMovementLabMapId = 0;
+RouteBreadcrumbState routeMovementLabBreadcrumbState;
 
 constexpr uint32 RouteDebugMarkerLifetimeMs = 600000;
 constexpr uint32 RouteDebugSampleIntervalMs = 500;
@@ -295,6 +302,39 @@ public:
                         break;
                     }
                 }
+
+                if (routeMovementLabActive)
+                {
+                    if (Map* map = sMapMgr->FindMap(routeMovementLabMapId, 0))
+                    {
+                        if (Creature* creature = map->GetCreature(routeMovementLabCreatureGuid))
+                        {
+                            float const dx = creature->GetPositionX() - routeMovementLabBreadcrumbState.X;
+                            float const dy = creature->GetPositionY() - routeMovementLabBreadcrumbState.Y;
+                            float const dz = creature->GetPositionZ() - routeMovementLabBreadcrumbState.Z;
+                            float const distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+
+                            if (!routeMovementLabBreadcrumbState.HasPosition || distance >= RouteDebugBreadcrumbDistance)
+                            {
+                                if (Creature* breadcrumb = SpawnRouteDebugMarker(
+                                        creature,
+                                        creature->GetPositionX(),
+                                        creature->GetPositionY(),
+                                        creature->GetPositionZ(),
+                                        creature->GetOrientation(),
+                                        0.25f))
+                                {
+                                    routeBreadcrumbMarkerGuids.push_back(breadcrumb->GetGUID());
+                                }
+
+                                routeMovementLabBreadcrumbState.HasPosition = true;
+                                routeMovementLabBreadcrumbState.X = creature->GetPositionX();
+                                routeMovementLabBreadcrumbState.Y = creature->GetPositionY();
+                                routeMovementLabBreadcrumbState.Z = creature->GetPositionZ();
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -438,8 +478,46 @@ public:
             }
         };
 
+        static ChatCommandTable routeDebugStraightCommandTable =
+        {
+            {
+                "moveto",
+                HandleRouteDebugStraightMoveToCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "path",
+                HandleRouteDebugStraightPathCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "point",
+                HandleRouteDebugStraightPointCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "escort",
+                HandleRouteDebugStraightEscortCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "stop",
+                HandleRouteDebugStraightStopCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            }
+        };
+
         static ChatCommandTable routeDebugCommandTable =
         {
+            {
+                "straight",
+                routeDebugStraightCommandTable
+            },
             {
                 "on",
                 HandleRouteDebugOnCommand,
@@ -1409,6 +1487,155 @@ private:
         return true;
     }
 
+    static bool StartRouteDebugStraightLab(ChatHandler* handler, float distance, std::string const& mode)
+    {
+        if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Debug))
+        {
+            handler->SendSysMessage("Living World Invasions debug commands are disabled. Set LWI.Debug = 1 first.");
+            return false;
+        }
+
+        if (distance < 1.0f || distance > 200.0f)
+        {
+            handler->SendSysMessage("Straight movement test distance must be between 1 and 200 yards.");
+            return false;
+        }
+
+        Player* player = GetCommandPlayer(handler);
+        Creature* creature = handler->getSelectedCreature();
+        if (!player || !creature)
+        {
+            handler->SendSysMessage("Select a creature, face the direction it should travel, then use .lwi route debug straight <mode> <yards>.");
+            return false;
+        }
+
+        if (creature->GetMapId() != player->GetMapId())
+        {
+            handler->SendSysMessage("The selected creature must be on your current map.");
+            return false;
+        }
+
+        float const facing = player->GetOrientation();
+        float const startX = creature->GetPositionX();
+        float const startY = creature->GetPositionY();
+        float const startZ = creature->GetPositionZ();
+        float const targetX = startX + std::cos(facing) * distance;
+        float const targetY = startY + std::sin(facing) * distance;
+        float const targetZ = creature->GetMap()->GetHeight(creature->GetPhaseMask(), targetX, targetY, startZ + 5.0f, true);
+        float const finalZ = targetZ > -50000.0f ? targetZ : startZ;
+
+        creature->CombatStop(true);
+        creature->GetMotionMaster()->Clear();
+        creature->StopMoving();
+
+        routeMovementLabActive = true;
+        routeMovementLabCreatureGuid = creature->GetGUID();
+        routeMovementLabMapId = static_cast<uint16>(creature->GetMapId());
+        routeMovementLabBreadcrumbState = RouteBreadcrumbState{};
+
+        if (Creature* targetMarker = SpawnRouteDebugMarker(creature, targetX, targetY, finalZ, facing, 0.55f))
+            routeBreadcrumbMarkerGuids.push_back(targetMarker->GetGUID());
+
+        if (mode == "moveto")
+        {
+            Movement::MoveSplineInit init(creature);
+            init.MoveTo(targetX, targetY, finalZ);
+            init.Launch();
+        }
+        else if (mode == "path")
+        {
+            std::vector<G3D::Vector3> points;
+            points.emplace_back(startX, startY, startZ);
+            points.emplace_back(targetX, targetY, finalZ);
+
+            Movement::MoveSplineInit init(creature);
+            init.MovebyPath(points);
+            init.Launch();
+        }
+        else if (mode == "point")
+        {
+            creature->GetMotionMaster()->MovePoint(
+                0x00FFF001,
+                targetX,
+                targetY,
+                finalZ,
+                FORCED_MOVEMENT_NONE,
+                0.0f,
+                facing,
+                false);
+        }
+        else if (mode == "escort")
+        {
+            std::vector<G3D::Vector3> points;
+            points.emplace_back(startX, startY, startZ);
+            points.emplace_back(targetX, targetY, finalZ);
+            creature->GetMotionMaster()->MoveSplinePath(&points, FORCED_MOVEMENT_NONE);
+        }
+        else
+        {
+            handler->SendSysMessage("Unknown straight movement test mode.");
+            routeMovementLabActive = false;
+            return false;
+        }
+
+        LOG_INFO("server.loading",
+            "[LWI Route Lab] mode={} creature={} start=({:.3f}, {:.3f}, {:.3f}) target=({:.3f}, {:.3f}, {:.3f}) playerFacing={:.6f} distance={:.2f}.",
+            mode,
+            creature->GetEntry(),
+            startX, startY, startZ,
+            targetX, targetY, finalZ,
+            facing,
+            distance);
+
+        handler->PSendSysMessage(
+            "LWI straight movement lab started: mode={}, distance={:.1f} yd, creature entry {}. Large blue marker = requested endpoint; small markers = actual movement. Face the same direction and repeat with another mode for comparison.",
+            mode,
+            distance,
+            creature->GetEntry());
+        return true;
+    }
+
+    static bool HandleRouteDebugStraightMoveToCommand(ChatHandler* handler, float distance)
+    {
+        return StartRouteDebugStraightLab(handler, distance, "moveto");
+    }
+
+    static bool HandleRouteDebugStraightPathCommand(ChatHandler* handler, float distance)
+    {
+        return StartRouteDebugStraightLab(handler, distance, "path");
+    }
+
+    static bool HandleRouteDebugStraightPointCommand(ChatHandler* handler, float distance)
+    {
+        return StartRouteDebugStraightLab(handler, distance, "point");
+    }
+
+    static bool HandleRouteDebugStraightEscortCommand(ChatHandler* handler, float distance)
+    {
+        return StartRouteDebugStraightLab(handler, distance, "escort");
+    }
+
+    static bool HandleRouteDebugStraightStopCommand(ChatHandler* handler)
+    {
+        if (routeMovementLabActive)
+        {
+            if (Map* map = sMapMgr->FindMap(routeMovementLabMapId, 0))
+            {
+                if (Creature* creature = map->GetCreature(routeMovementLabCreatureGuid))
+                {
+                    creature->StopMoving();
+                    creature->GetMotionMaster()->Clear();
+                }
+            }
+        }
+
+        routeMovementLabActive = false;
+        routeMovementLabCreatureGuid = ObjectGuid::Empty;
+        routeMovementLabBreadcrumbState = RouteBreadcrumbState{};
+        handler->SendSysMessage("LWI straight movement lab stopped.");
+        return true;
+    }
+
     static bool HandleRouteDebugOnCommand(ChatHandler* handler)
     {
         if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Debug))
@@ -1429,6 +1656,7 @@ private:
     {
         routeDebugEnabled = false;
         routeBreadcrumbStates.clear();
+        routeMovementLabBreadcrumbState = RouteBreadcrumbState{};
         sMovementController.SetRouteDebugEnabled(false);
         handler->SendSysMessage("LWI route debug disabled. Existing breadcrumb markers remain until .lwi route debug clear or their 10-minute timeout.");
         return true;
@@ -1439,6 +1667,7 @@ private:
         Player* player = GetCommandPlayer(handler);
         ClearMarkerList(player, routeBreadcrumbMarkerGuids);
         routeBreadcrumbStates.clear();
+        routeMovementLabBreadcrumbState = RouteBreadcrumbState{};
         handler->SendSysMessage("LWI route breadcrumb markers cleared.");
         return true;
     }
