@@ -77,6 +77,14 @@ struct RouteBypassPlaybackState
 
 RouteBypassPlaybackState routeBypassPlayback;
 
+bool routeNativeWaypointTestActive = false;
+ObjectGuid routeNativeWaypointCreatureGuid;
+uint16 routeNativeWaypointMapId = 0;
+uint32 routeNativeWaypointSourcePathId = 0;
+uint32 routeNativeWaypointTempPathId = 0;
+RouteBreadcrumbState routeNativeWaypointBreadcrumbState;
+
+constexpr uint32 RouteNativeWaypointTempBase = 4000000000u;
 constexpr uint32 RouteDebugMarkerLifetimeMs = 600000;
 constexpr uint32 RouteDebugSampleIntervalMs = 500;
 constexpr float RouteDebugBreadcrumbDistance = 4.0f;
@@ -528,6 +536,38 @@ public:
                         }
                     }
                 }
+                if (routeNativeWaypointTestActive)
+                {
+                    if (Map* map = sMapMgr->FindMap(routeNativeWaypointMapId, 0))
+                    {
+                        if (Creature* creature = map->GetCreature(routeNativeWaypointCreatureGuid))
+                        {
+                            float const dx = creature->GetPositionX() - routeNativeWaypointBreadcrumbState.X;
+                            float const dy = creature->GetPositionY() - routeNativeWaypointBreadcrumbState.Y;
+                            float const dz = creature->GetPositionZ() - routeNativeWaypointBreadcrumbState.Z;
+                            float const distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+
+                            if (!routeNativeWaypointBreadcrumbState.HasPosition || distance >= RouteDebugBreadcrumbDistance)
+                            {
+                                if (Creature* breadcrumb = SpawnRouteDebugMarker(
+                                        creature,
+                                        creature->GetPositionX(),
+                                        creature->GetPositionY(),
+                                        creature->GetPositionZ(),
+                                        creature->GetOrientation(),
+                                        0.25f))
+                                {
+                                    routeBreadcrumbMarkerGuids.push_back(breadcrumb->GetGUID());
+                                }
+
+                                routeNativeWaypointBreadcrumbState.HasPosition = true;
+                                routeNativeWaypointBreadcrumbState.X = creature->GetPositionX();
+                                routeNativeWaypointBreadcrumbState.Y = creature->GetPositionY();
+                                routeNativeWaypointBreadcrumbState.Z = creature->GetPositionZ();
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -733,8 +773,46 @@ public:
             }
         };
 
+        static ChatCommandTable routeDebugNativeCommandTable =
+        {
+            {
+                "forward",
+                HandleRouteDebugNativeForwardCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "reverse",
+                HandleRouteDebugNativeReverseCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "stop",
+                HandleRouteDebugNativeStopCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "status",
+                HandleRouteDebugNativeStatusCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "clear",
+                HandleRouteDebugNativeClearCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            }
+        };
+
         static ChatCommandTable routeDebugCommandTable =
         {
+            {
+                "native",
+                routeDebugNativeCommandTable
+            },
             {
                 "bypass",
                 routeDebugBypassCommandTable
@@ -1934,6 +2012,206 @@ private:
             routeBypassPlayback.Nodes.size());
 
         return LaunchRouteBypassNode(creature);
+    }
+
+    static uint32 BuildNativeWaypointTempPathId(uint32 sourcePathId)
+    {
+        return RouteNativeWaypointTempBase + (sourcePathId % 200000000u);
+    }
+
+    static void StopNativeWaypointTestCreature()
+    {
+        if (!routeNativeWaypointTestActive)
+            return;
+
+        if (Map* map = sMapMgr->FindMap(routeNativeWaypointMapId, 0))
+        {
+            if (Creature* creature = map->GetCreature(routeNativeWaypointCreatureGuid))
+            {
+                creature->CombatStop(true);
+                creature->StopMoving();
+                creature->GetMotionMaster()->Initialize();
+            }
+        }
+
+        routeNativeWaypointTestActive = false;
+        routeNativeWaypointCreatureGuid = ObjectGuid::Empty;
+        routeNativeWaypointMapId = 0;
+        routeNativeWaypointSourcePathId = 0;
+        routeNativeWaypointBreadcrumbState = RouteBreadcrumbState{};
+    }
+
+    static bool StartRouteDebugNativeWaypointTest(ChatHandler* handler, uint32 pathId, bool reverse)
+    {
+        if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Debug))
+        {
+            handler->SendSysMessage("Living World Invasions debug commands are disabled. Set LWI.Debug = 1 first.");
+            return false;
+        }
+
+        Creature* creature = handler->getSelectedCreature();
+        if (!creature)
+        {
+            handler->SendSysMessage("Select a creature, then use .lwi route debug native forward <pathId> or reverse <pathId>.");
+            return false;
+        }
+
+        lwi::MovementPathDefinition const* path = sInvasionMgr.GetMovementPath(pathId);
+        std::vector<lwi::MovementNodeDefinition> const* nodes = sInvasionMgr.GetMovementNodes(pathId);
+        if (!path || !nodes || nodes->size() < 2)
+        {
+            handler->PSendSysMessage("LWI movement path {} does not exist, is disabled, or has fewer than two loaded nodes.", pathId);
+            return false;
+        }
+
+        std::vector<lwi::MovementNodeDefinition const*> orderedNodes;
+        orderedNodes.reserve(nodes->size());
+        for (lwi::MovementNodeDefinition const& node : *nodes)
+        {
+            if (!node.Enabled)
+                continue;
+
+            if (node.MapId != creature->GetMapId())
+            {
+                handler->PSendSysMessage(
+                    "LWI movement path {} contains enabled node {} on map {}, but the selected creature is on map {}. Native waypoint test aborted.",
+                    pathId,
+                    node.Id,
+                    node.MapId,
+                    creature->GetMapId());
+                return false;
+            }
+
+            orderedNodes.push_back(&node);
+        }
+
+        if (orderedNodes.size() < 2)
+        {
+            handler->PSendSysMessage("LWI movement path {} has fewer than two enabled nodes.", pathId);
+            return false;
+        }
+
+        if (reverse)
+            std::reverse(orderedNodes.begin(), orderedNodes.end());
+
+        StopNativeWaypointTestCreature();
+
+        uint32 const tempPathId = BuildNativeWaypointTempPathId(pathId);
+        WorldDatabase.DirectExecute(("DELETE FROM `waypoint_data` WHERE `id` = " + std::to_string(tempPathId)).c_str());
+
+        uint32 point = 1;
+        for (lwi::MovementNodeDefinition const* node : orderedNodes)
+        {
+            std::string const sql =
+                "INSERT INTO `waypoint_data` "
+                "(`id`, `point`, `position_x`, `position_y`, `position_z`, `orientation`, `velocity`, `delay`, `smoothTransition`, `move_type`, `action`, `action_chance`, `wpguid`) VALUES (" +
+                std::to_string(tempPathId) + ", " +
+                std::to_string(point++) + ", " +
+                std::to_string(node->X) + ", " +
+                std::to_string(node->Y) + ", " +
+                std::to_string(node->Z) + ", " +
+                std::to_string(node->Orientation) + ", 0, " +
+                std::to_string(node->WaitMs) + ", 0, 1, 0, 100, 0)";
+            WorldDatabase.DirectExecute(sql.c_str());
+        }
+
+        sWaypointMgr->ReloadPath(tempPathId);
+
+        creature->CombatStop(true);
+        creature->StopMoving();
+        creature->GetMotionMaster()->Initialize();
+        creature->GetMotionMaster()->MoveWaypoint(tempPathId, false, PathSource::WAYPOINT_MGR);
+
+        routeNativeWaypointTestActive = true;
+        routeNativeWaypointCreatureGuid = creature->GetGUID();
+        routeNativeWaypointMapId = static_cast<uint16>(creature->GetMapId());
+        routeNativeWaypointSourcePathId = pathId;
+        routeNativeWaypointTempPathId = tempPathId;
+        routeNativeWaypointBreadcrumbState = RouteBreadcrumbState{};
+
+        LOG_INFO(
+            "server.loading",
+            "[LWI Route Native] START sourcePath={} ({}) tempWaypointPath={} direction={} creature={} nodes={}. AzerothCore WaypointMovementGenerator is executing the mirrored path directly; MovementController is NOT involved.",
+            pathId,
+            path->Name,
+            tempPathId,
+            reverse ? "REVERSE" : "FORWARD",
+            creature->GetEntry(),
+            orderedNodes.size());
+
+        handler->PSendSysMessage(
+            "Native AzerothCore waypoint test started for LWI path {} ({}) {} using temporary waypoint_data path {} with {} nodes. Use .lwi route debug native stop when finished.",
+            pathId,
+            path->Name,
+            reverse ? "REVERSE" : "FORWARD",
+            tempPathId,
+            orderedNodes.size());
+        return true;
+    }
+
+    static bool HandleRouteDebugNativeForwardCommand(ChatHandler* handler, uint32 pathId)
+    {
+        return StartRouteDebugNativeWaypointTest(handler, pathId, false);
+    }
+
+    static bool HandleRouteDebugNativeReverseCommand(ChatHandler* handler, uint32 pathId)
+    {
+        return StartRouteDebugNativeWaypointTest(handler, pathId, true);
+    }
+
+    static bool HandleRouteDebugNativeStopCommand(ChatHandler* handler)
+    {
+        if (!routeNativeWaypointTestActive)
+        {
+            handler->SendSysMessage("No native waypoint route test is active.");
+            return true;
+        }
+
+        uint32 const sourcePathId = routeNativeWaypointSourcePathId;
+        uint32 const tempPathId = routeNativeWaypointTempPathId;
+        StopNativeWaypointTestCreature();
+
+        handler->PSendSysMessage(
+            "Stopped native waypoint test for LWI path {}. Temporary waypoint_data path {} remains for inspection; use .lwi route debug native clear to delete it.",
+            sourcePathId,
+            tempPathId);
+        return true;
+    }
+
+    static bool HandleRouteDebugNativeStatusCommand(ChatHandler* handler)
+    {
+        if (!routeNativeWaypointTestActive)
+        {
+            handler->PSendSysMessage(
+                "Native waypoint route test: inactive. Last temporary waypoint_data path ID: {}.",
+                routeNativeWaypointTempPathId);
+            return true;
+        }
+
+        handler->PSendSysMessage(
+            "Native waypoint route test: ACTIVE. LWI source path {}, temporary waypoint_data path {}, creature map {}.",
+            routeNativeWaypointSourcePathId,
+            routeNativeWaypointTempPathId,
+            routeNativeWaypointMapId);
+        return true;
+    }
+
+    static bool HandleRouteDebugNativeClearCommand(ChatHandler* handler)
+    {
+        uint32 const tempPathId = routeNativeWaypointTempPathId;
+        if (routeNativeWaypointTestActive)
+            StopNativeWaypointTestCreature();
+
+        if (!tempPathId)
+        {
+            handler->SendSysMessage("No temporary native waypoint path has been created in this worldserver session.");
+            return true;
+        }
+
+        WorldDatabase.DirectExecute(("DELETE FROM `waypoint_data` WHERE `id` = " + std::to_string(tempPathId)).c_str());
+        routeNativeWaypointTempPathId = 0;
+        handler->PSendSysMessage("Deleted temporary native waypoint_data path {} from the world database.", tempPathId);
+        return true;
     }
 
     static bool HandleRouteDebugBypassForwardCommand(ChatHandler* handler, uint32 pathId)
