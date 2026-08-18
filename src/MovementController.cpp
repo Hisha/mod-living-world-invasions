@@ -28,6 +28,7 @@ namespace
 {
 constexpr uint32 MovementUpdateIntervalMs = 250;
 constexpr float ArrivalTolerance = 2.0f;
+constexpr float RouteArrivalTolerance = 0.75f;
 constexpr float FormationArrivalTolerance = 10.0f;
 constexpr uint32 FormationArrivalPercent = 75;
 constexpr uint32 FormationArrivalGraceMs = 3000;
@@ -1133,6 +1134,58 @@ bool MovementController::HasGroupReachedCurrentNode(
 
     uint32 const requiredArrivals =
         std::max<uint32>(1, (living * FormationArrivalPercent + 99) / 100);
+
+    // Shared route segments are explicitly authored travel corridors. Unlike
+    // normal invasion movement, do not accept the broad formation tolerance or
+    // regroup grace here: issuing the next node early can cut a corner between
+    // two otherwise-correct authored/MMAP paths. Every surviving route member
+    // must reach its own exact formation destination before the route advances.
+    if (movement.RouteMovement)
+    {
+        uint32 strictRouteArrivals = 0;
+
+        for (RuntimeMovementDestination const& destination : movement.Destinations)
+        {
+            Map* map = sMapMgr->FindMap(destination.MapId, 0);
+            if (!map)
+                continue;
+
+            Creature* creature = map->GetCreature(destination.Guid);
+            if (!creature || !creature->IsAlive())
+                continue;
+
+            if (creature->IsInCombat())
+            {
+                movement.ArrivalGraceStartedAtMs = 0;
+                return false;
+            }
+
+            if (creature->GetDistance(destination.X, destination.Y, destination.Z) <= RouteArrivalTolerance)
+                ++strictRouteArrivals;
+        }
+
+        if (strictRouteArrivals == living)
+        {
+            if (_routeDebugEnabled)
+            {
+                LOG_INFO("server.loading",
+                    "[LWI Route Debug] Group #{} strictly reached path {} node {}: "
+                    "{}/{} surviving creature(s) within {:.2f} yd; advancing with no regroup grace.",
+                    movement.RuntimeGroupId,
+                    movement.PathId,
+                    node.NodeOrder,
+                    strictRouteArrivals,
+                    living,
+                    RouteArrivalTolerance);
+            }
+
+            movement.ArrivalGraceStartedAtMs = 0;
+            return true;
+        }
+
+        movement.ArrivalGraceStartedAtMs = 0;
+        return false;
+    }
 
     // The final strategic node is an objective area, not another parade-ground
     // formation check. Once enough surviving members reach the objective radius,
