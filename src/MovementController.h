@@ -69,6 +69,7 @@ struct ActiveRuntimeMovement
     RuntimeMovementState State = RuntimeMovementState::Moving;
     uint64 WaitEndsAtMs = 0;
     uint64 ArrivalGraceStartedAtMs = 0;
+    bool RouteMovement = false;
     std::vector<RuntimeMovementDestination> Destinations;
 };
 
@@ -85,7 +86,8 @@ public:
         uint32 pathId,
         uint32 profileId = 0,
         uint32 completionSignalId = 0,
-        MovementDirection direction = MovementDirection::Forward);
+        MovementDirection direction = MovementDirection::Forward,
+        bool routeMovement = false);
 
     bool StartRouteSegment(
         uint64 runtimeGroupId,
