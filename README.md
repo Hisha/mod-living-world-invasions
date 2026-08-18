@@ -12,11 +12,13 @@ The current framework can:
 - enforce global, per-map, and response-origin concurrency limits;
 - persist scheduler state and active stage state in `acore_characters`;
 - run ordered invasion stages completed by timers or runtime signals;
-- execute stage actions for spawn groups, movement, dialogue, announcements, sounds, and scripted self-cast spells;
+- execute stage actions for route-node anchored spawn groups, route journeys, dialogue, announcements, sounds, and scripted self-cast spells;
 - spawn and track mixed Creature/GameObject runtime groups;
 - apply creature level overrides and tactical roles;
 - move temporary creature groups over MMAP paths in role-aware formations;
 - define reusable bidirectional route nodes/segments and chain them through a shared world-travel graph;
+- use stable route-node IDs as the invasion-facing spatial model for spawning, travel, and semantic arrival events;
+- trigger invasion/group-scoped dialogue, announcements, or sounds at semantic route nodes;
 - author shared road segments in game with an automatic 5-yard path recorder;
 - pause movement for combat and resume survivors afterward;
 - tolerate casualties and imperfect regrouping at intermediate nodes;
