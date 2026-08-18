@@ -61,7 +61,7 @@ struct ActiveRuntimeMovement
     uint32 ProfileId = 0;
     uint32 CompletionSignalId = 0;
     MovementDirection Direction = MovementDirection::Forward;
-    bool DirectPathing = false;
+    bool RouteMovement = false;
     std::size_t NodeIndex = 0;
     RuntimeMovementState State = RuntimeMovementState::Moving;
     uint64 WaitEndsAtMs = 0;
@@ -83,7 +83,7 @@ public:
         uint32 profileId = 0,
         uint32 completionSignalId = 0,
         MovementDirection direction = MovementDirection::Forward,
-        bool directPathing = false);
+        bool routeMovement = false);
 
     bool StartRouteSegment(
         uint64 runtimeGroupId,
@@ -104,6 +104,9 @@ public:
 
     [[nodiscard]] bool IsGroupMoving(uint64 runtimeGroupId) const;
 
+    void SetRouteDebugEnabled(bool enabled);
+    [[nodiscard]] bool IsRouteDebugEnabled() const;
+
 private:
     MovementController() = default;
 
@@ -117,6 +120,7 @@ private:
     std::unordered_map<uint64, ActiveRuntimeMovement> _activeMovements;
     std::unordered_map<uint64, ActiveRouteJourney> _activeRouteJourneys;
     uint32 _updateTimerMs = 0;
+    bool _routeDebugEnabled = false;
 };
 }
 

@@ -19,18 +19,43 @@
 #include "Player.h"
 #include "WorldSession.h"
 #include "ScriptMgr.h"
+#include "WaypointMgr.h"
+#include "TemporarySummon.h"
+#include "Map.h"
+#include "MapMgr.h"
 
 #include <algorithm>
 #include <cctype>
 #include <string>
 #include <unordered_set>
+#include <unordered_map>
 #include <vector>
+#include <cmath>
 
 using namespace Acore::ChatCommands;
 
 namespace
 {
 std::unordered_set<uint64> routeTestGroupIds;
+
+std::vector<ObjectGuid> routePathMarkerGuids;
+std::vector<ObjectGuid> routeBreadcrumbMarkerGuids;
+bool routeDebugEnabled = false;
+uint32 routeDebugSampleTimerMs = 0;
+
+struct RouteBreadcrumbState
+{
+    bool HasPosition = false;
+    float X = 0.0f;
+    float Y = 0.0f;
+    float Z = 0.0f;
+};
+
+std::unordered_map<uint64, RouteBreadcrumbState> routeBreadcrumbStates;
+
+constexpr uint32 RouteDebugMarkerLifetimeMs = 600000;
+constexpr uint32 RouteDebugSampleIntervalMs = 500;
+constexpr float RouteDebugBreadcrumbDistance = 4.0f;
 
 struct RouteRecordingSession
 {
@@ -60,6 +85,44 @@ bool IsSafeRouteRecordName(std::string const& name)
 Player* GetCommandPlayer(ChatHandler* handler)
 {
     return handler && handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+}
+
+void ClearMarkerList(Player* player, std::vector<ObjectGuid>& guids)
+{
+    if (player)
+    {
+        Map* map = player->GetMap();
+        if (map)
+        {
+            for (ObjectGuid const& guid : guids)
+            {
+                if (Creature* marker = map->GetCreature(guid))
+                {
+                    marker->DespawnOrUnsummon();
+                }
+            }
+        }
+    }
+
+    guids.clear();
+}
+
+Creature* SpawnRouteDebugMarker(WorldObject* summoner, float x, float y, float z, float orientation, float scale)
+{
+    if (!summoner)
+        return nullptr;
+
+    TempSummon* marker = summoner->SummonCreature(
+        VISUAL_WAYPOINT,
+        x, y, z, orientation,
+        TEMPSUMMON_TIMED_DESPAWN,
+        RouteDebugMarkerLifetimeMs);
+
+    if (!marker)
+        return nullptr;
+
+    marker->SetObjectScale(scale);
+    return marker;
 }
 
 enum class LwiConfig
@@ -175,6 +238,66 @@ public:
     {
         sInvasionRuntimeMgr.Update(diff);
 
+        if (routeDebugEnabled)
+        {
+            if (routeDebugSampleTimerMs > diff)
+            {
+                routeDebugSampleTimerMs -= diff;
+            }
+            else
+            {
+                routeDebugSampleTimerMs = RouteDebugSampleIntervalMs;
+
+                for (uint64 const runtimeGroupId : routeTestGroupIds)
+                {
+                    lwi::RuntimeEntityGroup const* group = sRuntimeEntityGroupMgr.GetGroup(runtimeGroupId);
+                    if (!group || !sMovementController.IsGroupMoving(runtimeGroupId))
+                        continue;
+
+                    for (lwi::RuntimeEntity const& entity : group->Entities)
+                    {
+                        if (entity.EntityType != static_cast<uint8>(lwi::EntityProviderType::Creature))
+                            continue;
+
+                        Map* map = sMapMgr->FindMap(entity.MapId, 0);
+                        if (!map)
+                            continue;
+
+                        Creature* creature = map->GetCreature(entity.Guid);
+                        if (!creature || !creature->IsAlive())
+                            continue;
+
+                        RouteBreadcrumbState& state = routeBreadcrumbStates[runtimeGroupId];
+                        float const dx = creature->GetPositionX() - state.X;
+                        float const dy = creature->GetPositionY() - state.Y;
+                        float const dz = creature->GetPositionZ() - state.Z;
+                        float const distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+
+                        if (!state.HasPosition || distance >= RouteDebugBreadcrumbDistance)
+                        {
+                            if (Creature* marker = SpawnRouteDebugMarker(
+                                    creature,
+                                    creature->GetPositionX(),
+                                    creature->GetPositionY(),
+                                    creature->GetPositionZ(),
+                                    creature->GetOrientation(),
+                                    0.25f))
+                            {
+                                routeBreadcrumbMarkerGuids.push_back(marker->GetGUID());
+                            }
+
+                            state.HasPosition = true;
+                            state.X = creature->GetPositionX();
+                            state.Y = creature->GetPositionY();
+                            state.Z = creature->GetPositionZ();
+                        }
+
+                        break;
+                    }
+                }
+            }
+        }
+
         for (auto itr = routeTestGroupIds.begin(); itr != routeTestGroupIds.end();)
         {
             uint64 const runtimeGroupId = *itr;
@@ -185,6 +308,7 @@ public:
             }
 
             sRuntimeEntityGroupMgr.RemoveGroup(runtimeGroupId);
+            routeBreadcrumbStates.erase(runtimeGroupId);
             itr = routeTestGroupIds.erase(itr);
         }
 
@@ -292,8 +416,66 @@ public:
             }
         };
 
+        static ChatCommandTable routePathCommandTable =
+        {
+            {
+                "show",
+                HandleRoutePathShowCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "hide",
+                HandleRoutePathHideCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "nearest",
+                HandleRoutePathNearestCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            }
+        };
+
+        static ChatCommandTable routeDebugCommandTable =
+        {
+            {
+                "on",
+                HandleRouteDebugOnCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "off",
+                HandleRouteDebugOffCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "clear",
+                HandleRouteDebugClearCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "status",
+                HandleRouteDebugStatusCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            }
+        };
+
         static ChatCommandTable routeCommandTable =
         {
+            {
+                "path",
+                routePathCommandTable
+            },
+            {
+                "debug",
+                routeDebugCommandTable
+            },
             {
                 "node",
                 routeNodeCommandTable
@@ -1138,6 +1320,136 @@ private:
             endNodeName,
             movementPathId,
             movementPathName);
+        return true;
+    }
+
+    static bool HandleRoutePathShowCommand(ChatHandler* handler, uint32 pathId)
+    {
+        if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Debug))
+        {
+            handler->SendSysMessage("Living World Invasions debug commands are disabled. Set LWI.Debug = 1 to use .lwi route path show.");
+            return false;
+        }
+
+        Player* player = GetCommandPlayer(handler);
+        if (!player)
+            return false;
+
+        auto const* nodes = sInvasionMgr.GetMovementNodes(pathId);
+        if (!nodes || nodes->empty())
+        {
+            handler->PSendSysMessage("Movement path {} does not exist, is disabled, or has no loaded nodes. Use .lwi reload after editing route data.", pathId);
+            return false;
+        }
+
+        ClearMarkerList(player, routePathMarkerGuids);
+
+        uint32 shown = 0;
+        for (lwi::MovementNodeDefinition const& node : *nodes)
+        {
+            if (Creature* marker = SpawnRouteDebugMarker(player, node.X, node.Y, node.Z, node.Orientation, 0.5f))
+            {
+                routePathMarkerGuids.push_back(marker->GetGUID());
+                ++shown;
+            }
+        }
+
+        handler->PSendSysMessage(
+            "Showing {} marker(s) for LWI movement path {}. Use .lwi route path nearest <pathId> to identify the closest authored node and .lwi route path hide to remove the markers.",
+            shown, pathId);
+        return true;
+    }
+
+    static bool HandleRoutePathHideCommand(ChatHandler* handler)
+    {
+        Player* player = GetCommandPlayer(handler);
+        ClearMarkerList(player, routePathMarkerGuids);
+        handler->SendSysMessage("LWI route path markers cleared.");
+        return true;
+    }
+
+    static bool HandleRoutePathNearestCommand(ChatHandler* handler, uint32 pathId)
+    {
+        Player* player = GetCommandPlayer(handler);
+        if (!player)
+            return false;
+
+        auto const* nodes = sInvasionMgr.GetMovementNodes(pathId);
+        if (!nodes || nodes->empty())
+        {
+            handler->PSendSysMessage("Movement path {} does not exist, is disabled, or has no loaded nodes.", pathId);
+            return false;
+        }
+
+        lwi::MovementNodeDefinition const* nearest = nullptr;
+        float nearestDistance = 0.0f;
+        for (lwi::MovementNodeDefinition const& node : *nodes)
+        {
+            float const dx = player->GetPositionX() - node.X;
+            float const dy = player->GetPositionY() - node.Y;
+            float const dz = player->GetPositionZ() - node.Z;
+            float const distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+            if (!nearest || distance < nearestDistance)
+            {
+                nearest = &node;
+                nearestDistance = distance;
+            }
+        }
+
+        handler->PSendSysMessage(
+            "Nearest node on path {}: node order {} (definition id {}) at X {:.3f} Y {:.3f} Z {:.3f} O {:.3f}; distance {:.2f} yd.",
+            pathId,
+            nearest->NodeOrder,
+            nearest->Id,
+            nearest->X,
+            nearest->Y,
+            nearest->Z,
+            nearest->Orientation,
+            nearestDistance);
+        return true;
+    }
+
+    static bool HandleRouteDebugOnCommand(ChatHandler* handler)
+    {
+        if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Debug))
+        {
+            handler->SendSysMessage("Living World Invasions debug commands are disabled. Set LWI.Debug = 1 first.");
+            return false;
+        }
+
+        routeDebugEnabled = true;
+        routeDebugSampleTimerMs = 0;
+        routeBreadcrumbStates.clear();
+        sMovementController.SetRouteDebugEnabled(true);
+        handler->SendSysMessage("LWI route debug enabled. Route-test travelers will leave breadcrumb markers and route/MMAP target details will be written to the server log.");
+        return true;
+    }
+
+    static bool HandleRouteDebugOffCommand(ChatHandler* handler)
+    {
+        routeDebugEnabled = false;
+        routeBreadcrumbStates.clear();
+        sMovementController.SetRouteDebugEnabled(false);
+        handler->SendSysMessage("LWI route debug disabled. Existing breadcrumb markers remain until .lwi route debug clear or their 10-minute timeout.");
+        return true;
+    }
+
+    static bool HandleRouteDebugClearCommand(ChatHandler* handler)
+    {
+        Player* player = GetCommandPlayer(handler);
+        ClearMarkerList(player, routeBreadcrumbMarkerGuids);
+        routeBreadcrumbStates.clear();
+        handler->SendSysMessage("LWI route breadcrumb markers cleared.");
+        return true;
+    }
+
+    static bool HandleRouteDebugStatusCommand(ChatHandler* handler)
+    {
+        handler->PSendSysMessage(
+            "LWI route debug: {}. Breadcrumb markers tracked: {}. Path markers tracked: {}.",
+            routeDebugEnabled ? "ON" : "OFF",
+            routeBreadcrumbMarkerGuids.size(),
+            routePathMarkerGuids.size());
         return true;
     }
 
