@@ -36,6 +36,8 @@ struct RuntimeMovementDestination
     float Z = 0.0f;
     bool WasInCombat = false;
     bool RejoiningLeader = false;
+    std::size_t RejoinNodeIndex = 0;
+    bool RejoinMoveIssued = false;
 };
 
 
