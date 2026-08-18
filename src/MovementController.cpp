@@ -36,6 +36,8 @@ constexpr uint32 FormationArrivalGraceMs = 3000;
 constexpr float FinalObjectiveArrivalRadius = 20.0f;
 constexpr float RouteRejoinCatchupDistance = 12.0f;
 constexpr float RouteRejoinNodeTolerance = 2.5f;
+constexpr uint32 RouteRejoinRetryDelayMs = 2000;
+constexpr std::size_t RouteRejoinCandidateLimit = 24;
 constexpr float Pi = 3.14159265358979323846f;
 
 struct FormationOffset
@@ -894,6 +896,8 @@ void MovementController::Update(uint32 diff)
 
         MovementNodeDefinition const& node = (*nodes)[movement.NodeIndex];
 
+    uint64 const nowMs = getMSTime();
+
         RuntimeEntityGroup* arrivedGroup = sRuntimeEntityGroupMgr.GetGroup(runtimeGroupId);
         if (arrivedGroup)
         {
@@ -1162,6 +1166,7 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
     }
 
     MovementNodeDefinition const& node = (*nodes)[movement.NodeIndex];
+    uint64 const nowMs = static_cast<uint64>(getMSTime());
 
     // Route travel has one navigation owner: the first surviving destination.
     // Followers recover from combat by re-entering the authored 5-yard route
@@ -1187,53 +1192,91 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
         }
     }
 
-    auto launchRejoinNode = [&](Creature* creature, RuntimeMovementDestination& destination) -> bool
+    auto launchReachableRejoinNode = [&](Creature* creature, RuntimeMovementDestination& destination, uint64 nowMs) -> bool
     {
-        if (destination.RejoinNodeIndex >= nodes->size())
+        if (nowMs < destination.RejoinRetryAfterMs)
             return false;
 
-        MovementNodeDefinition const& rejoinNode = (*nodes)[destination.RejoinNodeIndex];
-        PathGenerator path(creature);
-        bool const pathFound = path.CalculatePath(rejoinNode.X, rejoinNode.Y, rejoinNode.Z, false);
+        // A geometrically-nearest breadcrumb is not necessarily reachable from
+        // wherever combat left the creature (ridge, fence, cliff, etc.). Build
+        // the set of breadcrumbs that are not ahead of the route leader, sort
+        // them by straight-line proximity, then ask AzerothCore/MMAP which one
+        // is actually reachable. This keeps route recovery authoritative while
+        // avoiding a permanent retry loop on one bad breadcrumb.
+        std::vector<std::pair<float, std::size_t>> candidates;
+        candidates.reserve(nodes->size());
 
-        if (!pathFound || (path.GetPathType() & PATHFIND_NOPATH))
+        if (movement.Direction == MovementDirection::Forward)
         {
-            LOG_ERROR("server.loading",
-                "[LWI Movement] Runtime entity group #{} creature {} could not find MMAP path "
-                "to route-rejoin breadcrumb path {} node {}.",
+            for (std::size_t i = 0; i <= movement.NodeIndex && i < nodes->size(); ++i)
+            {
+                MovementNodeDefinition const& candidate = (*nodes)[i];
+                candidates.emplace_back(
+                    creature->GetDistance(candidate.X, candidate.Y, candidate.Z),
+                    i);
+            }
+        }
+        else
+        {
+            for (std::size_t i = movement.NodeIndex; i < nodes->size(); ++i)
+            {
+                MovementNodeDefinition const& candidate = (*nodes)[i];
+                candidates.emplace_back(
+                    creature->GetDistance(candidate.X, candidate.Y, candidate.Z),
+                    i);
+            }
+        }
+
+        std::sort(candidates.begin(), candidates.end(),
+            [](auto const& left, auto const& right)
+            {
+                return left.first < right.first;
+            });
+
+        std::size_t const tryCount = std::min(candidates.size(), RouteRejoinCandidateLimit);
+        for (std::size_t candidateNumber = 0; candidateNumber < tryCount; ++candidateNumber)
+        {
+            std::size_t const candidateIndex = candidates[candidateNumber].second;
+            MovementNodeDefinition const& rejoinNode = (*nodes)[candidateIndex];
+
+            PathGenerator path(creature);
+            bool const pathFound = path.CalculatePath(rejoinNode.X, rejoinNode.Y, rejoinNode.Z, false);
+            if (!pathFound || (path.GetPathType() & PATHFIND_NOPATH))
+                continue;
+
+            Movement::PointsArray pathPoints = path.GetPath();
+            if (pathPoints.size() < 2)
+                continue;
+
+            creature->GetMotionMaster()->MoveSplinePath(&pathPoints, FORCED_MOVEMENT_NONE);
+            destination.RejoinNodeIndex = candidateIndex;
+            destination.RejoinMoveIssued = true;
+            destination.RejoinRetryAfterMs = 0;
+
+            LOG_INFO("server.loading",
+                "[LWI Movement] Runtime entity group #{} creature {} selected reachable route-rejoin "
+                "breadcrumb path {} node {} ({:.2f} yd away) after checking {}/{} nearby candidate(s).",
                 movement.RuntimeGroupId,
                 creature->GetEntry(),
                 movement.PathId,
-                rejoinNode.NodeOrder);
-            return false;
+                rejoinNode.NodeOrder,
+                candidates[candidateNumber].first,
+                candidateNumber + 1,
+                tryCount);
+            return true;
         }
 
-        Movement::PointsArray pathPoints = path.GetPath();
-        if (pathPoints.size() < 2)
-        {
-            LOG_ERROR("server.loading",
-                "[LWI Movement] Runtime entity group #{} creature {} produced unusable MMAP path "
-                "to route-rejoin breadcrumb path {} node {}.",
-                movement.RuntimeGroupId,
-                creature->GetEntry(),
-                movement.PathId,
-                rejoinNode.NodeOrder);
-            return false;
-        }
-
-        creature->GetMotionMaster()->MoveSplinePath(&pathPoints, FORCED_MOVEMENT_NONE);
-        destination.RejoinMoveIssued = true;
-
-        LOG_DEBUG("server.loading",
-            "[LWI Movement] Runtime entity group #{} creature {} rejoining route via breadcrumb "
-            "path {} node {} (index {}, leader target index {}).",
+        destination.RejoinMoveIssued = false;
+        destination.RejoinRetryAfterMs = nowMs + RouteRejoinRetryDelayMs;
+        LOG_WARN("server.loading",
+            "[LWI Movement] Runtime entity group #{} creature {} could not reach any of the {} closest "
+            "eligible route breadcrumbs on path {}; retrying recovery in {} ms.",
             movement.RuntimeGroupId,
             creature->GetEntry(),
+            tryCount,
             movement.PathId,
-            rejoinNode.NodeOrder,
-            destination.RejoinNodeIndex,
-            movement.NodeIndex);
-        return true;
+            RouteRejoinRetryDelayMs);
+        return false;
     };
 
     for (RuntimeMovementDestination& destination : movement.Destinations)
@@ -1250,6 +1293,7 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
         {
             destination.WasInCombat = true;
             destination.RejoinMoveIssued = false;
+            destination.RejoinRetryAfterMs = 0;
             continue;
         }
 
@@ -1266,6 +1310,7 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
                 destination.RejoiningLeader = false;
                 destination.WasInCombat = false;
                 destination.RejoinMoveIssued = false;
+                destination.RejoinRetryAfterMs = 0;
                 LOG_DEBUG("server.loading",
                     "[LWI Movement] Runtime entity group #{} creature {} rejoined route column "
                     "within {:.2f} yd of leader; normal MARCH placement resumes.",
@@ -1315,6 +1360,7 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
                 destination.RejoiningLeader = true;
                 destination.RejoinNodeIndex = bestIndex;
                 destination.RejoinMoveIssued = false;
+                destination.RejoinRetryAfterMs = 0;
 
                 LOG_INFO("server.loading",
                     "[LWI Movement] Runtime entity group #{} creature {} left combat {:.2f} yd from "
@@ -1349,10 +1395,11 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
                         --destination.RejoinNodeIndex;
                 }
                 destination.RejoinMoveIssued = false;
+                destination.RejoinRetryAfterMs = 0;
             }
 
             if (!destination.RejoinMoveIssued)
-                launchRejoinNode(creature, destination);
+                launchReachableRejoinNode(creature, destination, nowMs);
 
             continue;
         }
@@ -1365,6 +1412,7 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
             destination.WasInCombat = false;
             destination.RejoiningLeader = false;
             destination.RejoinMoveIssued = false;
+            destination.RejoinRetryAfterMs = 0;
             continue;
         }
 

@@ -38,6 +38,7 @@ struct RuntimeMovementDestination
     bool RejoiningLeader = false;
     std::size_t RejoinNodeIndex = 0;
     bool RejoinMoveIssued = false;
+    uint64 RejoinRetryAfterMs = 0;
 };
 
 
