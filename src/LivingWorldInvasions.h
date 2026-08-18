@@ -63,13 +63,18 @@ struct SpawnGroupDefinition
 {
     uint32 Id = 0;
     std::string Name;
+    uint32 RouteNodeId = 0;
+    float SpawnRadius = 5;
+    bool Enabled = false;
+
+    // Runtime-only explicit anchor used by systems such as garrison restock.
+    // Authored invasion spawn groups use RouteNodeId instead of raw XYZ.
+    bool UseExplicitPosition = false;
     uint16 MapId = 0;
     float X = 0;
     float Y = 0;
     float Z = 0;
     float Orientation = 0;
-    float SpawnRadius = 5;
-    bool Enabled = false;
 };
 
 
@@ -166,6 +171,23 @@ struct RouteNodeDefinition
     std::string Comment;
 };
 
+
+struct RouteNodeActionDefinition
+{
+    uint32 Id = 0;
+    uint32 InvasionId = 0;
+    uint32 SpawnGroupId = 0;
+    uint32 RouteNodeId = 0;
+    uint16 ActionOrder = 0;
+    uint8 ActionType = 1;
+    uint32 TargetId = 0;
+    uint32 Parameter1 = 0;
+    uint32 Parameter2 = 0;
+    uint32 Parameter3 = 0;
+    bool Enabled = false;
+    std::string Comment;
+};
+
 struct RouteSegmentDefinition
 {
     uint32 Id = 0;
@@ -232,6 +254,7 @@ public:
     [[nodiscard]] RouteSegmentDefinition const* GetRouteSegment(uint32 id) const;
     [[nodiscard]] RouteSegmentDefinition const* GetRouteSegment(std::string const& name) const;
     [[nodiscard]] std::unordered_map<uint32, RouteSegmentDefinition> const& GetRouteSegments() const;
+    [[nodiscard]] std::vector<RouteNodeActionDefinition> const* GetRouteNodeActions(uint32 invasionId, uint32 spawnGroupId) const;
     [[nodiscard]] RuntimeSignalDefinition const* GetRuntimeSignal(uint32 id) const;
     [[nodiscard]] DialogueDefinition const* GetDialogue(uint32 id) const;
     [[nodiscard]] AnnouncementDefinition const* GetAnnouncement(uint32 id) const;
@@ -248,6 +271,7 @@ public:
     [[nodiscard]] std::size_t GetMovementProfileCount() const;
     [[nodiscard]] std::size_t GetRouteNodeCount() const;
     [[nodiscard]] std::size_t GetRouteSegmentCount() const;
+    [[nodiscard]] std::size_t GetRouteNodeActionCount() const;
     [[nodiscard]] std::size_t GetRuntimeSignalCount() const;
     [[nodiscard]] std::size_t GetDialogueCount() const;
     [[nodiscard]] std::size_t GetAnnouncementCount() const;
@@ -267,6 +291,7 @@ private:
     std::unordered_map<uint32, MovementProfileDefinition> _movementProfiles;
     std::unordered_map<uint32, RouteNodeDefinition> _routeNodes;
     std::unordered_map<uint32, RouteSegmentDefinition> _routeSegments;
+    std::unordered_map<uint64, std::vector<RouteNodeActionDefinition>> _routeNodeActionsByInvasionGroup;
     std::unordered_map<uint32, RuntimeSignalDefinition> _runtimeSignals;
     std::unordered_map<uint32, DialogueDefinition> _dialogues;
     std::unordered_map<uint32, AnnouncementDefinition> _announcements;

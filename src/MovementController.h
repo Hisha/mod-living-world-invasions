@@ -6,10 +6,14 @@
 
 #include <cstddef>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace lwi
 {
+struct RuntimeEntityGroup;
+struct RouteNodeActionDefinition;
+
 enum class RuntimeMovementState : uint8
 {
     Moving = 0,
@@ -98,6 +102,7 @@ public:
         uint32 completionSignalId = 0);
 
     bool CancelGroup(uint64 runtimeGroupId);
+    void NotifyRouteNodeReached(uint64 runtimeGroupId, uint32 routeNodeId, uint32 invasionId = 0);
     void CancelRuntime(uint64 runtimeId);
 
     [[nodiscard]] bool IsGroupMoving(uint64 runtimeGroupId) const;
@@ -111,9 +116,12 @@ private:
     void AdvanceOrComplete(uint64 runtimeGroupId, ActiveRuntimeMovement& movement, uint64 nowMs);
     void CompleteMovement(uint64 runtimeGroupId, ActiveRuntimeMovement& movement);
     bool BuildRouteJourney(uint32 fromNodeId, uint32 destinationNodeId, std::vector<RouteJourneyStep>& steps) const;
+    void CheckRouteNodeActions(RuntimeEntityGroup const& group);
+    bool ExecuteRouteNodeAction(RuntimeEntityGroup const& group, RouteNodeActionDefinition const& action);
 
     std::unordered_map<uint64, ActiveRuntimeMovement> _activeMovements;
     std::unordered_map<uint64, ActiveRouteJourney> _activeRouteJourneys;
+    std::unordered_map<uint64, std::unordered_set<uint32>> _triggeredRouteActionIdsByGroup;
     uint32 _updateTimerMs = 0;
 };
 }

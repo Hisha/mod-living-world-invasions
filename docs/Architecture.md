@@ -70,7 +70,7 @@ A runtime can end by:
 Implemented action types are:
 
 1. Spawn Group
-2. Start Movement
+2. Start Route Journey
 3. Dialogue
 4. World Announcement
 5. Sound
@@ -144,6 +144,16 @@ If an actively moving runtime group has no living creature entities, the movemen
 The preferred road-authoring tool records the GM's traveled position every 5 yards. Dense deterministic spacing is intentional: the movement engine only knows the authored coordinates, not the semantic shape of a visible road, so long chords between sparse nodes can cut outside curves or fenced corridors.
 
 See [RouteNetwork.md](RouteNetwork.md) for the graph model and authoring commands.
+
+### Invasion-facing spatial model
+
+The invasion layer now consumes route nodes rather than raw coordinates or movement-path IDs:
+
+- spawn groups reference one `route_node_id`;
+- stage action type 2 requests a route journey from a start route-node ID to a destination route-node ID;
+- route-node actions attach invasion-specific dialogue/announcements/sounds to semantic route-node IDs.
+
+The underlying `lwi_movement_path`/`lwi_movement_node` rows remain the physical execution layer owned by the route network. This keeps dense 5-yard breadcrumbs out of prebuilt invasion logic and allows routes to be rerecorded without changing invasion definitions as long as stable route-node IDs are preserved.
 
 ## Runtime signals
 

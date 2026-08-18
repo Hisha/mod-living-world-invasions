@@ -125,10 +125,11 @@ bool InvasionSpawnManager::SpawnGroup(uint64 runtimeId, uint32 spawnGroupId, uin
     }
 
     LOG_INFO("server.loading",
-        "[LWI Spawn] Runtime entity group #{} now owns {} entity/entities for runtime #{}.",
+        "[LWI Spawn] Runtime entity group #{} now owns {} entity/entities for runtime #{} at route node {}.",
         runtimeGroup.Id,
         runtimeGroup.Entities.size(),
-        runtimeId);
+        runtimeId,
+        group->RouteNodeId);
 
     return true;
 }
@@ -310,6 +311,8 @@ bool InvasionSpawnManager::RefillGarrison(ActiveGarrison& garrison, uint64 nowSe
     }
 
     SpawnGroupDefinition refillGroup = *originalGroup;
+    refillGroup.RouteNodeId = 0;
+    refillGroup.UseExplicitPosition = true;
     refillGroup.X = static_cast<float>(sumX / anchorCount);
     refillGroup.Y = static_cast<float>(sumY / anchorCount);
     refillGroup.Z = static_cast<float>(sumZ / anchorCount);

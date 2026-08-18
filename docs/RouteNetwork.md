@@ -194,3 +194,20 @@ Examples:
 Exports are written to an `lwi_exports` directory beneath the worldserver working directory. The command prints the absolute output filename in-game. Exported SQL contains the required `lwi_route_node`, `lwi_movement_path`, `lwi_movement_node`, movement-node action, and `lwi_route_segment` data in dependency-safe order. Journey exports de-duplicate route nodes and movement paths used by multiple segments.
 
 The canonical `801_routes.sql` should own the route network itself, including invasion-specific route segments whose endpoints are referenced by prebuilt invasion data. Invasion SQL should reference stable route-node IDs rather than duplicate movement-node data. Segment/journey export remains useful for review, debugging, or extracting a smaller subset, while `export network` is the normal publish path for the module's complete route dataset.
+
+
+## Invasion integration
+
+`801_routes.sql` is the canonical spatial/route data contract consumed by prebuilt invasions. Published route-node IDs are stable.
+
+Prebuilt invasion SQL should reference route nodes only:
+
+```text
+spawn group -> route_node_id
+movement action -> start_route_node_id + destination_route_node_id
+route event -> route_node_id
+```
+
+Do not duplicate route-owned movement paths or dense 5-yard movement nodes inside invasion SQL. Invasion-specific physical routes are still valid route-network content and should be exported into `801_routes.sql`; the invasion file simply references their stable endpoints.
+
+A semantic event anchor does not have to be a major road junction. Create a route node anywhere an invasion needs a stable location for a say/yell/announcement/sound. Route-node actions are scoped by invasion and spawn group, so another consumer traversing the same road does not inherit that event.

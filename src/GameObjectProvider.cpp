@@ -14,10 +14,34 @@ namespace lwi
 {
 namespace
 {
-Position BuildSpawnPosition(SpawnGroupDefinition const& group)
+bool ResolveSpawnAnchor(SpawnGroupDefinition const& group, uint16& mapId, float& x, float& y, float& z, float& orientation)
+{
+    if (group.UseExplicitPosition)
+    {
+        mapId = group.MapId;
+        x = group.X;
+        y = group.Y;
+        z = group.Z;
+        orientation = group.Orientation;
+        return true;
+    }
+
+    RouteNodeDefinition const* routeNode = sInvasionMgr.GetRouteNode(group.RouteNodeId);
+    if (!routeNode)
+        return false;
+
+    mapId = routeNode->MapId;
+    x = routeNode->X;
+    y = routeNode->Y;
+    z = routeNode->Z;
+    orientation = routeNode->Orientation;
+    return true;
+}
+
+Position BuildSpawnPosition(SpawnGroupDefinition const& group, float x, float y, float z, float orientation)
 {
     Position position;
-    position.Relocate(group.X, group.Y, group.Z, group.Orientation);
+    position.Relocate(x, y, z, orientation);
 
     if (group.SpawnRadius > 0.0f)
     {
@@ -44,13 +68,25 @@ bool GameObjectProvider::Spawn(
     SpawnMemberDefinition const& member,
     std::vector<RuntimeEntity>& spawnedEntities)
 {
-    Map* map = sMapMgr->FindMap(group.MapId, 0);
+    uint16 mapId = 0;
+    float anchorX = 0.0f;
+    float anchorY = 0.0f;
+    float anchorZ = 0.0f;
+    float anchorOrientation = 0.0f;
+    if (!ResolveSpawnAnchor(group, mapId, anchorX, anchorY, anchorZ, anchorOrientation))
+    {
+        LOG_ERROR("server.loading",
+            "[LWI GameObject] Spawn group {} references unavailable route node {}.",
+            group.Id, group.RouteNodeId);
+        return false;
+    }
+
+    Map* map = sMapMgr->FindMap(mapId, 0);
     if (!map)
     {
         LOG_ERROR("server.loading",
-            "[LWI GameObject] Could not find map {} for spawn group {}.",
-            group.MapId,
-            group.Id);
+            "[LWI GameObject] Could not find map {} for spawn group {} route node {}.",
+            mapId, group.Id, group.RouteNodeId);
         return false;
     }
 
@@ -58,7 +94,7 @@ bool GameObjectProvider::Spawn(
 
     for (uint32 i = 0; i < member.Count; ++i)
     {
-        Position position = BuildSpawnPosition(group);
+        Position position = BuildSpawnPosition(group, anchorX, anchorY, anchorZ, anchorOrientation);
 
         GameObject* gameObject = map->SummonGameObject(
             member.EntityEntry,
@@ -82,7 +118,7 @@ bool GameObjectProvider::Spawn(
 
         RuntimeEntity entity;
         entity.EntityType = GetType();
-        entity.MapId = group.MapId;
+        entity.MapId = mapId;
         entity.GroupId = group.Id;
         entity.MemberId = member.Id;
         entity.Entry = member.EntityEntry;

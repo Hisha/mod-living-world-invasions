@@ -106,3 +106,15 @@ If a runtime genuinely becomes stuck beyond `maximum_runtime_seconds`, the runti
 - [ ] Failed runtime cleans remaining tracked entities.
 - [ ] Hard timeout cleans a deliberately stuck runtime.
 - [ ] Scheduler cooldown/state is correct after each outcome.
+
+## Route-node invasion integration
+
+For a prebuilt invasion converted to route-node movement, verify all of the following after `.lwi reload`:
+
+- each spawn group appears around the XYZ/orientation of its configured `route_node_id`;
+- stage action type 2 starts a graph journey using `parameter1=start_route_node_id`, `parameter2=destination_route_node_id`, `parameter3=completion_signal_id`;
+- route-node actions fire only for the configured invasion + spawn group;
+- an action on the spawn route node fires immediately after successful spawn;
+- actions at normal graph nodes fire when that node is reached;
+- a semantic proximity anchor placed along an existing physical segment fires when the commander/lead creature passes within its `arrival_radius`;
+- the final route journey emits its configured completion signal and advances the stage.

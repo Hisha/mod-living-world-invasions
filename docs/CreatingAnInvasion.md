@@ -19,7 +19,7 @@ A useful pattern is:
 ```text
 Stage 10: Spawn / March
   -> spawn force
-  -> start movement
+  -> start route journey
   -> movement emits Arrival signal
   -> stage waits for Arrival signal
 
@@ -74,7 +74,7 @@ Do not use reserved Objective/Manual completion types yet.
 
 Create one `lwi_spawn_group` for each distinct spawn location/composition that needs to be independently spawned or targeted later.
 
-The group's XYZ is where entities initially appear. `spawn_radius` spreads individual spawns around that point.
+Each spawn group references a stable `lwi_route_node.id` through `route_node_id`. The route node supplies map, XYZ, and orientation; `spawn_radius` spreads individual spawns around that anchor. Prebuilt invasion SQL should not duplicate raw spawn coordinates.
 
 ## 7. Add spawn members
 
@@ -92,22 +92,23 @@ Remember: roles do **not** give a creature tank/healer/combat logic. Native Crea
 
 ## 8. Build movement routes
 
-If the group moves:
+Invasion definitions do **not** own movement paths anymore. Author the physical world routes in the shared route network, publish them through `801_routes.sql`, and make invasion movement actions reference only stable route-node IDs.
 
-1. create `lwi_movement_path`;
-2. create an `lwi_movement_profile` if you need explicit walk/run mode;
-3. add ordered `lwi_movement_node` rows.
+For each moving group:
+
+1. choose/create the semantic spawn route node;
+2. choose/create any semantic event-anchor nodes needed for dialogue/announcements;
+3. ensure the route graph connects the intended start and destination nodes;
+4. author physical route segments with the automatic 5-yard builder documented in [RouteNetwork.md](RouteNetwork.md);
+5. export the complete network with `.lwi route export network`.
 
 ### Route design rules
 
-For roads or other travel corridors that may be reused by more than one event, prefer the shared route network and automatic 5-yard builder documented in [RouteNetwork.md](RouteNetwork.md) instead of creating duplicate invasion-specific road data.
-
-- Use MMAP-friendly coordinates on traversable terrain.
-- Follow roads and terrain with intermediate nodes instead of expecting one enormous path calculation. Shared road segments should normally use the automatic 5-yard builder.
-- The spawn point does not need to duplicate node 10; node 10 is the first destination.
-- Use `wait_ms` only when you actually want a pause at a node.
-- The last node is special: it is treated as an objective area. The current engine accepts final arrival when at least 75% of living members are within 20 yards, even during combat.
-- Intermediate nodes can tolerate formation disruption: 75% within 10 yards plus regroup grace can advance after combat.
+- Use the automatic 5-yard builder for physical travel paths. Fixed dense spacing is intentional and proven to keep travel aligned with roads, bridges, fences, and curves.
+- Route nodes are semantic anchors: settlements, splits, spawn locations, attack positions, or places where an invasion event should fire.
+- Movement-node IDs and raw XYZ are implementation details beneath the route network and should not be referenced by invasion SQL.
+- A movement stage action references `start_route_node_id`, `destination_route_node_id`, and an optional completion signal.
+- Route-node actions can fire dialogue, announcements, or sounds when a specific invasion group reaches a semantic route node. Spawning at the node counts as reaching it.
 
 ## 9. Create runtime signals
 
@@ -118,7 +119,7 @@ Configure the movement stage action's `parameter3` to that signal ID and configu
 This creates the chain:
 
 ```text
-Start Movement -> final node reached -> signal emitted -> stage satisfied -> next stage
+Start Route Journey -> destination route node reached -> signal emitted -> stage satisfied -> next stage
 ```
 
 ## 10. Add optional presentation definitions
@@ -136,7 +137,7 @@ A common movement-stage order is:
 1. announcement;
 2. spawn group;
 3. sound/dialogue;
-4. start movement.
+4. start route journey.
 
 A movement action must target a spawn group that has already been spawned in that runtime, because movement resolves the latest runtime entity group created from that spawn-group definition.
 

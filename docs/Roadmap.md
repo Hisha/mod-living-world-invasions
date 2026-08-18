@@ -52,6 +52,8 @@
 
 ### Movement
 
+The invasion-facing migration to route-node spawning/journeys is now the baseline. Future movement work should extend the route layer rather than reintroducing invasion-owned XYZ/path IDs.
+
 - [ ] Export completed shared route networks to portable module SQL
 - [ ] Transport/transition route edges for true map changes (boats, zeppelins, portals, etc.)
 - [ ] Apply movement-profile speed multipliers

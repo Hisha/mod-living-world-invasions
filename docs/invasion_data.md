@@ -1,779 +1,110 @@
--- TEMPORARY scheduler/spawn/movement framework data.
--- This is development test content and is safe to reapply.
+# Invasion Data Reference
 
--- ===========================================================================
--- Cleanup existing test data
--- ===========================================================================
+This file describes the current invasion-facing data model. Physical coordinates and dense movement paths belong to the route layer (`801_routes.sql`), not to individual invasion prebuilts.
 
-DELETE FROM `lwi_stage_action`
-WHERE `id` IN (10001,10002,10003,10004,10005,10006,10007,10008,10009);
+## Spatial ownership
 
-DELETE FROM `lwi_runtime_signal`
-WHERE `id` IN (100);
+`801_routes.sql` owns:
 
-DELETE FROM `lwi_dialogue`
-WHERE `id` IN (100,101);
+- `lwi_route_node` semantic locations;
+- `lwi_route_segment` graph edges;
+- route-owned `lwi_movement_path` / `lwi_movement_node` rows.
 
-DELETE FROM `lwi_announcement`
-WHERE `id` IN (100);
+An invasion prebuilt owns behavior and composition. It references stable route-node IDs but should not duplicate route-owned XYZ or movement-node data.
 
-DELETE FROM `lwi_spawn_member`
-WHERE `id` IN (
-    100001,100002,100003,100004,
-    100005,100006,100007,100008
-);
+## Spawn groups
 
-DELETE FROM `lwi_spawn_group`
-WHERE `id` IN (100,101,102);
-
-DELETE FROM `lwi_movement_node`
-WHERE `path_id` IN (100);
-
-DELETE FROM `lwi_movement_path`
-WHERE `id` IN (100);
-
-DELETE FROM `lwi_movement_profile`
-WHERE `id` IN (100);
-
-DELETE FROM `lwi_invasion_stage`
-WHERE `invasion_id` IN (1,2,3);
-
-DELETE FROM `lwi_invasion`
-WHERE `id` IN (1,2,3);
-
-
-
--- ===========================================================================
--- Invasions
--- ===========================================================================
-
-INSERT INTO `lwi_invasion`
-(
-    `id`,
-    `name`,
-    `map_id`,
-    `zone_id`,
-    `team`,
-    `response_origin_id`,
-    `recommended_min_level`,
-    `recommended_max_level`,
-    `selection_weight`,
-    `minimum_cooldown_seconds`,
-    `maximum_cooldown_seconds`,
-    `maximum_runtime_seconds`,
-    `allow_random_start`,
-    `enabled`,
-    `comment`
-)
+```sql
+INSERT INTO lwi_spawn_group
+    (id, name, route_node_id, spawn_radius, enabled)
 VALUES
-    (1, 'Westfall Scheduler Test', 0, 40, 1, 1, 10, 20, 100, 60, 120, 300, 1, 1, 'Temporary scheduler/spawn/movement test.'),
-    (2, 'Duskwood Scheduler Test', 0, 10, 1, 1, 20, 30, 100, 60, 120, 300, 1, 1, 'Temporary scheduler test.'),
-    (3, 'Wetlands Scheduler Test', 0, 11, 1, 2, 20, 30, 100, 60, 120, 300, 1, 1, 'Temporary scheduler test.');
+    (100, 'Example Force', 140, 10, 1);
+```
 
--- ===========================================================================
--- Runtime Stages
--- completion_type: 0 = timer, 1 = runtime signal
--- ===========================================================================
+`route_node_id` is the group's semantic spawn anchor. The route node supplies map, X/Y/Z, and orientation. `spawn_radius` spreads individual spawned entities around the anchor.
 
-INSERT INTO `lwi_invasion_stage`
-(
-    `id`,
-    `invasion_id`,
-    `stage_order`,
-    `name`,
-    `duration_seconds`,
-    `completion_type`,
-    `completion_target_id`,
-    `enabled`,
-    `comment`
-)
-VALUES
-    (1001, 1, 10, 'Scouts',           0, 1, 100, 1, 'Completes when ScoutRouteComplete is emitted.'),
-    (1002, 1, 20, 'Reinforcements',  20, 0,   0, 1, 'Spawn engine test stage.'),
-    (1003, 1, 30, 'Lieutenant',      20, 0,   0, 1, 'Spawn engine test stage.'),
+## Spawn members
 
-    (2001, 2, 10, 'Scouts',          20, 0,   0, 1, 'Runtime framework test.'),
-    (2002, 2, 20, 'Reinforcements',  20, 0,   0, 1, 'Runtime framework test.'),
-    (2003, 2, 30, 'Lieutenant',      20, 0,   0, 1, 'Runtime framework test.'),
+`lwi_spawn_member` continues to define entity composition, count, level override, and tactical role. Tactical roles affect formation positioning but do not replace native AzerothCore combat AI.
 
-    (3001, 3, 10, 'Scouts',          20, 0,   0, 1, 'Runtime framework test.'),
-    (3002, 3, 20, 'Reinforcements',  20, 0,   0, 1, 'Runtime framework test.'),
-    (3003, 3, 30, 'Lieutenant',      20, 0,   0, 1, 'Runtime framework test.');
+## Stage action type 2 — Start Route Journey
 
--- ===========================================================================
--- Spawn Groups
--- ===========================================================================
+```text
+target_id  = spawn_group_id
+parameter1 = start_route_node_id
+parameter2 = destination_route_node_id
+parameter3 = completion_signal_id (0 = none)
+```
 
-INSERT INTO `lwi_spawn_group`
-(
-    `id`,
-    `name`,
-    `map_id`,
-    `x`,
-    `y`,
-    `z`,
-    `orientation`,
-    `spawn_radius`,
-    `enabled`
-)
-VALUES
-(
-    100,
-    'Westfall Defias Scouts',
-    0,
-    -11045.854,
-    1509.643,
-    43.164726,
-    5.41409933,
-    10,
-    1
-),
-(
-    101,
-    'Westfall Defias Reinforcements',
-    0,
-    -10191.058,
-    1801.637,
-    34.94533,
-    0,
-    10,
-    1
-),
-(
-    102,
-    'Westfall Defias Lieutenant',
-    0,
-    -10191.058,
-    1801.637,
-    34.94533,
-    0,
-    5,
-    1
-);
+The route graph resolves the physical segments and route-owned movement paths between the two route nodes. Invasion SQL never references a `movement_path_id` directly.
 
--- ===========================================================================
--- Spawn Members
--- Westfall stage 10 is intentionally a mixed-role movement/formation test:
---   3x Melee DPS, 1x Protector, 1x Ranged DPS, 1x Healer, 1x Commander.
--- The GameObject remains in the group but is ignored by creature movement.
--- entity_type: 1 = Creature, 2 = GameObject
--- tactical_role:
---   0 Default, 1 Commander, 2 Protector, 3 Melee DPS,
---   4 Ranged DPS, 5 Healer, 6 Support
--- ===========================================================================
+Example:
 
-INSERT INTO `lwi_spawn_member`
-(
-    `id`,
-    `spawn_group_id`,
-    `entity_type`,
-    `entity_entry`,
-    `count`,
-    `level_override`,
-    `tactical_role`,
-    `comment`
-)
-VALUES
-    (100001, 100, 1,   449, 3, 0, 3, 'Westfall Defias scouts - Melee DPS'),
-    (100005, 100, 1,   544, 1, 0, 2, 'Westfall formation test - Protector'),
-    (100006, 100, 1,   589, 1, 0, 4, 'Westfall formation test - Ranged DPS'),
-    (100007, 100, 1,   545, 1, 0, 5, 'Westfall formation test - Healer'),
-    (100008, 100, 1,   441, 1, 0, 1, 'Westfall formation test - Commander'),
-    (100004, 100, 2, 29784, 1, 0, 0, 'Basic Campfire - mixed entity provider test'),
-    (100002, 101, 1,   589, 5, 0, 4, 'Westfall Defias reinforcements - Ranged DPS'),
-    (100003, 102, 1,   441, 1, 0, 1, 'Westfall Defias lieutenant - Commander');
+```sql
+-- Move spawn group 106 from Stormwind_Response_Force_Spawn (140)
+-- to Sentinel_Hill_Tower (70), then emit signal 103.
+(..., 2, 106, 140, 70, 103, ...)
+```
 
--- ===========================================================================
--- Runtime Signals
--- ===========================================================================
+## Route-node actions
 
-INSERT INTO `lwi_runtime_signal`
-(
-    `id`,
-    `name`,
-    `enabled`,
-    `comment`
-)
-VALUES
-(
-    100,
-    'ScoutRouteComplete',
-    1,
-    'Emitted when the temporary Westfall scout movement route completes.'
-);
+`lwi_route_node_action` provides invasion-specific behavior at semantic route anchors.
 
--- ===========================================================================
--- Dialogue
--- chat_type: 0 = Say, 1 = Yell
--- ===========================================================================
+```text
+id
+invasion_id
+spawn_group_id
+route_node_id
+action_order
+action_type
+target_id
+parameter1
+parameter2
+parameter3
+enabled
+comment
+```
 
-INSERT INTO `lwi_dialogue`
-(
-    `id`,
-    `name`,
-    `text`,
-    `chat_type`,
-    `language`,
-    `enabled`,
-    `comment`
-)
-VALUES
-    (100, 'Westfall Scout Warning', 'Keep your eyes open. Sentinel Hill is ahead.', 0, 0, 1, 'Temporary Say test for the scout runtime group.'),
-    (101, 'Westfall Lieutenant Challenge', 'The Brotherhood will take Westfall!', 1, 0, 1, 'Temporary Yell test for the lieutenant runtime group.');
+Supported action types:
 
--- ===========================================================================
--- World Announcements
--- Delivery scope and faction filtering are configured in lwi_stage_action.
--- ===========================================================================
+### 1 — Dialogue
 
-INSERT INTO `lwi_announcement`
-(
-    `id`,
-    `name`,
-    `text`,
-    `enabled`,
-    `comment`
-)
-VALUES
-(
-    100,
-    'Westfall Alliance Warning',
-    'Defias activity has been reported near Sentinel Hill. Alliance forces in Westfall are advised to remain alert.',
-    1,
-    'Temporary Alliance-only zone announcement test.'
-);
+```text
+target_id  = dialogue_id
+parameter1 = speaker spawn_member_id (0 = first available creature)
+```
 
--- ===========================================================================
--- Movement Profile
--- default_mode: 0 = provider/default, 1 = walk, 2 = run
--- ===========================================================================
+### 2 — World Announcement
 
-INSERT INTO `lwi_movement_profile`
-(
-    `id`,
-    `name`,
-    `default_mode`,
-    `walk_speed_multiplier`,
-    `run_speed_multiplier`,
-    `stealth_enabled`,
-    `enabled`,
-    `comment`
-)
-VALUES
-(
-    100,
-    'Westfall Scout Test Movement',
-    2,
-    1.0,
-    1.0,
-    0,
-    1,
-    'Temporary run profile used to prove runtime group movement.'
-);
+```text
+target_id  = announcement_id
+parameter1 = scope: 0 global, 1 map, 2 zone, 3 area
+parameter2 = scope_id (0 derives map/zone from invasion where supported)
+parameter3 = faction: 0 everyone, 1 Alliance, 2 Horde
+```
 
--- ===========================================================================
--- Movement Path and Nodes
--- Short route near the current Westfall test spawn so it can complete inside
--- the 20-second timer stage.
--- ===========================================================================
+### 3 — Sound
 
-INSERT INTO `lwi_movement_path`
-(
-    `id`,
-    `name`,
-    `enabled`,
-    `comment`
-)
-VALUES
-(
-    100,
-    'Westfall Scout Test Route',
-    1,
-    'Temporary short route used to prove runtime group movement.'
-);
+```text
+target_id  = SoundEntries ID
+parameter1 = source spawn_member_id (0 = first available creature)
+parameter2 = playback mode: 0 positional, 1 direct
+```
 
-INSERT INTO `lwi_movement_node`
-(
-    `id`,
-    `path_id`,
-    `node_order`,
-    `map_id`,
-    `x`,
-    `y`,
-    `z`,
-    `orientation`,
-    `wait_ms`,
-    `profile_override_id`,
-    `enabled`,
-    `comment`
-)
-VALUES
-    (10001, 100, 10, 0, -11005.889, 1418.7557,  43.322884, 6.271063,   0, 0, 1, 'Westfall long route node 10'),
-    (10002, 100, 20, 0, -10915.948, 1415.3441,  42.951710, 4.7827415,  0, 0, 1, 'Westfall long route node 20'),
-    (10003, 100, 30, 0, -10896.339, 1258.5677,  33.311367, 4.405757,   0, 0, 1, 'Westfall long route node 30'),
-    (10004, 100, 40, 0, -10965.958, 1103.7292,  37.669533, 5.493541,   0, 0, 1, 'Westfall long route node 40'),
-    (10005, 100, 50, 0, -10862.611, 1005.89294, 31.514760, 0.16463825, 0, 0, 1, 'Westfall long route node 50'),
-    (10006, 100, 60, 0, -10657.680, 1002.30725, 32.868557, 5.3011456,  0, 0, 1, 'Westfall long route node 60'),
-    (10007, 100, 70, 0, -10509.815, 1045.9102,  60.518673, 5.053761,   0, 0, 1, 'Sentinel Hill final node');
+Actions are scoped to both invasion and spawn group, so a merchant or another invasion can traverse the same route node without inheriting the action.
 
--- ===========================================================================
--- Stage Actions
--- action_type: 1 = Spawn Group
--- action_type: 2 = Start Movement
--- action_type: 3 = Dialogue
--- action_type: 4 = World Announcement
--- action_type: 5 = Sound
--- action_type: 6 = Spell
--- action_type: 7 = Start Assault
---
--- Start Movement:
---   target_id  = spawn_group_id
---   parameter1 = movement_path_id
---   parameter2 = movement_profile_id
---   parameter3 = completion_signal_id
---
--- Dialogue:
---   target_id  = spawn_group_id
---   parameter1 = dialogue_id
---   parameter2 = speaker spawn_member_id (0 = first available creature)
---   parameter3 = target policy bitmask: 1 quest givers, 2 vendors, 4 flight masters
---
--- World Announcement:
---   target_id  = announcement_id
---   parameter1 = scope (0 global, 1 map, 2 zone, 3 area)
---   parameter2 = scope_id (0 derives map/zone from invasion)
---   parameter3 = faction (0 everyone, 1 Alliance, 2 Horde)
---
--- Sound:
---   target_id  = spawn_group_id
---   parameter1 = sound_id
---   parameter2 = source spawn_member_id (0 = first available creature)
---   parameter3 = playback mode (0 distance/positional, 1 direct)
---
--- Start Assault:
---   target_id  = spawn_group_id
---   parameter1 = search radius in yards (0 = 40)
---   parameter2 = reacquire interval in milliseconds (0 = 2000)
---   parameter3 = target policy bitmask: 1 quest givers, 2 vendors, 4 flight masters
---
--- Spell (v1):
---   target_id  = caster spawn_group_id
---   parameter1 = spell_id
---   parameter2 = caster spawn_member_id (0 = first available creature)
---   parameter3 = target mode (0 self)
--- ===========================================================================
+A spawn group's own route node counts as reached immediately after successful spawn. While traveling, the commander is used as the group anchor when one exists; otherwise the first living creature is used. Actions fire when that anchor enters the route node's `arrival_radius`. Graph-node arrival is also reported explicitly at segment boundaries.
 
-INSERT INTO `lwi_stage_action`
-(
-    `id`,
-    `stage_id`,
-    `action_order`,
-    `action_type`,
-    `target_id`,
-    `parameter1`,
-    `parameter2`,
-    `parameter3`,
-    `delay_seconds`,
-    `enabled`,
-    `comment`
-)
-VALUES
-    (10007, 1001, 1, 4, 100,   2,      0,   1, 0, 1, 'Alliance-only Westfall zone warning; zone id derives from invasion'),
-    (10001, 1001, 2, 1, 100,   0,      0,   0, 0, 1, 'Spawn Westfall Defias scouts and campfire'),
-    (10008, 1001, 3, 5, 100, 847, 100001,   0, 0, 1, 'Temporary positional sound test from a Westfall scout'),
-    (10005, 1001, 4, 3, 100, 100, 100001,   0, 0, 1, 'A scout says a warning before beginning the route'),
-    (10004, 1001, 5, 2, 100, 100,    100, 100, 0, 1, 'Move Westfall Defias scout runtime group and emit ScoutRouteComplete'),
-    (10002, 1002, 1, 1, 101,   0,      0,   0, 0, 1, 'Spawn Westfall Defias reinforcements'),
-    (10003, 1003, 1, 1, 102,   0,      0,   0, 0, 1, 'Spawn Westfall Defias lieutenant'),
-    (10009, 1003, 2, 6, 102, 1459, 100003,   0, 0, 1, 'Temporary scripted self-cast test: Arcane Intellect rank 1'),
-    (10006, 1003, 3, 3, 102, 101, 100003,   0, 0, 1, 'The lieutenant yells after spawning');
--- TEMPORARY scheduler/spawn/movement framework data.
--- This is development test content and is safe to reapply.
+## Recommended prebuilt dependency order
 
--- ===========================================================================
--- Cleanup existing test data
--- ===========================================================================
+1. `801_routes.sql`
+2. invasion / stages
+3. spawn groups
+4. spawn members and templates
+5. runtime signals / dialogue / announcements
+6. stage actions
+7. route-node actions
 
-DELETE FROM `lwi_stage_action`
-WHERE `id` IN (10001,10002,10003,10004,10005,10006,10007,10008,10009);
+## Authoring rule
 
-DELETE FROM `lwi_runtime_signal`
-WHERE `id` IN (100);
-
-DELETE FROM `lwi_dialogue`
-WHERE `id` IN (100,101);
-
-DELETE FROM `lwi_announcement`
-WHERE `id` IN (100);
-
-DELETE FROM `lwi_spawn_member`
-WHERE `id` IN (
-    100001,100002,100003,100004,
-    100005,100006,100007,100008
-);
-
-DELETE FROM `lwi_spawn_group`
-WHERE `id` IN (100,101,102);
-
-DELETE FROM `lwi_movement_node`
-WHERE `path_id` IN (100);
-
-DELETE FROM `lwi_movement_path`
-WHERE `id` IN (100);
-
-DELETE FROM `lwi_movement_profile`
-WHERE `id` IN (100);
-
-DELETE FROM `lwi_invasion_stage`
-WHERE `invasion_id` IN (1,2,3);
-
-DELETE FROM `lwi_invasion`
-WHERE `id` IN (1,2,3);
-
-
-
--- ===========================================================================
--- Invasions
--- ===========================================================================
-
-INSERT INTO `lwi_invasion`
-(
-    `id`,
-    `name`,
-    `map_id`,
-    `zone_id`,
-    `team`,
-    `response_origin_id`,
-    `recommended_min_level`,
-    `recommended_max_level`,
-    `selection_weight`,
-    `minimum_cooldown_seconds`,
-    `maximum_cooldown_seconds`,
-    `maximum_runtime_seconds`,
-    `allow_random_start`,
-    `enabled`,
-    `comment`
-)
-VALUES
-    (1, 'Westfall Scheduler Test', 0, 40, 1, 1, 10, 20, 100, 60, 120, 300, 1, 1, 'Temporary scheduler/spawn/movement test.'),
-    (2, 'Duskwood Scheduler Test', 0, 10, 1, 1, 20, 30, 100, 60, 120, 300, 1, 1, 'Temporary scheduler test.'),
-    (3, 'Wetlands Scheduler Test', 0, 11, 1, 2, 20, 30, 100, 60, 120, 300, 1, 1, 'Temporary scheduler test.');
-
--- ===========================================================================
--- Runtime Stages
--- completion_type: 0 = timer, 1 = runtime signal
--- ===========================================================================
-
-INSERT INTO `lwi_invasion_stage`
-(
-    `id`,
-    `invasion_id`,
-    `stage_order`,
-    `name`,
-    `duration_seconds`,
-    `completion_type`,
-    `completion_target_id`,
-    `enabled`,
-    `comment`
-)
-VALUES
-    (1001, 1, 10, 'Scouts',           0, 1, 100, 1, 'Completes when ScoutRouteComplete is emitted.'),
-    (1002, 1, 20, 'Reinforcements',  20, 0,   0, 1, 'Spawn engine test stage.'),
-    (1003, 1, 30, 'Lieutenant',      20, 0,   0, 1, 'Spawn engine test stage.'),
-
-    (2001, 2, 10, 'Scouts',          20, 0,   0, 1, 'Runtime framework test.'),
-    (2002, 2, 20, 'Reinforcements',  20, 0,   0, 1, 'Runtime framework test.'),
-    (2003, 2, 30, 'Lieutenant',      20, 0,   0, 1, 'Runtime framework test.'),
-
-    (3001, 3, 10, 'Scouts',          20, 0,   0, 1, 'Runtime framework test.'),
-    (3002, 3, 20, 'Reinforcements',  20, 0,   0, 1, 'Runtime framework test.'),
-    (3003, 3, 30, 'Lieutenant',      20, 0,   0, 1, 'Runtime framework test.');
-
--- ===========================================================================
--- Spawn Groups
--- ===========================================================================
-
-INSERT INTO `lwi_spawn_group`
-(
-    `id`,
-    `name`,
-    `map_id`,
-    `x`,
-    `y`,
-    `z`,
-    `orientation`,
-    `spawn_radius`,
-    `enabled`
-)
-VALUES
-(
-    100,
-    'Westfall Defias Scouts',
-    0,
-    -11045.854,
-    1509.643,
-    43.164726,
-    5.41409933,
-    10,
-    1
-),
-(
-    101,
-    'Westfall Defias Reinforcements',
-    0,
-    -10191.058,
-    1801.637,
-    34.94533,
-    0,
-    10,
-    1
-),
-(
-    102,
-    'Westfall Defias Lieutenant',
-    0,
-    -10191.058,
-    1801.637,
-    34.94533,
-    0,
-    5,
-    1
-);
-
--- ===========================================================================
--- Spawn Members
--- Westfall stage 10 is intentionally a mixed-role movement/formation test:
---   3x Melee DPS, 1x Protector, 1x Ranged DPS, 1x Healer, 1x Commander.
--- The GameObject remains in the group but is ignored by creature movement.
--- entity_type: 1 = Creature, 2 = GameObject
--- tactical_role:
---   0 Default, 1 Commander, 2 Protector, 3 Melee DPS,
---   4 Ranged DPS, 5 Healer, 6 Support
--- ===========================================================================
-
-INSERT INTO `lwi_spawn_member`
-(
-    `id`,
-    `spawn_group_id`,
-    `entity_type`,
-    `entity_entry`,
-    `count`,
-    `level_override`,
-    `tactical_role`,
-    `comment`
-)
-VALUES
-    (100001, 100, 1,   449, 3, 0, 3, 'Westfall Defias scouts - Melee DPS'),
-    (100005, 100, 1,   544, 1, 0, 2, 'Westfall formation test - Protector'),
-    (100006, 100, 1,   589, 1, 0, 4, 'Westfall formation test - Ranged DPS'),
-    (100007, 100, 1,   545, 1, 0, 5, 'Westfall formation test - Healer'),
-    (100008, 100, 1,   441, 1, 0, 1, 'Westfall formation test - Commander'),
-    (100004, 100, 2, 29784, 1, 0, 0, 'Basic Campfire - mixed entity provider test'),
-    (100002, 101, 1,   589, 5, 0, 4, 'Westfall Defias reinforcements - Ranged DPS'),
-    (100003, 102, 1,   441, 1, 0, 1, 'Westfall Defias lieutenant - Commander');
-
--- ===========================================================================
--- Runtime Signals
--- ===========================================================================
-
-INSERT INTO `lwi_runtime_signal`
-(
-    `id`,
-    `name`,
-    `enabled`,
-    `comment`
-)
-VALUES
-(
-    100,
-    'ScoutRouteComplete',
-    1,
-    'Emitted when the temporary Westfall scout movement route completes.'
-);
-
--- ===========================================================================
--- Dialogue
--- chat_type: 0 = Say, 1 = Yell
--- ===========================================================================
-
-INSERT INTO `lwi_dialogue`
-(
-    `id`,
-    `name`,
-    `text`,
-    `chat_type`,
-    `language`,
-    `enabled`,
-    `comment`
-)
-VALUES
-    (100, 'Westfall Scout Warning', 'Keep your eyes open. Sentinel Hill is ahead.', 0, 0, 1, 'Temporary Say test for the scout runtime group.'),
-    (101, 'Westfall Lieutenant Challenge', 'The Brotherhood will take Westfall!', 1, 0, 1, 'Temporary Yell test for the lieutenant runtime group.');
-
--- ===========================================================================
--- World Announcements
--- Delivery scope and faction filtering are configured in lwi_stage_action.
--- ===========================================================================
-
-INSERT INTO `lwi_announcement`
-(
-    `id`,
-    `name`,
-    `text`,
-    `enabled`,
-    `comment`
-)
-VALUES
-(
-    100,
-    'Westfall Alliance Warning',
-    'Defias activity has been reported near Sentinel Hill. Alliance forces in Westfall are advised to remain alert.',
-    1,
-    'Temporary Alliance-only zone announcement test.'
-);
-
--- ===========================================================================
--- Movement Profile
--- default_mode: 0 = provider/default, 1 = walk, 2 = run
--- ===========================================================================
-
-INSERT INTO `lwi_movement_profile`
-(
-    `id`,
-    `name`,
-    `default_mode`,
-    `walk_speed_multiplier`,
-    `run_speed_multiplier`,
-    `stealth_enabled`,
-    `enabled`,
-    `comment`
-)
-VALUES
-(
-    100,
-    'Westfall Scout Test Movement',
-    2,
-    1.0,
-    1.0,
-    0,
-    1,
-    'Temporary run profile used to prove runtime group movement.'
-);
-
--- ===========================================================================
--- Movement Path and Nodes
--- Short route near the current Westfall test spawn so it can complete inside
--- the 20-second timer stage.
--- ===========================================================================
-
-INSERT INTO `lwi_movement_path`
-(
-    `id`,
-    `name`,
-    `enabled`,
-    `comment`
-)
-VALUES
-(
-    100,
-    'Westfall Scout Test Route',
-    1,
-    'Temporary short route used to prove runtime group movement.'
-);
-
-INSERT INTO `lwi_movement_node`
-(
-    `id`,
-    `path_id`,
-    `node_order`,
-    `map_id`,
-    `x`,
-    `y`,
-    `z`,
-    `orientation`,
-    `wait_ms`,
-    `profile_override_id`,
-    `enabled`,
-    `comment`
-)
-VALUES
-    (10001, 100, 10, 0, -11005.889, 1418.7557,  43.322884, 6.271063,   0, 0, 1, 'Westfall long route node 10'),
-    (10002, 100, 20, 0, -10915.948, 1415.3441,  42.951710, 4.7827415,  0, 0, 1, 'Westfall long route node 20'),
-    (10003, 100, 30, 0, -10896.339, 1258.5677,  33.311367, 4.405757,   0, 0, 1, 'Westfall long route node 30'),
-    (10004, 100, 40, 0, -10965.958, 1103.7292,  37.669533, 5.493541,   0, 0, 1, 'Westfall long route node 40'),
-    (10005, 100, 50, 0, -10862.611, 1005.89294, 31.514760, 0.16463825, 0, 0, 1, 'Westfall long route node 50'),
-    (10006, 100, 60, 0, -10657.680, 1002.30725, 32.868557, 5.3011456,  0, 0, 1, 'Westfall long route node 60'),
-    (10007, 100, 70, 0, -10509.815, 1045.9102,  60.518673, 5.053761,   0, 0, 1, 'Sentinel Hill final node');
-
--- ===========================================================================
--- Stage Actions
--- action_type: 1 = Spawn Group
--- action_type: 2 = Start Movement
--- action_type: 3 = Dialogue
--- action_type: 4 = World Announcement
--- action_type: 5 = Sound
--- action_type: 6 = Spell
--- action_type: 7 = Start Assault
---
--- Start Movement:
---   target_id  = spawn_group_id
---   parameter1 = movement_path_id
---   parameter2 = movement_profile_id
---   parameter3 = completion_signal_id
---
--- Dialogue:
---   target_id  = spawn_group_id
---   parameter1 = dialogue_id
---   parameter2 = speaker spawn_member_id (0 = first available creature)
---   parameter3 = target policy bitmask: 1 quest givers, 2 vendors, 4 flight masters
---
--- World Announcement:
---   target_id  = announcement_id
---   parameter1 = scope (0 global, 1 map, 2 zone, 3 area)
---   parameter2 = scope_id (0 derives map/zone from invasion)
---   parameter3 = faction (0 everyone, 1 Alliance, 2 Horde)
---
--- Sound:
---   target_id  = spawn_group_id
---   parameter1 = sound_id
---   parameter2 = source spawn_member_id (0 = first available creature)
---   parameter3 = playback mode (0 distance/positional, 1 direct)
---
--- Start Assault:
---   target_id  = spawn_group_id
---   parameter1 = search radius in yards (0 = 40)
---   parameter2 = reacquire interval in milliseconds (0 = 2000)
---   parameter3 = target policy bitmask: 1 quest givers, 2 vendors, 4 flight masters
---
--- Spell (v1):
---   target_id  = caster spawn_group_id
---   parameter1 = spell_id
---   parameter2 = caster spawn_member_id (0 = first available creature)
---   parameter3 = target mode (0 self)
--- ===========================================================================
-
-INSERT INTO `lwi_stage_action`
-(
-    `id`,
-    `stage_id`,
-    `action_order`,
-    `action_type`,
-    `target_id`,
-    `parameter1`,
-    `parameter2`,
-    `parameter3`,
-    `delay_seconds`,
-    `enabled`,
-    `comment`
-)
-VALUES
-    (10007, 1001, 1, 4, 100,   2,      0,   1, 0, 1, 'Alliance-only Westfall zone warning; zone id derives from invasion'),
-    (10001, 1001, 2, 1, 100,   0,      0,   0, 0, 1, 'Spawn Westfall Defias scouts and campfire'),
-    (10008, 1001, 3, 5, 100, 847, 100001,   0, 0, 1, 'Temporary positional sound test from a Westfall scout'),
-    (10005, 1001, 4, 3, 100, 100, 100001,   0, 0, 1, 'A scout says a warning before beginning the route'),
-    (10004, 1001, 5, 2, 100, 100,    100, 100, 0, 1, 'Move Westfall Defias scout runtime group and emit ScoutRouteComplete'),
-    (10002, 1002, 1, 1, 101,   0,      0,   0, 0, 1, 'Spawn Westfall Defias reinforcements'),
-    (10003, 1003, 1, 1, 102,   0,      0,   0, 0, 1, 'Spawn Westfall Defias lieutenant'),
-    (10009, 1003, 2, 6, 102, 1459, 100003,   0, 0, 1, 'Temporary scripted self-cast test: Arcane Intellect rank 1'),
-    (10006, 1003, 3, 3, 102, 101, 100003,   0, 0, 1, 'The lieutenant yells after spawning');
-    
+If an invasion needs to spawn somewhere, travel somewhere, or trigger something at a meaningful location, create/reuse a semantic `lwi_route_node` and reference its stable ID. Use the automatic 5-yard route builder for the physical paths between those semantic anchors.

@@ -28,6 +28,7 @@ void InvasionMgr::Clear()
     _movementProfiles.clear();
     _routeNodes.clear();
     _routeSegments.clear();
+    _routeNodeActionsByInvasionGroup.clear();
     _runtimeSignals.clear();
     _dialogues.clear();
     _announcements.clear();
@@ -242,7 +243,7 @@ void InvasionMgr::LoadDefinitions()
         } while (result->NextRow());
     }
 
-    if (QueryResult result = WorldDatabase.Query("SELECT `id`, `name`, `map_id`, `x`, `y`, `z`, `orientation`, `spawn_radius`, `enabled` FROM `lwi_spawn_group` WHERE `enabled` = 1"))
+    if (QueryResult result = WorldDatabase.Query("SELECT `id`, `name`, `route_node_id`, `spawn_radius`, `enabled` FROM `lwi_spawn_group` WHERE `enabled` = 1"))
     {
         do
         {
@@ -250,13 +251,9 @@ void InvasionMgr::LoadDefinitions()
             SpawnGroupDefinition group;
             group.Id = fields[0].Get<uint32>();
             group.Name = fields[1].Get<std::string>();
-            group.MapId = fields[2].Get<uint16>();
-            group.X = fields[3].Get<float>();
-            group.Y = fields[4].Get<float>();
-            group.Z = fields[5].Get<float>();
-            group.Orientation = fields[6].Get<float>();
-            group.SpawnRadius = fields[7].Get<float>();
-            group.Enabled = fields[8].Get<bool>();
+            group.RouteNodeId = fields[2].IsNull() ? 0 : fields[2].Get<uint32>();
+            group.SpawnRadius = fields[3].Get<float>();
+            group.Enabled = fields[4].Get<bool>();
             _spawnGroups.emplace(group.Id, std::move(group));
         } while (result->NextRow());
     }
@@ -647,6 +644,71 @@ void InvasionMgr::LoadDefinitions()
     }
 
     LOG_INFO("server.loading", "[LWI Route] Loaded {} route segment definition(s).", _routeSegments.size());
+
+    std::size_t routeNodeActionCount = 0;
+    if (QueryResult result = WorldDatabase.Query(
+        "SELECT `id`, `invasion_id`, `spawn_group_id`, `route_node_id`, `action_order`, `action_type`, "
+        "`target_id`, `parameter1`, `parameter2`, `parameter3`, `enabled`, `comment` "
+        "FROM `lwi_route_node_action` WHERE `enabled` = 1 "
+        "ORDER BY `invasion_id`, `spawn_group_id`, `route_node_id`, `action_order`, `id`"))
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            RouteNodeActionDefinition action;
+            action.Id = fields[0].Get<uint32>();
+            action.InvasionId = fields[1].Get<uint32>();
+            action.SpawnGroupId = fields[2].Get<uint32>();
+            action.RouteNodeId = fields[3].Get<uint32>();
+            action.ActionOrder = fields[4].Get<uint16>();
+            action.ActionType = fields[5].Get<uint8>();
+            action.TargetId = fields[6].Get<uint32>();
+            action.Parameter1 = fields[7].Get<uint32>();
+            action.Parameter2 = fields[8].Get<uint32>();
+            action.Parameter3 = fields[9].Get<uint32>();
+            action.Enabled = fields[10].Get<bool>();
+            if (!fields[11].IsNull())
+                action.Comment = fields[11].Get<std::string>();
+
+            if (_definitions.find(action.InvasionId) == _definitions.end())
+            {
+                LOG_ERROR("server.loading",
+                    "[LWI Route] Route node action {} references missing invasion {}; action ignored.",
+                    action.Id, action.InvasionId);
+                continue;
+            }
+
+            if (_spawnGroups.find(action.SpawnGroupId) == _spawnGroups.end())
+            {
+                LOG_ERROR("server.loading",
+                    "[LWI Route] Route node action {} references missing spawn group {}; action ignored.",
+                    action.Id, action.SpawnGroupId);
+                continue;
+            }
+
+            if (_routeNodes.find(action.RouteNodeId) == _routeNodes.end())
+            {
+                LOG_ERROR("server.loading",
+                    "[LWI Route] Route node action {} references missing route node {}; action ignored.",
+                    action.Id, action.RouteNodeId);
+                continue;
+            }
+
+            if (action.ActionType < 1 || action.ActionType > 3)
+            {
+                LOG_ERROR("server.loading",
+                    "[LWI Route] Route node action {} uses unsupported action type {}; action ignored.",
+                    action.Id, action.ActionType);
+                continue;
+            }
+
+            uint64 const key = (static_cast<uint64>(action.InvasionId) << 32) | action.SpawnGroupId;
+            _routeNodeActionsByInvasionGroup[key].push_back(std::move(action));
+            ++routeNodeActionCount;
+        } while (result->NextRow());
+    }
+
+    LOG_INFO("server.loading", "[LWI Route] Loaded {} route node action definition(s).", routeNodeActionCount);
 }
 
 ResponseOriginDefinition const* InvasionMgr::GetResponseOrigin(uint32 responseOriginId) const
@@ -767,6 +829,13 @@ std::unordered_map<uint32, RouteSegmentDefinition> const& InvasionMgr::GetRouteS
     return _routeSegments;
 }
 
+std::vector<RouteNodeActionDefinition> const* InvasionMgr::GetRouteNodeActions(uint32 invasionId, uint32 spawnGroupId) const
+{
+    uint64 const key = (static_cast<uint64>(invasionId) << 32) | spawnGroupId;
+    auto const iterator = _routeNodeActionsByInvasionGroup.find(key);
+    return iterator != _routeNodeActionsByInvasionGroup.end() ? &iterator->second : nullptr;
+}
+
 RuntimeSignalDefinition const* InvasionMgr::GetRuntimeSignal(uint32 id) const
 {
     auto it = _runtimeSignals.find(id);
@@ -868,6 +937,17 @@ std::size_t InvasionMgr::GetRouteNodeCount() const
 std::size_t InvasionMgr::GetRouteSegmentCount() const
 {
     return _routeSegments.size();
+}
+
+std::size_t InvasionMgr::GetRouteNodeActionCount() const
+{
+    std::size_t count = 0;
+    for (auto const& [key, actions] : _routeNodeActionsByInvasionGroup)
+    {
+        (void)key;
+        count += actions.size();
+    }
+    return count;
 }
 
 std::size_t InvasionMgr::GetRuntimeSignalCount() const

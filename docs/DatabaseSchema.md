@@ -20,6 +20,7 @@ Permanent reusable definitions:
 | `lwi_movement_profile` | Movement mode/profile data |
 | `lwi_route_node` | Logical connection point in the shared world-travel graph |
 | `lwi_route_segment` | Bidirectional graph edge backed by an `lwi_movement_path` |
+| `lwi_route_node_action` | Invasion/group-scoped action triggered at a semantic route node |
 | `lwi_runtime_signal` | Reusable signal names/IDs |
 | `lwi_dialogue` | Say/Yell text definitions |
 | `lwi_announcement` | Announcement text definitions |
@@ -66,7 +67,7 @@ Actions execute in `action_order` when a stage begins.
 | Type | Action | `target_id` | `parameter1` | `parameter2` | `parameter3` |
 |---:|---|---|---|---|---|
 | 1 | Spawn Group | spawn group ID | unused | unused | unused |
-| 2 | Start Movement | spawn group ID | movement path ID | movement profile ID (`0` default) | completion signal ID (`0` none) |
+| 2 | Start Route Journey | spawn group ID | start route node ID | destination route node ID | completion signal ID (`0` none) |
 | 3 | Dialogue | spawn group ID | dialogue ID | speaker member ID (`0` first creature) | reserved |
 | 4 | World Announcement | announcement ID | scope | scope ID | faction |
 | 5 | Sound | spawn group ID | SoundEntries ID | source member ID (`0` first creature) | playback mode |
@@ -84,7 +85,7 @@ Spell target mode currently supports only `0` self.
 
 ## `lwi_spawn_group`
 
-Defines `map_id`, X/Y/Z/orientation, spawn radius, and enabled state. The spawn group's coordinates are the initial spawn location, not the movement path's first destination.
+Defines `route_node_id`, spawn radius, and enabled state. The referenced route node supplies map, XYZ, and orientation. Raw spawn coordinates are no longer authored in invasion SQL.
 
 ## `lwi_spawn_member`
 
@@ -136,6 +137,18 @@ Defines a reusable logical connection point with `name`, `map_id`, X/Y/Z/orienta
 Connects `start_node_id` and `end_node_id` using `movement_path_id`. A segment is shared infrastructure rather than invasion-owned data. Runtime consumers may traverse the same segment forward or reverse.
 
 Connected segments form a graph. `.lwi route travel <fromNodeId|name> <destinationNodeId|name>` resolves a connected path through that graph and chains the necessary segments automatically. See [RouteNetwork.md](RouteNetwork.md) for authoring and test commands.
+
+### `lwi_route_node_action`
+
+Defines invasion-scoped behavior anchored to semantic route nodes. Rows are filtered by `invasion_id` and `spawn_group_id`, so shared world routes can be reused safely by unrelated consumers.
+
+Supported action types:
+
+- `1` Dialogue — `target_id=dialogue_id`, `parameter1=speaker spawn_member_id`;
+- `2` World Announcement — `target_id=announcement_id`, parameters use the same scope/scope-id/faction mapping as stage announcements;
+- `3` Sound — `target_id=sound_id`, `parameter1=source spawn_member_id`, `parameter2=playback mode`.
+
+A spawn group's own `route_node_id` counts as reached immediately after successful spawn. During route travel, actions trigger when the group's commander (or first living creature if there is no commander) enters the route node's `arrival_radius`. Graph segment endpoints are also reported explicitly, so stable junction-node actions do not depend on polling timing.
 
 ## `lwi_runtime_signal`
 

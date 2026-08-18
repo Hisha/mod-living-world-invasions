@@ -6,6 +6,9 @@ This snapshot marks the point where the core framework is considered sufficient 
 
 ## Proven working
 
+- route-node anchored invasion spawning and graph-based route journeys;
+- invasion-scoped semantic route-node actions (dialogue/announcement/sound);
+
 - SQL definition loading and reload.
 - Scheduler random selection, cooldowns, weights, and concurrency limits.
 - Response-origin capacity.

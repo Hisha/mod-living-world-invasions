@@ -170,7 +170,13 @@ bool InvasionRuntime::BeginCurrentStage(uint64 now)
         {
             if (action.ActionType == SpawnGroupActionType)
             {
-                sInvasionSpawnMgr.SpawnGroup(_runtimeId, action.TargetId);
+                uint64 runtimeGroupId = 0;
+                if (sInvasionSpawnMgr.SpawnGroup(_runtimeId, action.TargetId, &runtimeGroupId) && runtimeGroupId != 0)
+                {
+                    SpawnGroupDefinition const* spawnGroup = sInvasionMgr.GetSpawnGroup(action.TargetId);
+                    if (spawnGroup && spawnGroup->RouteNodeId != 0)
+                        sMovementController.NotifyRouteNodeReached(runtimeGroupId, spawnGroup->RouteNodeId, _invasionId);
+                }
                 continue;
             }
 
@@ -185,10 +191,16 @@ bool InvasionRuntime::BeginCurrentStage(uint64 now)
                     continue;
                 }
 
-                if (!sMovementController.StartPath(group->Id, action.Parameter1, action.Parameter2, action.Parameter3))
+                if (!sMovementController.StartRouteJourney(
+                        group->Id,
+                        action.Parameter1,
+                        action.Parameter2,
+                        0,
+                        action.Parameter3))
                 {
                     LOG_ERROR("server.loading",
-                        "[LWI Runtime] Runtime #{} failed movement action {} for runtime entity group #{} (path {}, profile {}, completion signal {}).",
+                        "[LWI Runtime] Runtime #{} failed route movement action {} for runtime entity group #{} "
+                        "(start route node {}, destination route node {}, completion signal {}).",
                         _runtimeId, action.Id, group->Id, action.Parameter1, action.Parameter2, action.Parameter3);
                 }
             }

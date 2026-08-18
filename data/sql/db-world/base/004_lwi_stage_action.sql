@@ -1,6 +1,6 @@
 -- Canonical clean-install schema for stage actions.
 -- action_type 1 = Spawn Group
--- action_type 2 = Start Movement
+-- action_type 2 = Start Route Journey
 -- action_type 3 = Dialogue
 -- action_type 4 = World Announcement
 -- action_type 5 = Sound
@@ -9,11 +9,14 @@
 -- action_type 8 = Watch Group Defeat
 -- action_type 9 = Start Garrison Restock
 --
--- Start Movement parameter mapping:
+-- Start Route Journey parameter mapping:
 --   target_id  = spawn_group_id whose latest runtime entity group should move
---   parameter1 = movement_path_id
---   parameter2 = movement_profile_id (0 = provider/default behavior)
+--   parameter1 = start_route_node_id
+--   parameter2 = destination_route_node_id
 --   parameter3 = completion_signal_id (0 = emit no signal)
+--
+-- Invasion definitions never reference movement_path_id directly. The route graph
+-- resolves the underlying route segments/movement paths between the two stable nodes.
 --
 -- Dialogue parameter mapping:
 --   target_id  = spawn_group_id whose latest runtime entity group contains the speaker

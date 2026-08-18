@@ -172,6 +172,7 @@ void MovementController::Reset()
 {
     _activeMovements.clear();
     _activeRouteJourneys.clear();
+    _triggeredRouteActionIdsByGroup.clear();
     _updateTimerMs = 0;
 }
 
@@ -495,6 +496,7 @@ bool MovementController::StartRouteJourney(
     journey.Steps = std::move(steps);
 
     _activeRouteJourneys[runtimeGroupId] = std::move(journey);
+    NotifyRouteNodeReached(runtimeGroupId, fromNodeId);
 
     ActiveRouteJourney const& activeJourney = _activeRouteJourneys[runtimeGroupId];
     RouteJourneyStep const& firstStep = activeJourney.Steps.front();
@@ -535,6 +537,7 @@ bool MovementController::CancelGroup(uint64 runtimeGroupId)
 
     _activeMovements.erase(itr);
     _activeRouteJourneys.erase(runtimeGroupId);
+    _triggeredRouteActionIdsByGroup.erase(runtimeGroupId);
 
     LOG_INFO("server.loading",
         "[LWI Movement] Cancelled movement for runtime entity group #{}.",
@@ -558,6 +561,16 @@ void MovementController::CancelRuntime(uint64 runtimeId)
     {
         _activeMovements.erase(runtimeGroupId);
         _activeRouteJourneys.erase(runtimeGroupId);
+        _triggeredRouteActionIdsByGroup.erase(runtimeGroupId);
+    }
+
+    for (auto itr = _triggeredRouteActionIdsByGroup.begin(); itr != _triggeredRouteActionIdsByGroup.end();)
+    {
+        RuntimeEntityGroup* group = sRuntimeEntityGroupMgr.GetGroup(itr->first);
+        if (!group || group->RuntimeId == runtimeId)
+            itr = _triggeredRouteActionIdsByGroup.erase(itr);
+        else
+            ++itr;
     }
 
     if (!cancelled.empty())
@@ -566,6 +579,143 @@ void MovementController::CancelRuntime(uint64 runtimeId)
             "[LWI Movement] Cancelled {} active movement(s) for runtime #{}.",
             cancelled.size(), runtimeId);
     }
+}
+
+void MovementController::NotifyRouteNodeReached(uint64 runtimeGroupId, uint32 routeNodeId, uint32 invasionId)
+{
+    RuntimeEntityGroup* group = sRuntimeEntityGroupMgr.GetGroup(runtimeGroupId);
+    if (!group || group->State != RuntimeEntityGroupState::Active)
+        return;
+
+    if (invasionId == 0)
+    {
+        InvasionRuntime const* runtime = sInvasionRuntimeMgr.GetRuntime(group->RuntimeId);
+        if (!runtime)
+            return;
+        invasionId = runtime->GetInvasionId();
+    }
+
+    auto const* actions = sInvasionMgr.GetRouteNodeActions(invasionId, group->SpawnGroupId);
+    if (!actions)
+        return;
+
+    auto& triggered = _triggeredRouteActionIdsByGroup[runtimeGroupId];
+    for (RouteNodeActionDefinition const& action : *actions)
+    {
+        if (action.RouteNodeId != routeNodeId || triggered.find(action.Id) != triggered.end())
+            continue;
+
+        if (ExecuteRouteNodeAction(*group, action))
+            triggered.insert(action.Id);
+    }
+}
+
+void MovementController::CheckRouteNodeActions(RuntimeEntityGroup const& group)
+{
+    InvasionRuntime const* runtime = sInvasionRuntimeMgr.GetRuntime(group.RuntimeId);
+    if (!runtime)
+        return;
+
+    auto const* actions = sInvasionMgr.GetRouteNodeActions(runtime->GetInvasionId(), group.SpawnGroupId);
+    if (!actions || actions->empty())
+        return;
+
+    Creature* anchor = nullptr;
+    for (RuntimeEntity const& entity : group.Entities)
+    {
+        if (entity.EntityType != static_cast<uint8>(EntityProviderType::Creature))
+            continue;
+
+        Map* map = sMapMgr->FindMap(entity.MapId, 0);
+        if (!map)
+            continue;
+
+        Creature* creature = map->GetCreature(entity.Guid);
+        if (!creature || !creature->IsAlive())
+            continue;
+
+        if (!anchor)
+            anchor = creature;
+
+        if (static_cast<TacticalRole>(entity.TacticalRole) == TacticalRole::Commander)
+        {
+            anchor = creature;
+            break;
+        }
+    }
+
+    if (!anchor)
+        return;
+
+    auto& triggered = _triggeredRouteActionIdsByGroup[group.Id];
+    for (RouteNodeActionDefinition const& action : *actions)
+    {
+        if (triggered.find(action.Id) != triggered.end())
+            continue;
+
+        RouteNodeDefinition const* node = sInvasionMgr.GetRouteNode(action.RouteNodeId);
+        if (!node || node->MapId != anchor->GetMapId())
+            continue;
+
+        if (anchor->GetDistance(node->X, node->Y, node->Z) > node->ArrivalRadius)
+            continue;
+
+        if (ExecuteRouteNodeAction(group, action))
+            triggered.insert(action.Id);
+    }
+}
+
+bool MovementController::ExecuteRouteNodeAction(RuntimeEntityGroup const& group, RouteNodeActionDefinition const& action)
+{
+    bool success = false;
+    switch (action.ActionType)
+    {
+        case 1: // Dialogue: target_id=dialogue, parameter1=speaker spawn_member_id.
+            success = sDialogueManager.Execute(
+                group.RuntimeId,
+                group.SpawnGroupId,
+                action.TargetId,
+                action.Parameter1);
+            break;
+
+        case 2: // Announcement: target_id=announcement, p1=scope, p2=scope id, p3=faction.
+            success = sAnnouncementManager.Execute(
+                group.RuntimeId,
+                action.InvasionId,
+                action.TargetId,
+                action.Parameter1,
+                action.Parameter2,
+                action.Parameter3);
+            break;
+
+        case 3: // Sound: target_id=sound, parameter1=source member id, parameter2=playback mode.
+            success = sSoundManager.Execute(
+                group.RuntimeId,
+                group.SpawnGroupId,
+                action.TargetId,
+                action.Parameter1,
+                action.Parameter2);
+            break;
+
+        default:
+            LOG_ERROR("server.loading",
+                "[LWI Route] Runtime entity group #{} encountered unsupported route-node action type {} for action {}.",
+                group.Id, action.ActionType, action.Id);
+            return false;
+    }
+
+    if (!success)
+    {
+        LOG_ERROR("server.loading",
+            "[LWI Route] Runtime entity group #{} failed route-node action {} type {} at route node {}.",
+            group.Id, action.Id, action.ActionType, action.RouteNodeId);
+        return false;
+    }
+
+    LOG_INFO("server.loading",
+        "[LWI Route] Runtime entity group #{} executed route-node action {} type {} at route node {}.",
+        group.Id, action.Id, action.ActionType, action.RouteNodeId);
+    return true;
 }
 
 bool MovementController::IsGroupMoving(uint64 runtimeGroupId) const
@@ -670,6 +820,9 @@ void MovementController::Update(uint32 diff)
 
         ResumeInterruptedCreatures(movement);
 
+        if (_activeRouteJourneys.find(runtimeGroupId) != _activeRouteJourneys.end())
+            CheckRouteNodeActions(*group);
+
         if (!HasGroupReachedCurrentNode(movement, nowMs))
         {
             continue;
@@ -713,6 +866,7 @@ void MovementController::Update(uint32 diff)
     {
         _activeMovements.erase(runtimeGroupId);
         _activeRouteJourneys.erase(runtimeGroupId);
+        _triggeredRouteActionIdsByGroup.erase(runtimeGroupId);
     }
 
     std::sort(defeatedRuntimes.begin(), defeatedRuntimes.end());
@@ -860,7 +1014,7 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
     movement.State = RuntimeMovementState::Moving;
     movement.WaitEndsAtMs = 0;
 
-    LOG_INFO("server.loading",
+    LOG_DEBUG("server.loading",
         "[LWI Movement] Runtime entity group #{} moving {} creature(s) via MMAP in role-aware formation to path {} node {} ({:.2f}, {:.2f}, {:.2f}).",
         movement.RuntimeGroupId,
         moved,
@@ -1114,7 +1268,7 @@ bool MovementController::HasGroupReachedCurrentNode(
     {
         movement.ArrivalGraceStartedAtMs = nowMs;
 
-        LOG_INFO("server.loading",
+        LOG_DEBUG("server.loading",
             "[LWI Movement] Runtime entity group #{} has {}/{} surviving creature(s) within {:.1f} yards "
             "of their path {} node formation destinations; starting {} ms regroup grace.",
             movement.RuntimeGroupId,
@@ -1132,7 +1286,7 @@ bool MovementController::HasGroupReachedCurrentNode(
         return false;
     }
 
-    LOG_INFO("server.loading",
+    LOG_DEBUG("server.loading",
         "[LWI Movement] Runtime entity group #{} accepted formation arrival at path {} node with "
         "{}/{} surviving creature(s) in position after regroup grace.",
         movement.RuntimeGroupId,
@@ -1228,6 +1382,8 @@ void MovementController::CompleteMovement(
     if (journeyItr != _activeRouteJourneys.end())
     {
         ActiveRouteJourney& journey = journeyItr->second;
+        RouteJourneyStep const& completedStep = journey.Steps[journey.StepIndex];
+        NotifyRouteNodeReached(runtimeGroupId, completedStep.ToNodeId);
 
         if (journey.StepIndex + 1 < journey.Steps.size())
         {
