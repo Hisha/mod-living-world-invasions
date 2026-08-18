@@ -35,6 +35,7 @@ LWI.Scheduler.Enable = 1
 | `.lwi route travel <fromNodeId|name> <destinationNodeId|name>` | Test multi-segment graph travel; IDs and exact names are accepted |
 | `.lwi route export segment <segmentId|name>` | Export one route segment and dependencies to SQL |
 | `.lwi route export journey <fromNodeId|name> <destinationNodeId|name>` | Export a connected multi-segment route journey to SQL |
+| `.lwi route export network` | Export the complete loaded route network as `lwi_exports/801_routes.sql` |
 
 See [RouteNetwork.md](RouteNetwork.md) for the full shared-route authoring workflow.
 

@@ -881,6 +881,12 @@ public:
                 HandleRouteExportJourneyCommand,
                 rbac::RBAC_PERM_COMMAND_SERVER_INFO,
                 Console::No
+            },
+            {
+                "network",
+                HandleRouteExportNetworkCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
             }
         };
 
@@ -2307,6 +2313,52 @@ private:
             nearest->Z,
             nearest->Orientation,
             nearestDistance);
+        return true;
+    }
+
+    static bool HandleRouteExportNetworkCommand(ChatHandler* handler)
+    {
+        if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Debug))
+        {
+            handler->SendSysMessage(
+                "Living World Invasions debug commands are disabled. Set LWI.Debug = 1 to use .lwi route export.");
+            return false;
+        }
+
+        std::vector<uint32> segmentIds;
+        std::unordered_set<uint32> routeNodeIds;
+        std::unordered_set<uint32> movementPathIds;
+        segmentIds.reserve(sInvasionMgr.GetRouteSegments().size());
+        for (auto const& [segmentId, segment] : sInvasionMgr.GetRouteSegments())
+        {
+            segmentIds.push_back(segmentId);
+            routeNodeIds.insert(segment.StartNodeId);
+            routeNodeIds.insert(segment.EndNodeId);
+            movementPathIds.insert(segment.MovementPathId);
+        }
+
+        if (segmentIds.empty())
+        {
+            handler->SendSysMessage("No enabled route segments are loaded; nothing to export.");
+            return false;
+        }
+
+        std::string outputPath;
+        std::string error;
+        if (!WriteRouteExport(segmentIds, "801_routes", outputPath, error))
+        {
+            handler->PSendSysMessage("Route network export failed: {}", error);
+            return false;
+        }
+
+        handler->PSendSysMessage(
+            "Exported complete LWI route network: {} segment(s), {} route node(s), {} movement path(s). File: {}",
+            segmentIds.size(),
+            routeNodeIds.size(),
+            movementPathIds.size(),
+            outputPath);
+        handler->SendSysMessage(
+            "Copy this file into data/sql/db-world/prebuilt/801_routes.sql when you are ready to publish the current canonical route network.");
         return true;
     }
 

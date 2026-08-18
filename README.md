@@ -52,3 +52,7 @@ The files under `data/sql/*/base` are the canonical clean-install schema/content
 ## Project philosophy
 
 LWI is a framework rather than a collection of hard-coded events. Invasion-specific tuning—NPC entries, levels, routes, timing, announcements, compositions, and stage structure—should live in SQL wherever the current framework supports it. C++ should provide reusable mechanics, not encode a particular invasion.
+
+### Route network publishing
+
+Use `.lwi route export network` with `LWI.Debug = 1` to generate `lwi_exports/801_routes.sql`, then copy it into `data/sql/db-world/prebuilt/801_routes.sql` when publishing the current canonical route network.

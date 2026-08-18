@@ -175,13 +175,22 @@ Export the connected graph journey between two route nodes, again using IDs or n
 .lwi route export journey <fromNodeId|name> <destinationNodeId|name>
 ```
 
+Export the complete currently loaded route network as the canonical prebuilt route file:
+
+```text
+.lwi route export network
+```
+
+This writes `lwi_exports/801_routes.sql`. The intended publish workflow is to copy that generated file to `data/sql/db-world/prebuilt/801_routes.sql`. Once other prebuilt invasion SQL references route-node IDs, those published route-node IDs should be treated as stable data contracts. Add new IDs freely, but do not renumber already-published route nodes without also updating every consumer.
+
 Examples:
 
 ```text
 .lwi route export segment Stormwind_Gate_Goldshire
 .lwi route export journey Stormwind_Gate Sentinel_Hill_Tower
+.lwi route export network
 ```
 
 Exports are written to an `lwi_exports` directory beneath the worldserver working directory. The command prints the absolute output filename in-game. Exported SQL contains the required `lwi_route_node`, `lwi_movement_path`, `lwi_movement_node`, movement-node action, and `lwi_route_segment` data in dependency-safe order. Journey exports de-duplicate route nodes and movement paths used by multiple segments.
 
-The same mechanism can package both shared world-road infrastructure and invasion-specific routes. The distinction is organizational: shared route SQL can live with reusable route packs, while invasion-only routes can be pasted into that invasion's prebuilt SQL.
+The canonical `801_routes.sql` should own the route network itself, including invasion-specific route segments whose endpoints are referenced by prebuilt invasion data. Invasion SQL should reference stable route-node IDs rather than duplicate movement-node data. Segment/journey export remains useful for review, debugging, or extracting a smaller subset, while `export network` is the normal publish path for the module's complete route dataset.
