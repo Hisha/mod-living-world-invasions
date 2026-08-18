@@ -1375,20 +1375,48 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
             if (breadcrumbDistance <= RouteRejoinNodeTolerance)
             {
                 // Walk the same dense authored breadcrumbs in the same travel
-                // direction until we catch the leader.  Never advance beyond
+                // direction until we catch the leader. Never advance beyond
                 // the leader's current target index.
+                //
+                // Important terminal case: if this follower is already on the
+                // leader's CURRENT route target breadcrumb, recovery is done.
+                // The old code left RejoiningLeader=true, cleared
+                // RejoinMoveIssued, and immediately selected this same 0.00 yd
+                // breadcrumb again forever. That produced a stationary group
+                // and hundreds of "selected reachable ... 0.00 yd" messages.
+                bool caughtUpToCurrentRouteTarget = false;
                 if (movement.Direction == MovementDirection::Forward)
                 {
                     if (destination.RejoinNodeIndex < movement.NodeIndex)
                         ++destination.RejoinNodeIndex;
+                    else
+                        caughtUpToCurrentRouteTarget = true;
                 }
                 else
                 {
                     if (destination.RejoinNodeIndex > movement.NodeIndex)
                         --destination.RejoinNodeIndex;
+                    else
+                        caughtUpToCurrentRouteTarget = true;
                 }
+
                 destination.RejoinMoveIssued = false;
                 destination.RejoinRetryAfterMs = 0;
+
+                if (caughtUpToCurrentRouteTarget)
+                {
+                    destination.RejoiningLeader = false;
+                    destination.WasInCombat = false;
+                    LOG_INFO("server.loading",
+                        "[LWI Movement] Runtime entity group #{} creature {} completed route rejoin at "
+                        "current path {} node {} ({:.2f} yd); normal MARCH movement resumes.",
+                        movement.RuntimeGroupId,
+                        creature->GetEntry(),
+                        movement.PathId,
+                        rejoinNode.NodeOrder,
+                        breadcrumbDistance);
+                    continue;
+                }
             }
 
             if (!destination.RejoinMoveIssued)
