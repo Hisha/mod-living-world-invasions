@@ -732,10 +732,34 @@ RouteNodeDefinition const* InvasionMgr::GetRouteNode(uint32 id) const
     return iterator != _routeNodes.end() ? &iterator->second : nullptr;
 }
 
+RouteNodeDefinition const* InvasionMgr::GetRouteNode(std::string const& name) const
+{
+    for (auto const& [id, node] : _routeNodes)
+    {
+        (void)id;
+        if (node.Name == name)
+            return &node;
+    }
+
+    return nullptr;
+}
+
 RouteSegmentDefinition const* InvasionMgr::GetRouteSegment(uint32 id) const
 {
     auto const iterator = _routeSegments.find(id);
     return iterator != _routeSegments.end() ? &iterator->second : nullptr;
+}
+
+RouteSegmentDefinition const* InvasionMgr::GetRouteSegment(std::string const& name) const
+{
+    for (auto const& [id, segment] : _routeSegments)
+    {
+        (void)id;
+        if (segment.Name == name)
+            return &segment;
+    }
+
+    return nullptr;
 }
 
 std::unordered_map<uint32, RouteSegmentDefinition> const& InvasionMgr::GetRouteSegments() const

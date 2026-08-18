@@ -135,7 +135,7 @@ Defines a reusable logical connection point with `name`, `map_id`, X/Y/Z/orienta
 
 Connects `start_node_id` and `end_node_id` using `movement_path_id`. A segment is shared infrastructure rather than invasion-owned data. Runtime consumers may traverse the same segment forward or reverse.
 
-Connected segments form a graph. `.lwi route travel <fromNodeId> <destinationNodeId>` resolves a connected path through that graph and chains the necessary segments automatically. See [RouteNetwork.md](RouteNetwork.md) for authoring and test commands.
+Connected segments form a graph. `.lwi route travel <fromNodeId|name> <destinationNodeId|name>` resolves a connected path through that graph and chains the necessary segments automatically. See [RouteNetwork.md](RouteNetwork.md) for authoring and test commands.
 
 ## `lwi_runtime_signal`
 

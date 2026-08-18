@@ -97,20 +97,34 @@ After authoring or editing route data:
 .lwi reload
 ```
 
-Select a disposable creature and test a single segment from either endpoint:
+Select a disposable creature and test a single segment from either endpoint. Segment and node arguments may be numeric IDs or exact names:
 
 ```text
-.lwi route test <segmentId> <fromNodeId>
+.lwi route test <segmentId|name> <fromNodeId|name>
+```
+
+Examples:
+
+```text
+.lwi route test 1060 10
+.lwi route test Stormwind_Gate_Goldshire Stormwind_Gate
 ```
 
 The same segment should be tested both forward and reverse.
 
 ## Testing graph travel
 
-Once multiple segments are connected, select a disposable creature and run:
+Once multiple segments are connected, select a disposable creature and run either numeric IDs or exact route-node names:
 
 ```text
-.lwi route travel <fromNodeId> <destinationNodeId>
+.lwi route travel <fromNodeId|name> <destinationNodeId|name>
+```
+
+Examples:
+
+```text
+.lwi route travel 10 70
+.lwi route travel Stormwind_Gate Sentinel_Hill_Tower
 ```
 
 LWI resolves the shortest connected route by segment count and automatically chains the necessary route segments. Branches that do not lead to the requested destination are ignored.
@@ -145,6 +159,29 @@ During development only, the guarded command below removes the shared route grap
 
 Run `.lwi reload` afterward.
 
-## Portable route packs
+## Exporting portable route SQL
 
-The in-game builder writes directly to the world database because it is an authoring tool. Finished shared route networks should ultimately be exported into module SQL so other installations can reuse the same road infrastructure. SQL export tooling is planned; until then, keep any route data intended for distribution synchronized into repository SQL manually.
+The in-game builder writes directly to the world database while authoring. Finished routes can be exported into self-contained SQL suitable for shared route packs or invasion-specific prebuilt SQL. Export commands require `LWI.Debug = 1`.
+
+Export one segment by numeric ID or exact segment name:
+
+```text
+.lwi route export segment <segmentId|name>
+```
+
+Export the connected graph journey between two route nodes, again using IDs or names:
+
+```text
+.lwi route export journey <fromNodeId|name> <destinationNodeId|name>
+```
+
+Examples:
+
+```text
+.lwi route export segment Stormwind_Gate_Goldshire
+.lwi route export journey Stormwind_Gate Sentinel_Hill_Tower
+```
+
+Exports are written to an `lwi_exports` directory beneath the worldserver working directory. The command prints the absolute output filename in-game. Exported SQL contains the required `lwi_route_node`, `lwi_movement_path`, `lwi_movement_node`, movement-node action, and `lwi_route_segment` data in dependency-safe order. Journey exports de-duplicate route nodes and movement paths used by multiple segments.
+
+The same mechanism can package both shared world-road infrastructure and invasion-specific routes. The distinction is organizational: shared route SQL can live with reusable route packs, while invasion-only routes can be pasted into that invasion's prebuilt SQL.

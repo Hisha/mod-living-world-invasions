@@ -39,7 +39,7 @@ The current framework can:
 - [Architecture](docs/Architecture.md) — framework ownership and runtime flow.
 - [Database Schema](docs/DatabaseSchema.md) — current tables, values, and action parameter mappings.
 - [Creating an Invasion](docs/CreatingAnInvasion.md) — practical SQL-first creation process.
-- [Shared Route Network](docs/RouteNetwork.md) — reusable road graph, automatic 5-yard authoring, and route test/travel commands.
+- [Shared Route Network](docs/RouteNetwork.md) — reusable road graph, automatic 5-yard authoring, ID/name route commands, and SQL export tooling.
 - [Testing](docs/Testing.md) — GM commands and validation checklist.
 - [Current Status](docs/Status.md) — proven features, known limitations, and next development focus.
 - [Roadmap](docs/Roadmap.md) — remaining framework/gameplay work.

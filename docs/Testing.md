@@ -32,7 +32,9 @@ LWI.Scheduler.Enable = 1
 | `.lwi route path show <pathId>` / `hide` | Show/remove temporary authored-node markers |
 | `.lwi route path nearest <pathId>` | Identify the nearest authored movement node |
 | `.lwi route test <segmentId> <fromNodeId>` | Test one shared segment from either endpoint |
-| `.lwi route travel <fromNodeId> <destinationNodeId>` | Test multi-segment graph travel |
+| `.lwi route travel <fromNodeId|name> <destinationNodeId|name>` | Test multi-segment graph travel; IDs and exact names are accepted |
+| `.lwi route export segment <segmentId|name>` | Export one route segment and dependencies to SQL |
+| `.lwi route export journey <fromNodeId|name> <destinationNodeId|name>` | Export a connected multi-segment route journey to SQL |
 
 See [RouteNetwork.md](RouteNetwork.md) for the full shared-route authoring workflow.
 

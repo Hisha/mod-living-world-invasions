@@ -26,10 +26,17 @@
 
 #include <algorithm>
 #include <cctype>
+#include <charconv>
+#include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <queue>
+#include <sstream>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include <cmath>
 
 using namespace Acore::ChatCommands;
 
@@ -167,6 +174,282 @@ void ClearMarkerList(Player* player, std::vector<ObjectGuid>& guids)
     }
 
     guids.clear();
+}
+
+bool TryParseRouteId(std::string const& token, uint32& id)
+{
+    if (token.empty())
+        return false;
+
+    uint32 value = 0;
+    auto const result = std::from_chars(token.data(), token.data() + token.size(), value);
+    if (result.ec != std::errc() || result.ptr != token.data() + token.size())
+        return false;
+
+    id = value;
+    return true;
+}
+
+lwi::RouteNodeDefinition const* ResolveRouteNode(std::string const& token)
+{
+    uint32 id = 0;
+    if (TryParseRouteId(token, id))
+        return sInvasionMgr.GetRouteNode(id);
+
+    return sInvasionMgr.GetRouteNode(token);
+}
+
+lwi::RouteSegmentDefinition const* ResolveRouteSegment(std::string const& token)
+{
+    uint32 id = 0;
+    if (TryParseRouteId(token, id))
+        return sInvasionMgr.GetRouteSegment(id);
+
+    return sInvasionMgr.GetRouteSegment(token);
+}
+
+std::string SqlQuote(std::string const& value)
+{
+    std::string escaped;
+    escaped.reserve(value.size() + 8);
+    for (char const c : value)
+    {
+        if (c == '\\' || c == '\'')
+            escaped.push_back('\\');
+        escaped.push_back(c);
+    }
+
+    return "'" + escaped + "'";
+}
+
+std::string SqlNullableText(std::string const& value)
+{
+    return value.empty() ? "NULL" : SqlQuote(value);
+}
+
+std::string SafeExportFileComponent(std::string value)
+{
+    for (char& c : value)
+    {
+        unsigned char const uc = static_cast<unsigned char>(c);
+        if (!std::isalnum(uc) && c != '_' && c != '-')
+            c = '_';
+    }
+    return value;
+}
+
+bool BuildRouteExportJourney(uint32 fromNodeId, uint32 destinationNodeId, std::vector<uint32>& segmentIds)
+{
+    segmentIds.clear();
+    if (fromNodeId == destinationNodeId)
+        return true;
+
+    struct PreviousStep
+    {
+        uint32 PreviousNodeId = 0;
+        uint32 SegmentId = 0;
+    };
+
+    std::queue<uint32> pending;
+    std::unordered_set<uint32> visited;
+    std::unordered_map<uint32, PreviousStep> previous;
+
+    visited.insert(fromNodeId);
+    pending.push(fromNodeId);
+
+    while (!pending.empty())
+    {
+        uint32 const nodeId = pending.front();
+        pending.pop();
+
+        for (auto const& [segmentId, segment] : sInvasionMgr.GetRouteSegments())
+        {
+            uint32 nextNodeId = 0;
+            if (segment.StartNodeId == nodeId)
+                nextNodeId = segment.EndNodeId;
+            else if (segment.EndNodeId == nodeId)
+                nextNodeId = segment.StartNodeId;
+            else
+                continue;
+
+            if (!visited.insert(nextNodeId).second)
+                continue;
+
+            previous[nextNodeId] = PreviousStep{ nodeId, segmentId };
+            if (nextNodeId == destinationNodeId)
+            {
+                uint32 cursor = destinationNodeId;
+                while (cursor != fromNodeId)
+                {
+                    auto const itr = previous.find(cursor);
+                    if (itr == previous.end())
+                        return false;
+                    segmentIds.push_back(itr->second.SegmentId);
+                    cursor = itr->second.PreviousNodeId;
+                }
+                std::reverse(segmentIds.begin(), segmentIds.end());
+                return true;
+            }
+
+            pending.push(nextNodeId);
+        }
+    }
+
+    return false;
+}
+
+bool WriteRouteExport(std::vector<uint32> const& requestedSegmentIds, std::string const& exportName, std::string& outputPath, std::string& error)
+{
+    std::vector<uint32> segmentIds = requestedSegmentIds;
+    std::sort(segmentIds.begin(), segmentIds.end());
+    segmentIds.erase(std::unique(segmentIds.begin(), segmentIds.end()), segmentIds.end());
+
+    if (segmentIds.empty())
+    {
+        error = "No route segments were selected for export.";
+        return false;
+    }
+
+    std::vector<lwi::RouteSegmentDefinition const*> segments;
+    std::unordered_set<uint32> routeNodeIds;
+    std::unordered_set<uint32> pathIds;
+
+    for (uint32 const segmentId : segmentIds)
+    {
+        lwi::RouteSegmentDefinition const* segment = sInvasionMgr.GetRouteSegment(segmentId);
+        if (!segment)
+        {
+            error = "Route segment " + std::to_string(segmentId) + " does not exist or is disabled.";
+            return false;
+        }
+
+        segments.push_back(segment);
+        routeNodeIds.insert(segment->StartNodeId);
+        routeNodeIds.insert(segment->EndNodeId);
+        pathIds.insert(segment->MovementPathId);
+    }
+
+    std::filesystem::path exportDirectory = std::filesystem::current_path() / "lwi_exports";
+    std::error_code ec;
+    std::filesystem::create_directories(exportDirectory, ec);
+    if (ec)
+    {
+        error = "Could not create export directory: " + ec.message();
+        return false;
+    }
+
+    std::filesystem::path filePath = exportDirectory / (SafeExportFileComponent(exportName) + ".sql");
+    std::ofstream out(filePath, std::ios::trunc);
+    if (!out)
+    {
+        error = "Could not open export file for writing: " + filePath.string();
+        return false;
+    }
+
+    out << "-- Living World Invasions route export\n";
+    out << "-- Generated by the in-game LWI route exporter.\n";
+    out << "-- Contains route nodes, movement paths/nodes/actions, and route segments.\n\n";
+
+    out << "-- Remove exported segment definitions first so movement data can be refreshed safely.\n";
+    out << "DELETE FROM `lwi_route_segment` WHERE `id` IN (";
+    for (std::size_t i = 0; i < segmentIds.size(); ++i)
+    {
+        if (i) out << ", ";
+        out << segmentIds[i];
+    }
+    out << ");\n\n";
+
+    std::vector<uint32> sortedPathIds(pathIds.begin(), pathIds.end());
+    std::sort(sortedPathIds.begin(), sortedPathIds.end());
+    out << "DELETE a FROM `lwi_movement_node_action` a JOIN `lwi_movement_node` n ON n.`id` = a.`node_id` WHERE n.`path_id` IN (";
+    for (std::size_t i = 0; i < sortedPathIds.size(); ++i)
+    {
+        if (i) out << ", ";
+        out << sortedPathIds[i];
+    }
+    out << ");\n";
+    out << "DELETE FROM `lwi_movement_node` WHERE `path_id` IN (";
+    for (std::size_t i = 0; i < sortedPathIds.size(); ++i)
+    {
+        if (i) out << ", ";
+        out << sortedPathIds[i];
+    }
+    out << ");\n\n";
+
+    std::vector<uint32> sortedRouteNodeIds(routeNodeIds.begin(), routeNodeIds.end());
+    std::sort(sortedRouteNodeIds.begin(), sortedRouteNodeIds.end());
+    out << "-- Route nodes\n";
+    for (uint32 const nodeId : sortedRouteNodeIds)
+    {
+        lwi::RouteNodeDefinition const* node = sInvasionMgr.GetRouteNode(nodeId);
+        if (!node)
+        {
+            error = "Could not resolve route node " + std::to_string(nodeId) + " while exporting.";
+            return false;
+        }
+
+        out << "INSERT INTO `lwi_route_node` (`id`,`name`,`map_id`,`x`,`y`,`z`,`orientation`,`arrival_radius`,`enabled`,`comment`) VALUES ("
+            << node->Id << "," << SqlQuote(node->Name) << "," << node->MapId << ","
+            << std::fixed << std::setprecision(6) << node->X << "," << node->Y << "," << node->Z << "," << node->Orientation << ","
+            << node->ArrivalRadius << "," << (node->Enabled ? 1 : 0) << "," << SqlNullableText(node->Comment) << ") "
+            << "ON DUPLICATE KEY UPDATE `name`=VALUES(`name`),`map_id`=VALUES(`map_id`),`x`=VALUES(`x`),`y`=VALUES(`y`),`z`=VALUES(`z`),`orientation`=VALUES(`orientation`),`arrival_radius`=VALUES(`arrival_radius`),`enabled`=VALUES(`enabled`),`comment`=VALUES(`comment`);\n";
+    }
+    out << "\n-- Movement paths and nodes\n";
+
+    for (uint32 const pathId : sortedPathIds)
+    {
+        lwi::MovementPathDefinition const* path = sInvasionMgr.GetMovementPath(pathId);
+        std::vector<lwi::MovementNodeDefinition> const* nodes = sInvasionMgr.GetMovementNodes(pathId);
+        if (!path || !nodes || nodes->empty())
+        {
+            error = "Movement path " + std::to_string(pathId) + " is missing or has no enabled nodes.";
+            return false;
+        }
+
+        out << "INSERT INTO `lwi_movement_path` (`id`,`name`,`enabled`,`comment`) VALUES ("
+            << path->Id << "," << SqlQuote(path->Name) << "," << (path->Enabled ? 1 : 0) << "," << SqlNullableText(path->Comment) << ") "
+            << "ON DUPLICATE KEY UPDATE `name`=VALUES(`name`),`enabled`=VALUES(`enabled`),`comment`=VALUES(`comment`);\n";
+
+        for (lwi::MovementNodeDefinition const& node : *nodes)
+        {
+            out << "INSERT INTO `lwi_movement_node` (`id`,`path_id`,`node_order`,`map_id`,`x`,`y`,`z`,`orientation`,`wait_ms`,`profile_override_id`,`enabled`,`comment`) VALUES ("
+                << node.Id << "," << node.PathId << "," << node.NodeOrder << "," << node.MapId << ","
+                << std::fixed << std::setprecision(6) << node.X << "," << node.Y << "," << node.Z << "," << node.Orientation << ","
+                << node.WaitMs << "," << node.ProfileOverrideId << "," << (node.Enabled ? 1 : 0) << "," << SqlNullableText(node.Comment) << ");\n";
+
+            if (std::vector<lwi::MovementNodeActionDefinition> const* actions = sInvasionMgr.GetMovementNodeActions(node.Id))
+            {
+                for (lwi::MovementNodeActionDefinition const& action : *actions)
+                {
+                    out << "INSERT INTO `lwi_movement_node_action` (`id`,`node_id`,`action_order`,`action_type`,`target_id`,`parameter1`,`parameter2`,`parameter3`,`enabled`,`comment`) VALUES ("
+                        << action.Id << "," << action.NodeId << "," << action.ActionOrder << "," << static_cast<uint32>(action.ActionType) << ","
+                        << action.TargetId << "," << action.Parameter1 << "," << action.Parameter2 << "," << action.Parameter3 << ","
+                        << (action.Enabled ? 1 : 0) << "," << SqlNullableText(action.Comment) << ") "
+                        << "ON DUPLICATE KEY UPDATE `node_id`=VALUES(`node_id`),`action_order`=VALUES(`action_order`),`action_type`=VALUES(`action_type`),`target_id`=VALUES(`target_id`),`parameter1`=VALUES(`parameter1`),`parameter2`=VALUES(`parameter2`),`parameter3`=VALUES(`parameter3`),`enabled`=VALUES(`enabled`),`comment`=VALUES(`comment`);\n";
+                }
+            }
+        }
+        out << "\n";
+    }
+
+    out << "-- Route segments\n";
+    for (lwi::RouteSegmentDefinition const* segment : segments)
+    {
+        out << "INSERT INTO `lwi_route_segment` (`id`,`name`,`start_node_id`,`end_node_id`,`movement_path_id`,`enabled`,`comment`) VALUES ("
+            << segment->Id << "," << SqlQuote(segment->Name) << "," << segment->StartNodeId << "," << segment->EndNodeId << ","
+            << segment->MovementPathId << "," << (segment->Enabled ? 1 : 0) << "," << SqlNullableText(segment->Comment) << ") "
+            << "ON DUPLICATE KEY UPDATE `name`=VALUES(`name`),`start_node_id`=VALUES(`start_node_id`),`end_node_id`=VALUES(`end_node_id`),`movement_path_id`=VALUES(`movement_path_id`),`enabled`=VALUES(`enabled`),`comment`=VALUES(`comment`);\n";
+    }
+
+    out.flush();
+    if (!out)
+    {
+        error = "An error occurred while writing export file: " + filePath.string();
+        return false;
+    }
+
+    outputPath = std::filesystem::absolute(filePath).string();
+    return true;
 }
 
 Creature* SpawnRoutePathMarker(WorldObject* summoner, float x, float y, float z, float orientation, float scale)
@@ -585,11 +868,31 @@ public:
             }
         };
 
+        static ChatCommandTable routeExportCommandTable =
+        {
+            {
+                "segment",
+                HandleRouteExportSegmentCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "journey",
+                HandleRouteExportJourneyCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            }
+        };
+
         static ChatCommandTable routeCommandTable =
         {
             {
                 "network",
                 routeNetworkCommandTable
+            },
+            {
+                "export",
+                routeExportCommandTable
             },
             {
                 "path",
@@ -2007,7 +2310,92 @@ private:
         return true;
     }
 
-    static bool HandleRouteTravelCommand(ChatHandler* handler, uint32 fromNodeId, uint32 destinationNodeId)
+    static bool HandleRouteExportSegmentCommand(ChatHandler* handler, std::string segmentToken)
+    {
+        if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Debug))
+        {
+            handler->SendSysMessage(
+                "Living World Invasions debug commands are disabled. Set LWI.Debug = 1 to use .lwi route export.");
+            return false;
+        }
+
+        lwi::RouteSegmentDefinition const* segment = ResolveRouteSegment(segmentToken);
+        if (!segment)
+        {
+            handler->PSendSysMessage(
+                "Living World Invasions route segment '{}' does not exist or is disabled. Use either its numeric ID or exact name.",
+                segmentToken);
+            return false;
+        }
+
+        std::string outputPath;
+        std::string error;
+        std::string const exportName = "lwi_route_segment_" + std::to_string(segment->Id) + "_" + segment->Name;
+        if (!WriteRouteExport({ segment->Id }, exportName, outputPath, error))
+        {
+            handler->PSendSysMessage("Route export failed: {}", error);
+            return false;
+        }
+
+        handler->PSendSysMessage(
+            "Exported route segment {} ({}) to {}",
+            segment->Id,
+            segment->Name,
+            outputPath);
+        return true;
+    }
+
+    static bool HandleRouteExportJourneyCommand(ChatHandler* handler, std::string fromToken, std::string destinationToken)
+    {
+        if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Debug))
+        {
+            handler->SendSysMessage(
+                "Living World Invasions debug commands are disabled. Set LWI.Debug = 1 to use .lwi route export.");
+            return false;
+        }
+
+        lwi::RouteNodeDefinition const* fromNode = ResolveRouteNode(fromToken);
+        lwi::RouteNodeDefinition const* destinationNode = ResolveRouteNode(destinationToken);
+        if (!fromNode || !destinationNode)
+        {
+            handler->PSendSysMessage(
+                "Could not resolve route journey endpoints '{}' and '{}'. Use numeric IDs or exact route-node names.",
+                fromToken,
+                destinationToken);
+            return false;
+        }
+
+        if (fromNode->Id == destinationNode->Id)
+        {
+            handler->SendSysMessage("Route export journey requires two different route nodes.");
+            return false;
+        }
+
+        std::vector<uint32> segmentIds;
+        if (!BuildRouteExportJourney(fromNode->Id, destinationNode->Id, segmentIds) || segmentIds.empty())
+        {
+            handler->PSendSysMessage(
+                "No connected route journey exists from {} ({}) to {} ({}).",
+                fromNode->Name, fromNode->Id, destinationNode->Name, destinationNode->Id);
+            return false;
+        }
+
+        std::string outputPath;
+        std::string error;
+        std::string const exportName = "lwi_route_journey_" + fromNode->Name + "_to_" + destinationNode->Name;
+        if (!WriteRouteExport(segmentIds, exportName, outputPath, error))
+        {
+            handler->PSendSysMessage("Route journey export failed: {}", error);
+            return false;
+        }
+
+        handler->PSendSysMessage(
+            "Exported route journey {} ({}) -> {} ({}) across {} segment(s) to {}",
+            fromNode->Name, fromNode->Id, destinationNode->Name, destinationNode->Id, segmentIds.size(), outputPath);
+        return true;
+    }
+
+    static bool HandleRouteTravelCommand(ChatHandler* handler, std::string fromToken, std::string destinationToken)
     {
         if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Debug))
         {
@@ -2016,6 +2404,26 @@ private:
             return false;
         }
 
+        lwi::RouteNodeDefinition const* fromNode = ResolveRouteNode(fromToken);
+        if (!fromNode)
+        {
+            handler->PSendSysMessage(
+                "Living World Invasions route node '{}' does not exist or is disabled. Use either its numeric ID or exact name.",
+                fromToken);
+            return false;
+        }
+
+        lwi::RouteNodeDefinition const* destinationNode = ResolveRouteNode(destinationToken);
+        if (!destinationNode)
+        {
+            handler->PSendSysMessage(
+                "Living World Invasions route node '{}' does not exist or is disabled. Use either its numeric ID or exact name.",
+                destinationToken);
+            return false;
+        }
+
+        uint32 const fromNodeId = fromNode->Id;
+        uint32 const destinationNodeId = destinationNode->Id;
         if (fromNodeId == destinationNodeId)
         {
             handler->SendSysMessage("Route travel requires two different route nodes.");
@@ -2026,25 +2434,7 @@ private:
         if (!creature)
         {
             handler->SendSysMessage(
-                "Select a creature to use as the route traveler, then use .lwi route travel <fromNodeId> <destinationNodeId>.");
-            return false;
-        }
-
-        lwi::RouteNodeDefinition const* fromNode = sInvasionMgr.GetRouteNode(fromNodeId);
-        if (!fromNode)
-        {
-            handler->PSendSysMessage(
-                "Living World Invasions route node {} does not exist or is disabled.",
-                fromNodeId);
-            return false;
-        }
-
-        lwi::RouteNodeDefinition const* destinationNode = sInvasionMgr.GetRouteNode(destinationNodeId);
-        if (!destinationNode)
-        {
-            handler->PSendSysMessage(
-                "Living World Invasions route node {} does not exist or is disabled.",
-                destinationNodeId);
+                "Select a creature to use as the route traveler, then use .lwi route travel <fromNodeId|name> <destinationNodeId|name>.");
             return false;
         }
 
@@ -2063,9 +2453,7 @@ private:
         {
             lwi::RuntimeEntityGroup const* existingGroup = sRuntimeEntityGroupMgr.GetGroup(runtimeGroupId);
             if (!existingGroup)
-            {
                 continue;
-            }
 
             for (lwi::RuntimeEntity const& entity : existingGroup->Entities)
             {
@@ -2120,7 +2508,7 @@ private:
         return true;
     }
 
-    static bool HandleRouteTestCommand(ChatHandler* handler, uint32 routeSegmentId, uint32 fromNodeId)
+    static bool HandleRouteTestCommand(ChatHandler* handler, std::string segmentToken, std::string fromNodeToken)
     {
         if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Debug))
         {
@@ -2133,18 +2521,30 @@ private:
         if (!creature)
         {
             handler->SendSysMessage(
-                "Select a creature to use as the route-test traveler, then use .lwi route test <segmentId> <fromNodeId>.");
+                "Select a creature to use as the route-test traveler, then use .lwi route test <segmentId|name> <fromNodeId|name>.");
             return false;
         }
 
-        lwi::RouteSegmentDefinition const* segment = sInvasionMgr.GetRouteSegment(routeSegmentId);
+        lwi::RouteSegmentDefinition const* segment = ResolveRouteSegment(segmentToken);
         if (!segment)
         {
             handler->PSendSysMessage(
-                "Living World Invasions route segment {} does not exist or is disabled.",
-                routeSegmentId);
+                "Living World Invasions route segment '{}' does not exist or is disabled. Use either its numeric ID or exact name.",
+                segmentToken);
             return false;
         }
+
+        lwi::RouteNodeDefinition const* requestedFromNode = ResolveRouteNode(fromNodeToken);
+        if (!requestedFromNode)
+        {
+            handler->PSendSysMessage(
+                "Living World Invasions route node '{}' does not exist or is disabled. Use either its numeric ID or exact name.",
+                fromNodeToken);
+            return false;
+        }
+
+        uint32 const routeSegmentId = segment->Id;
+        uint32 const fromNodeId = requestedFromNode->Id;
 
         if (fromNodeId != segment->StartNodeId && fromNodeId != segment->EndNodeId)
         {
