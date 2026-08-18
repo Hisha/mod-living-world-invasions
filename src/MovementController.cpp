@@ -830,6 +830,57 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
                 roleSlot);
         }
 
+        // Shared routes are deliberately authored corridors. For this diagnostic,
+        // execute each route node with the exact same two-point escort-style
+        // movement sequence proven by the in-game movement lab: clear any
+        // existing motion, stop, then MoveSplinePath from the creature's actual
+        // current position directly to the authored formation destination.
+        // Normal invasion movement continues through the MMAP branch below.
+        if (movement.RouteMovement)
+        {
+            creature->CombatStop(true);
+            creature->GetMotionMaster()->Clear();
+            creature->StopMoving();
+
+            Movement::PointsArray routePoints;
+            routePoints.emplace_back(
+                creature->GetPositionX(),
+                creature->GetPositionY(),
+                creature->GetPositionZ());
+            routePoints.emplace_back(targetX, targetY, targetZ);
+
+            RuntimeMovementDestination destination;
+            destination.Guid = entity.Guid;
+            destination.MapId = entity.MapId;
+            destination.X = targetX;
+            destination.Y = targetY;
+            destination.Z = targetZ;
+            movement.Destinations.push_back(destination);
+
+            creature->GetMotionMaster()->MoveSplinePath(
+                &routePoints,
+                FORCED_MOVEMENT_NONE);
+
+            if (_routeDebugEnabled)
+            {
+                LOG_INFO("server.loading",
+                    "[LWI Route Debug] Group #{} path {} node {} launched EXACT LAB ESCORT movement "
+                    "from=({:.3f}, {:.3f}, {:.3f}) to=({:.3f}, {:.3f}, {:.3f}); MMAP bypassed for route node.",
+                    movement.RuntimeGroupId,
+                    movement.PathId,
+                    node.NodeOrder,
+                    routePoints.front().x,
+                    routePoints.front().y,
+                    routePoints.front().z,
+                    targetX,
+                    targetY,
+                    targetZ);
+            }
+
+            ++moved;
+            continue;
+        }
+
         PathGenerator path(creature);
 
         // Do not force the destination. We want the navmesh to choose a valid,
@@ -1001,6 +1052,43 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
             creature->GetVictim() != nullptr,
             destination.WasInCombat,
             creature->GetDistance(destination.X, destination.Y, destination.Z));
+
+        if (movement.RouteMovement)
+        {
+            creature->GetMotionMaster()->Clear();
+            creature->StopMoving();
+
+            Movement::PointsArray routePoints;
+            routePoints.emplace_back(
+                creature->GetPositionX(),
+                creature->GetPositionY(),
+                creature->GetPositionZ());
+            routePoints.emplace_back(destination.X, destination.Y, destination.Z);
+
+            destination.WasInCombat = false;
+
+            creature->GetMotionMaster()->MoveSplinePath(
+                &routePoints,
+                FORCED_MOVEMENT_NONE);
+
+            if (_routeDebugEnabled)
+            {
+                LOG_INFO("server.loading",
+                    "[LWI Route Debug] Group #{} path {} node {} resumed with EXACT LAB ESCORT movement "
+                    "from=({:.3f}, {:.3f}, {:.3f}) to=({:.3f}, {:.3f}, {:.3f}).",
+                    movement.RuntimeGroupId,
+                    movement.PathId,
+                    node.NodeOrder,
+                    routePoints.front().x,
+                    routePoints.front().y,
+                    routePoints.front().z,
+                    destination.X,
+                    destination.Y,
+                    destination.Z);
+            }
+
+            continue;
+        }
 
         PathGenerator path(creature);
         bool const pathFound = path.CalculatePath(
