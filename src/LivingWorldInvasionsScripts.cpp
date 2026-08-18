@@ -24,8 +24,8 @@
 #include "Map.h"
 #include "MapMgr.h"
 #include "MotionMaster.h"
+#include "ObjectAccessor.h"
 #include "MoveSplineInit.h"
-#include "MoveSpline.h"
 
 #include <algorithm>
 #include <cctype>
@@ -61,30 +61,6 @@ ObjectGuid routeMovementLabCreatureGuid;
 uint16 routeMovementLabMapId = 0;
 RouteBreadcrumbState routeMovementLabBreadcrumbState;
 
-struct RouteBypassPlaybackState
-{
-    bool Active = false;
-    ObjectGuid CreatureGuid;
-    uint16 MapId = 0;
-    uint32 PathId = 0;
-    bool Reverse = false;
-    std::vector<lwi::MovementNodeDefinition> Nodes;
-    std::size_t NodeIndex = 0;
-    bool MovementStarted = false;
-    uint32 WaitRemainingMs = 0;
-    RouteBreadcrumbState BreadcrumbState;
-};
-
-RouteBypassPlaybackState routeBypassPlayback;
-
-bool routeNativeWaypointTestActive = false;
-ObjectGuid routeNativeWaypointCreatureGuid;
-uint16 routeNativeWaypointMapId = 0;
-uint32 routeNativeWaypointSourcePathId = 0;
-uint32 routeNativeWaypointTempPathId = 0;
-RouteBreadcrumbState routeNativeWaypointBreadcrumbState;
-
-constexpr uint32 RouteNativeWaypointTempBase = 4000000000u;
 constexpr uint32 RouteDebugMarkerLifetimeMs = 600000;
 constexpr uint32 RouteDebugSampleIntervalMs = 500;
 constexpr float RouteDebugBreadcrumbDistance = 4.0f;
@@ -102,6 +78,85 @@ struct RouteRecordingSession
 
 RouteRecordingSession routeRecordingSession;
 bool routeRecordingActive = false;
+
+constexpr float RoutePathBuildSpacingYards = 5.0f;
+constexpr float RoutePathBuildEndpointSnapYards = 0.25f;
+
+struct RoutePathBuildSession
+{
+    ObjectGuid OwnerGuid;
+    uint16 MapId = 0;
+
+    std::string StartName;
+    std::string EndName;
+    std::string PathName;
+    std::string SegmentName;
+
+    uint32 StartRouteNodeId = 0;
+    uint32 EndRouteNodeId = 0;
+    bool StartRouteNodeCreated = false;
+    bool EndRouteNodeExists = false;
+
+    uint32 PathId = 0;
+    uint32 SegmentId = 0;
+    uint32 NextMovementNodeId = 1;
+    uint16 NextNodeOrder = 10;
+    uint32 LastMovementNodeId = 0;
+
+    bool Paused = false;
+    uint32 NodeCount = 0;
+    float TotalDistance = 0.0f;
+    float DistanceSinceLastNode = 0.0f;
+
+    bool HasLastSample = false;
+    float LastSampleX = 0.0f;
+    float LastSampleY = 0.0f;
+    float LastSampleZ = 0.0f;
+
+    float LastRecordedX = 0.0f;
+    float LastRecordedY = 0.0f;
+    float LastRecordedZ = 0.0f;
+};
+
+RoutePathBuildSession routePathBuildSession;
+bool routePathBuildActive = false;
+
+float RouteDistance3D(float x1, float y1, float z1, float x2, float y2, float z2)
+{
+    float const dx = x2 - x1;
+    float const dy = y2 - y1;
+    float const dz = z2 - z1;
+    return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+bool InsertAutoBuildMovementNode(float x, float y, float z, float orientation)
+{
+    if (!routePathBuildActive || routePathBuildSession.NextNodeOrder > 65520)
+        return false;
+
+    uint32 const nodeId = routePathBuildSession.NextMovementNodeId++;
+    uint16 const nodeOrder = routePathBuildSession.NextNodeOrder;
+    routePathBuildSession.NextNodeOrder = static_cast<uint16>(routePathBuildSession.NextNodeOrder + 10);
+
+    WorldDatabase.Execute(
+        "INSERT INTO `lwi_movement_node` "
+        "(`id`, `path_id`, `node_order`, `map_id`, `x`, `y`, `z`, `orientation`, `wait_ms`, `profile_override_id`, `enabled`, `comment`) "
+        "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, 0, 0, 1, '{} auto-build node {}')",
+        nodeId,
+        routePathBuildSession.PathId,
+        nodeOrder,
+        routePathBuildSession.MapId,
+        x, y, z, orientation,
+        routePathBuildSession.PathName,
+        nodeOrder);
+
+    routePathBuildSession.LastMovementNodeId = nodeId;
+    routePathBuildSession.LastRecordedX = x;
+    routePathBuildSession.LastRecordedY = y;
+    routePathBuildSession.LastRecordedZ = z;
+    ++routePathBuildSession.NodeCount;
+    return true;
+}
 
 bool IsSafeRouteRecordName(std::string const& name)
 {
@@ -155,74 +210,6 @@ Creature* SpawnRouteDebugMarker(WorldObject* summoner, float x, float y, float z
 
     marker->SetObjectScale(scale);
     return marker;
-}
-
-void ResetRouteBypassPlayback(bool stopCreature)
-{
-    if (routeBypassPlayback.Active && stopCreature)
-    {
-        if (Map* map = sMapMgr->FindMap(routeBypassPlayback.MapId, 0))
-        {
-            if (Creature* creature = map->GetCreature(routeBypassPlayback.CreatureGuid))
-            {
-                creature->StopMoving();
-                creature->GetMotionMaster()->Clear();
-            }
-        }
-    }
-
-    routeBypassPlayback = RouteBypassPlaybackState{};
-}
-
-bool LaunchRouteBypassNode(Creature* creature)
-{
-    if (!creature || !routeBypassPlayback.Active || routeBypassPlayback.NodeIndex >= routeBypassPlayback.Nodes.size())
-        return false;
-
-    lwi::MovementNodeDefinition const& node = routeBypassPlayback.Nodes[routeBypassPlayback.NodeIndex];
-    if (creature->GetMapId() != node.MapId)
-    {
-        LOG_ERROR("server.loading",
-            "[LWI Route Bypass] Path {} node order {} is on map {}, but creature {} is on map {}; playback stopped.",
-            routeBypassPlayback.PathId,
-            node.NodeOrder,
-            node.MapId,
-            creature->GetGUID().GetCounter(),
-            creature->GetMapId());
-        ResetRouteBypassPlayback(true);
-        return false;
-    }
-
-    float const startX = creature->GetPositionX();
-    float const startY = creature->GetPositionY();
-    float const startZ = creature->GetPositionZ();
-
-    creature->CombatStop(true);
-    creature->GetMotionMaster()->Clear();
-    creature->StopMoving();
-
-    std::vector<G3D::Vector3> points;
-    points.reserve(2);
-    points.emplace_back(startX, startY, startZ);
-    points.emplace_back(node.X, node.Y, node.Z);
-    creature->GetMotionMaster()->MoveSplinePath(&points, FORCED_MOVEMENT_NONE);
-
-    routeBypassPlayback.MovementStarted = true;
-
-    LOG_INFO("server.loading",
-        "[LWI Route Bypass] Path {} node order {} ({}/{}) launched standalone escort from=({:.3f}, {:.3f}, {:.3f}) to=({:.3f}, {:.3f}, {:.3f}); MovementController BYPASSED.",
-        routeBypassPlayback.PathId,
-        node.NodeOrder,
-        routeBypassPlayback.NodeIndex + 1,
-        routeBypassPlayback.Nodes.size(),
-        startX,
-        startY,
-        startZ,
-        node.X,
-        node.Y,
-        node.Z);
-
-    return true;
 }
 
 enum class LwiConfig
@@ -338,75 +325,74 @@ public:
     {
         sInvasionRuntimeMgr.Update(diff);
 
-        // Standalone path playback used to prove whether MovementController is
-        // responsible for route deviations. This intentionally does not create
-        // or update any LWI runtime entity group and does not call
-        // MovementController at any point.
-        if (routeBypassPlayback.Active)
+        if (routePathBuildActive && !routePathBuildSession.Paused)
         {
-            Map* map = sMapMgr->FindMap(routeBypassPlayback.MapId, 0);
-            Creature* creature = map ? map->GetCreature(routeBypassPlayback.CreatureGuid) : nullptr;
+            Player* builder = ObjectAccessor::FindConnectedPlayer(routePathBuildSession.OwnerGuid);
 
-            if (!creature || !creature->IsAlive())
+            if (builder && builder->IsInWorld() && builder->GetMapId() == routePathBuildSession.MapId)
             {
-                LOG_ERROR("server.loading",
-                    "[LWI Route Bypass] Playback creature is missing or dead; playback stopped.");
-                ResetRouteBypassPlayback(false);
-            }
-            else if (routeBypassPlayback.WaitRemainingMs > 0)
-            {
-                if (routeBypassPlayback.WaitRemainingMs > diff)
-                    routeBypassPlayback.WaitRemainingMs -= diff;
-                else
+                float const currentX = builder->GetPositionX();
+                float const currentY = builder->GetPositionY();
+                float const currentZ = builder->GetPositionZ();
+
+                if (!routePathBuildSession.HasLastSample)
                 {
-                    routeBypassPlayback.WaitRemainingMs = 0;
-                    LaunchRouteBypassNode(creature);
-                }
-            }
-            else if (!routeBypassPlayback.MovementStarted)
-            {
-                LaunchRouteBypassNode(creature);
-            }
-            else if (creature->movespline && creature->movespline->Finalized())
-            {
-                lwi::MovementNodeDefinition const& completedNode =
-                    routeBypassPlayback.Nodes[routeBypassPlayback.NodeIndex];
-
-                float const dx = creature->GetPositionX() - completedNode.X;
-                float const dy = creature->GetPositionY() - completedNode.Y;
-                float const dz = creature->GetPositionZ() - completedNode.Z;
-                float const distance = std::sqrt(dx * dx + dy * dy + dz * dz);
-
-                LOG_INFO("server.loading",
-                    "[LWI Route Bypass] Path {} node order {} spline FINALIZED at actual=({:.3f}, {:.3f}, {:.3f}) target=({:.3f}, {:.3f}, {:.3f}) distance={:.3f} yd.",
-                    routeBypassPlayback.PathId,
-                    completedNode.NodeOrder,
-                    creature->GetPositionX(),
-                    creature->GetPositionY(),
-                    creature->GetPositionZ(),
-                    completedNode.X,
-                    completedNode.Y,
-                    completedNode.Z,
-                    distance);
-
-                routeBypassPlayback.MovementStarted = false;
-                ++routeBypassPlayback.NodeIndex;
-
-                if (routeBypassPlayback.NodeIndex >= routeBypassPlayback.Nodes.size())
-                {
-                    LOG_INFO("server.loading",
-                        "[LWI Route Bypass] Path {} playback COMPLETE; {} node(s) traversed with MovementController bypassed.",
-                        routeBypassPlayback.PathId,
-                        routeBypassPlayback.Nodes.size());
-                    ResetRouteBypassPlayback(false);
-                }
-                else if (completedNode.WaitMs > 0)
-                {
-                    routeBypassPlayback.WaitRemainingMs = completedNode.WaitMs;
+                    routePathBuildSession.HasLastSample = true;
+                    routePathBuildSession.LastSampleX = currentX;
+                    routePathBuildSession.LastSampleY = currentY;
+                    routePathBuildSession.LastSampleZ = currentZ;
                 }
                 else
                 {
-                    LaunchRouteBypassNode(creature);
+                    float segmentStartX = routePathBuildSession.LastSampleX;
+                    float segmentStartY = routePathBuildSession.LastSampleY;
+                    float segmentStartZ = routePathBuildSession.LastSampleZ;
+                    float remainingSegment = RouteDistance3D(
+                        segmentStartX, segmentStartY, segmentStartZ,
+                        currentX, currentY, currentZ);
+
+                    routePathBuildSession.TotalDistance += remainingSegment;
+
+                    while (remainingSegment > 0.0001f &&
+                           routePathBuildSession.DistanceSinceLastNode + remainingSegment >= RoutePathBuildSpacingYards)
+                    {
+                        float const needed = RoutePathBuildSpacingYards - routePathBuildSession.DistanceSinceLastNode;
+                        float const t = needed / remainingSegment;
+
+                        float const pointX = segmentStartX + (currentX - segmentStartX) * t;
+                        float const pointY = segmentStartY + (currentY - segmentStartY) * t;
+                        float const pointZ = segmentStartZ + (currentZ - segmentStartZ) * t;
+
+                        float orientation = builder->GetOrientation();
+                        float const headingDx = currentX - segmentStartX;
+                        float const headingDy = currentY - segmentStartY;
+                        if (std::fabs(headingDx) > 0.0001f || std::fabs(headingDy) > 0.0001f)
+                            orientation = std::atan2(headingDy, headingDx);
+
+                        if (!InsertAutoBuildMovementNode(pointX, pointY, pointZ, orientation))
+                        {
+                            routePathBuildSession.Paused = true;
+                            LOG_ERROR("server.loading",
+                                "[LWI Route Build] Auto-build path {} reached the supported node-order limit and was paused.",
+                                routePathBuildSession.PathId);
+                            break;
+                        }
+
+                        segmentStartX = pointX;
+                        segmentStartY = pointY;
+                        segmentStartZ = pointZ;
+                        remainingSegment = RouteDistance3D(
+                            segmentStartX, segmentStartY, segmentStartZ,
+                            currentX, currentY, currentZ);
+                        routePathBuildSession.DistanceSinceLastNode = 0.0f;
+                    }
+
+                    if (!routePathBuildSession.Paused)
+                        routePathBuildSession.DistanceSinceLastNode += remainingSegment;
+
+                    routePathBuildSession.LastSampleX = currentX;
+                    routePathBuildSession.LastSampleY = currentY;
+                    routePathBuildSession.LastSampleZ = currentZ;
                 }
             }
         }
@@ -497,73 +483,6 @@ public:
                                 routeMovementLabBreadcrumbState.X = creature->GetPositionX();
                                 routeMovementLabBreadcrumbState.Y = creature->GetPositionY();
                                 routeMovementLabBreadcrumbState.Z = creature->GetPositionZ();
-                            }
-                        }
-                    }
-                }
-
-
-                if (routeBypassPlayback.Active)
-                {
-                    if (Map* map = sMapMgr->FindMap(routeBypassPlayback.MapId, 0))
-                    {
-                        if (Creature* creature = map->GetCreature(routeBypassPlayback.CreatureGuid))
-                        {
-                            RouteBreadcrumbState& state = routeBypassPlayback.BreadcrumbState;
-                            float const dx = creature->GetPositionX() - state.X;
-                            float const dy = creature->GetPositionY() - state.Y;
-                            float const dz = creature->GetPositionZ() - state.Z;
-                            float const distance = std::sqrt(dx * dx + dy * dy + dz * dz);
-
-                            if (!state.HasPosition || distance >= RouteDebugBreadcrumbDistance)
-                            {
-                                if (Creature* breadcrumb = SpawnRouteDebugMarker(
-                                        creature,
-                                        creature->GetPositionX(),
-                                        creature->GetPositionY(),
-                                        creature->GetPositionZ(),
-                                        creature->GetOrientation(),
-                                        0.30f))
-                                {
-                                    routeBreadcrumbMarkerGuids.push_back(breadcrumb->GetGUID());
-                                }
-
-                                state.HasPosition = true;
-                                state.X = creature->GetPositionX();
-                                state.Y = creature->GetPositionY();
-                                state.Z = creature->GetPositionZ();
-                            }
-                        }
-                    }
-                }
-                if (routeNativeWaypointTestActive)
-                {
-                    if (Map* map = sMapMgr->FindMap(routeNativeWaypointMapId, 0))
-                    {
-                        if (Creature* creature = map->GetCreature(routeNativeWaypointCreatureGuid))
-                        {
-                            float const dx = creature->GetPositionX() - routeNativeWaypointBreadcrumbState.X;
-                            float const dy = creature->GetPositionY() - routeNativeWaypointBreadcrumbState.Y;
-                            float const dz = creature->GetPositionZ() - routeNativeWaypointBreadcrumbState.Z;
-                            float const distance = std::sqrt(dx * dx + dy * dy + dz * dz);
-
-                            if (!routeNativeWaypointBreadcrumbState.HasPosition || distance >= RouteDebugBreadcrumbDistance)
-                            {
-                                if (Creature* breadcrumb = SpawnRouteDebugMarker(
-                                        creature,
-                                        creature->GetPositionX(),
-                                        creature->GetPositionY(),
-                                        creature->GetPositionZ(),
-                                        creature->GetOrientation(),
-                                        0.25f))
-                                {
-                                    routeBreadcrumbMarkerGuids.push_back(breadcrumb->GetGUID());
-                                }
-
-                                routeNativeWaypointBreadcrumbState.HasPosition = true;
-                                routeNativeWaypointBreadcrumbState.X = creature->GetPositionX();
-                                routeNativeWaypointBreadcrumbState.Y = creature->GetPositionY();
-                                routeNativeWaypointBreadcrumbState.Z = creature->GetPositionZ();
                             }
                         }
                     }
@@ -689,8 +608,82 @@ public:
             }
         };
 
+        static ChatCommandTable routePathCancelCommandTable =
+        {
+            {
+                "confirm",
+                HandleRoutePathBuildCancelConfirmCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "",
+                HandleRoutePathBuildCancelCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            }
+        };
+
+        static ChatCommandTable routeNetworkResetCommandTable =
+        {
+            {
+                "confirm",
+                HandleRouteNetworkResetConfirmCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "",
+                HandleRouteNetworkResetCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            }
+        };
+
+        static ChatCommandTable routeNetworkCommandTable =
+        {
+            {
+                "reset",
+                routeNetworkResetCommandTable
+            }
+        };
+
         static ChatCommandTable routePathCommandTable =
         {
+            {
+                "build",
+                HandleRoutePathBuildCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "complete",
+                HandleRoutePathBuildCompleteCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "status",
+                HandleRoutePathBuildStatusCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "pause",
+                HandleRoutePathBuildPauseCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "resume",
+                HandleRoutePathBuildResumeCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::No
+            },
+            {
+                "cancel",
+                routePathCancelCommandTable
+            },
             {
                 "show",
                 HandleRoutePathShowCommand,
@@ -745,78 +738,8 @@ public:
             }
         };
 
-        static ChatCommandTable routeDebugBypassCommandTable =
-        {
-            {
-                "forward",
-                HandleRouteDebugBypassForwardCommand,
-                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
-                Console::No
-            },
-            {
-                "reverse",
-                HandleRouteDebugBypassReverseCommand,
-                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
-                Console::No
-            },
-            {
-                "stop",
-                HandleRouteDebugBypassStopCommand,
-                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
-                Console::No
-            },
-            {
-                "status",
-                HandleRouteDebugBypassStatusCommand,
-                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
-                Console::No
-            }
-        };
-
-        static ChatCommandTable routeDebugNativeCommandTable =
-        {
-            {
-                "forward",
-                HandleRouteDebugNativeForwardCommand,
-                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
-                Console::No
-            },
-            {
-                "reverse",
-                HandleRouteDebugNativeReverseCommand,
-                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
-                Console::No
-            },
-            {
-                "stop",
-                HandleRouteDebugNativeStopCommand,
-                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
-                Console::No
-            },
-            {
-                "status",
-                HandleRouteDebugNativeStatusCommand,
-                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
-                Console::No
-            },
-            {
-                "clear",
-                HandleRouteDebugNativeClearCommand,
-                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
-                Console::No
-            }
-        };
-
         static ChatCommandTable routeDebugCommandTable =
         {
-            {
-                "native",
-                routeDebugNativeCommandTable
-            },
-            {
-                "bypass",
-                routeDebugBypassCommandTable
-            },
             {
                 "straight",
                 routeDebugStraightCommandTable
@@ -849,6 +772,10 @@ public:
 
         static ChatCommandTable routeCommandTable =
         {
+            {
+                "network",
+                routeNetworkCommandTable
+            },
             {
                 "path",
                 routePathCommandTable
@@ -1704,6 +1631,485 @@ private:
         return true;
     }
 
+    static bool HandleRoutePathBuildCommand(ChatHandler* handler, std::string startName, std::string endName)
+    {
+        if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Debug))
+        {
+            handler->SendSysMessage("Living World Invasions debug commands are disabled. Set LWI.Debug = 1 to build routes.");
+            return false;
+        }
+
+        Player* player = GetCommandPlayer(handler);
+        if (!player)
+            return false;
+
+        if (routePathBuildActive)
+        {
+            handler->PSendSysMessage(
+                "A route path build is already active: {} -> {} (path {}). Complete or cancel it first.",
+                routePathBuildSession.StartName,
+                routePathBuildSession.EndName,
+                routePathBuildSession.PathId);
+            return false;
+        }
+
+        if (routeRecordingActive)
+        {
+            handler->SendSysMessage("The manual route recorder is active. Finish or cancel it before starting an automatic path build.");
+            return false;
+        }
+
+        if (!IsSafeRouteRecordName(startName) || !IsSafeRouteRecordName(endName) || startName == endName)
+        {
+            handler->SendSysMessage("Start/end names must be different, 1-120 characters, and contain only letters, numbers, underscores, or hyphens.");
+            return false;
+        }
+
+        std::string const pathName = startName + "_" + endName;
+        std::string const segmentName = startName + "_" + endName;
+        if (pathName.size() > 120)
+        {
+            handler->SendSysMessage("The combined start/end names are too long for an LWI path name (maximum 120 characters).");
+            return false;
+        }
+
+        if (WorldDatabase.Query("SELECT 1 FROM `lwi_route_segment` WHERE `name` = '{}' LIMIT 1", segmentName))
+        {
+            handler->PSendSysMessage("Route segment {} already exists. Reset/remove it before rebuilding this same connection.", segmentName);
+            return false;
+        }
+
+        uint32 startRouteNodeId = 0;
+        bool startCreated = false;
+        if (QueryResult result = WorldDatabase.Query(
+            "SELECT `id`, `map_id`, `x`, `y`, `z` FROM `lwi_route_node` WHERE `name` = '{}' LIMIT 1",
+            startName))
+        {
+            Field* fields = result->Fetch();
+            startRouteNodeId = fields[0].Get<uint32>();
+            uint16 const mapId = fields[1].Get<uint16>();
+            if (mapId != player->GetMapId())
+            {
+                handler->PSendSysMessage("Existing start route node {} is on map {}, but you are on map {}.", startName, mapId, player->GetMapId());
+                return false;
+            }
+
+            float const distance = RouteDistance3D(
+                player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(),
+                fields[2].Get<float>(), fields[3].Get<float>(), fields[4].Get<float>());
+            if (distance > 25.0f)
+            {
+                handler->PSendSysMessage("You are {:.1f} yd from existing start node {}. Stand at that route node before starting the build.", distance, startName);
+                return false;
+            }
+        }
+        else
+        {
+            QueryResult idResult = WorldDatabase.Query("SELECT COALESCE(MAX(`id`), 0) + 10 FROM `lwi_route_node`");
+            startRouteNodeId = idResult ? idResult->Fetch()[0].Get<uint32>() : 10;
+            WorldDatabase.Execute(
+                "INSERT INTO `lwi_route_node` (`id`, `name`, `map_id`, `x`, `y`, `z`, `orientation`, `arrival_radius`, `enabled`, `comment`) "
+                "VALUES ({}, '{}', {}, {}, {}, {}, {}, 5.0, 1, 'Created by automatic LWI route path builder')",
+                startRouteNodeId,
+                startName,
+                player->GetMapId(),
+                player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), player->GetOrientation());
+            startCreated = true;
+        }
+
+        uint32 endRouteNodeId = 0;
+        bool endExists = false;
+        if (QueryResult result = WorldDatabase.Query(
+            "SELECT `id`, `map_id` FROM `lwi_route_node` WHERE `name` = '{}' LIMIT 1",
+            endName))
+        {
+            Field* fields = result->Fetch();
+            endRouteNodeId = fields[0].Get<uint32>();
+            if (fields[1].Get<uint16>() != player->GetMapId())
+            {
+                if (startCreated)
+                    WorldDatabase.Execute("DELETE FROM `lwi_route_node` WHERE `id` = {}", startRouteNodeId);
+                handler->PSendSysMessage("Existing end route node {} is on a different map. This builder currently records continuous paths on one map.", endName);
+                return false;
+            }
+            endExists = true;
+        }
+        else
+        {
+            QueryResult idResult = WorldDatabase.Query("SELECT COALESCE(MAX(`id`), 0) + 10 FROM `lwi_route_node`");
+            endRouteNodeId = idResult ? idResult->Fetch()[0].Get<uint32>() : 10;
+            if (endRouteNodeId == startRouteNodeId)
+                endRouteNodeId += 10;
+        }
+
+        if (WorldDatabase.Query(
+            "SELECT 1 FROM `lwi_route_segment` "
+            "WHERE (`start_node_id` = {} AND `end_node_id` = {}) "
+            "OR (`start_node_id` = {} AND `end_node_id` = {}) LIMIT 1",
+            startRouteNodeId, endRouteNodeId, endRouteNodeId, startRouteNodeId))
+        {
+            if (startCreated)
+                WorldDatabase.Execute("DELETE FROM `lwi_route_node` WHERE `id` = {}", startRouteNodeId);
+            handler->PSendSysMessage("A shared route segment already connects {} and {}. Reset/remove that segment before rebuilding it.", startName, endName);
+            return false;
+        }
+
+        QueryResult pathIdResult = WorldDatabase.Query(
+            "SELECT GREATEST("
+            "COALESCE((SELECT MAX(`id`) FROM `lwi_movement_path`), 0), "
+            "COALESCE((SELECT MAX(`id`) FROM `lwi_route_segment`), 0)) + 10");
+        uint32 const pathId = pathIdResult ? pathIdResult->Fetch()[0].Get<uint32>() : 10;
+        uint32 const segmentId = pathId;
+
+        QueryResult movementNodeIdResult = WorldDatabase.Query("SELECT COALESCE(MAX(`id`), 0) + 1 FROM `lwi_movement_node`");
+        uint32 const nextMovementNodeId = movementNodeIdResult ? movementNodeIdResult->Fetch()[0].Get<uint32>() : 1;
+
+        WorldDatabase.Execute(
+            "INSERT INTO `lwi_movement_path` (`id`, `name`, `enabled`, `comment`) "
+            "VALUES ({}, '{}', 1, 'AUTO BUILD IN PROGRESS: {} -> {}')",
+            pathId, pathName, startName, endName);
+
+        routePathBuildSession = {};
+        routePathBuildSession.OwnerGuid = player->GetGUID();
+        routePathBuildSession.MapId = player->GetMapId();
+        routePathBuildSession.StartName = startName;
+        routePathBuildSession.EndName = endName;
+        routePathBuildSession.PathName = pathName;
+        routePathBuildSession.SegmentName = segmentName;
+        routePathBuildSession.StartRouteNodeId = startRouteNodeId;
+        routePathBuildSession.EndRouteNodeId = endRouteNodeId;
+        routePathBuildSession.StartRouteNodeCreated = startCreated;
+        routePathBuildSession.EndRouteNodeExists = endExists;
+        routePathBuildSession.PathId = pathId;
+        routePathBuildSession.SegmentId = segmentId;
+        routePathBuildSession.NextMovementNodeId = nextMovementNodeId;
+        routePathBuildSession.NextNodeOrder = 10;
+        routePathBuildSession.HasLastSample = true;
+        routePathBuildSession.LastSampleX = player->GetPositionX();
+        routePathBuildSession.LastSampleY = player->GetPositionY();
+        routePathBuildSession.LastSampleZ = player->GetPositionZ();
+        routePathBuildActive = true;
+
+        if (!InsertAutoBuildMovementNode(
+                player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), player->GetOrientation()))
+        {
+            routePathBuildActive = false;
+            WorldDatabase.Execute("DELETE FROM `lwi_movement_path` WHERE `id` = {}", pathId);
+            if (startCreated)
+                WorldDatabase.Execute("DELETE FROM `lwi_route_node` WHERE `id` = {}", startRouteNodeId);
+            handler->SendSysMessage("Failed to create the first automatic route node.");
+            return false;
+        }
+
+        handler->PSendSysMessage(
+            "Automatic LWI route build started: {} (node {}) -> {} (node {}) | path/segment ID {} | recording every {:.1f} yd. Ride/walk the exact route, then use .lwi route path complete at the endpoint.",
+            startName, startRouteNodeId, endName, endRouteNodeId, pathId, RoutePathBuildSpacingYards);
+        handler->SendSysMessage("Points are written to the world database as you travel; .lwi route path status shows progress.");
+        return true;
+    }
+
+    static bool HandleRoutePathBuildCompleteCommand(ChatHandler* handler)
+    {
+        if (!routePathBuildActive)
+        {
+            handler->SendSysMessage("No automatic route path build is active.");
+            return false;
+        }
+
+        Player* player = GetCommandPlayer(handler);
+        if (!player || player->GetGUID() != routePathBuildSession.OwnerGuid)
+        {
+            handler->SendSysMessage("Only the GM who started the automatic route build may complete it.");
+            return false;
+        }
+
+        if (player->GetMapId() != routePathBuildSession.MapId)
+        {
+            handler->SendSysMessage("You changed maps during this build. Return to the build map or cancel the build.");
+            return false;
+        }
+
+        float const finalX = player->GetPositionX();
+        float const finalY = player->GetPositionY();
+        float const finalZ = player->GetPositionZ();
+        float const finalO = player->GetOrientation();
+
+        if (routePathBuildSession.EndRouteNodeExists)
+        {
+            if (QueryResult result = WorldDatabase.Query(
+                "SELECT `x`, `y`, `z` FROM `lwi_route_node` WHERE `id` = {} LIMIT 1",
+                routePathBuildSession.EndRouteNodeId))
+            {
+                Field* fields = result->Fetch();
+                float const endDistance = RouteDistance3D(
+                    finalX, finalY, finalZ,
+                    fields[0].Get<float>(), fields[1].Get<float>(), fields[2].Get<float>());
+                if (endDistance > 25.0f)
+                {
+                    handler->PSendSysMessage(
+                        "You are {:.1f} yd from existing end node {}. Stand at that route node before completing the build.",
+                        endDistance,
+                        routePathBuildSession.EndName);
+                    return false;
+                }
+            }
+        }
+        float const finalGap = RouteDistance3D(
+            routePathBuildSession.LastRecordedX,
+            routePathBuildSession.LastRecordedY,
+            routePathBuildSession.LastRecordedZ,
+            finalX, finalY, finalZ);
+
+        if (finalGap > RoutePathBuildEndpointSnapYards)
+        {
+            if (!InsertAutoBuildMovementNode(finalX, finalY, finalZ, finalO))
+            {
+                handler->SendSysMessage("Could not record the exact final endpoint; the build remains active.");
+                return false;
+            }
+        }
+        else if (routePathBuildSession.LastMovementNodeId != 0)
+        {
+            WorldDatabase.Execute(
+                "UPDATE `lwi_movement_node` SET `x` = {}, `y` = {}, `z` = {}, `orientation` = {} WHERE `id` = {}",
+                finalX, finalY, finalZ, finalO,
+                routePathBuildSession.LastMovementNodeId);
+            routePathBuildSession.LastRecordedX = finalX;
+            routePathBuildSession.LastRecordedY = finalY;
+            routePathBuildSession.LastRecordedZ = finalZ;
+        }
+
+        if (routePathBuildSession.NodeCount < 2)
+        {
+            handler->SendSysMessage("The automatic build contains fewer than two movement nodes. Travel farther before completing it.");
+            return false;
+        }
+
+        if (!routePathBuildSession.EndRouteNodeExists)
+        {
+            WorldDatabase.Execute(
+                "INSERT INTO `lwi_route_node` (`id`, `name`, `map_id`, `x`, `y`, `z`, `orientation`, `arrival_radius`, `enabled`, `comment`) "
+                "VALUES ({}, '{}', {}, {}, {}, {}, {}, 5.0, 1, 'Created by automatic LWI route path builder')",
+                routePathBuildSession.EndRouteNodeId,
+                routePathBuildSession.EndName,
+                routePathBuildSession.MapId,
+                finalX, finalY, finalZ, finalO);
+        }
+
+        WorldDatabase.Execute(
+            "INSERT INTO `lwi_route_segment` (`id`, `name`, `start_node_id`, `end_node_id`, `movement_path_id`, `enabled`, `comment`) "
+            "VALUES ({}, '{}', {}, {}, {}, 1, 'Automatically recorded shared route segment')",
+            routePathBuildSession.SegmentId,
+            routePathBuildSession.SegmentName,
+            routePathBuildSession.StartRouteNodeId,
+            routePathBuildSession.EndRouteNodeId,
+            routePathBuildSession.PathId);
+
+        WorldDatabase.Execute(
+            "UPDATE `lwi_movement_path` SET `comment` = 'Automatically recorded at {:.1f} yd spacing: {} -> {}' WHERE `id` = {}",
+            RoutePathBuildSpacingYards,
+            routePathBuildSession.StartName,
+            routePathBuildSession.EndName,
+            routePathBuildSession.PathId);
+
+        uint32 const pathId = routePathBuildSession.PathId;
+        uint32 const segmentId = routePathBuildSession.SegmentId;
+        uint32 const startNodeId = routePathBuildSession.StartRouteNodeId;
+        uint32 const endNodeId = routePathBuildSession.EndRouteNodeId;
+        uint32 const nodes = routePathBuildSession.NodeCount;
+        float const distance = routePathBuildSession.TotalDistance;
+        std::string const startName = routePathBuildSession.StartName;
+        std::string const endName = routePathBuildSession.EndName;
+
+        routePathBuildSession = {};
+        routePathBuildActive = false;
+
+        handler->PSendSysMessage(
+            "Completed automatic route {} -> {}: path/segment {} with {} movement nodes over approximately {:.1f} yd.",
+            startName, endName, pathId, nodes, distance);
+        handler->PSendSysMessage(
+            "Route segment {} is saved: start node {} -> end node {}. Run .lwi reload before testing it.",
+            segmentId, startNodeId, endNodeId);
+        handler->PSendSysMessage(
+            "Forward test: .lwi route test {} {} | Reverse test: .lwi route test {} {}",
+            segmentId, startNodeId, segmentId, endNodeId);
+        return true;
+    }
+
+    static bool HandleRoutePathBuildStatusCommand(ChatHandler* handler)
+    {
+        if (!routePathBuildActive)
+        {
+            handler->SendSysMessage("No automatic route path build is active.");
+            return true;
+        }
+
+        Player* player = GetCommandPlayer(handler);
+        float currentGap = routePathBuildSession.DistanceSinceLastNode;
+        if (player && player->GetGUID() == routePathBuildSession.OwnerGuid && player->GetMapId() == routePathBuildSession.MapId)
+        {
+            currentGap = RouteDistance3D(
+                routePathBuildSession.LastRecordedX,
+                routePathBuildSession.LastRecordedY,
+                routePathBuildSession.LastRecordedZ,
+                player->GetPositionX(), player->GetPositionY(), player->GetPositionZ());
+        }
+
+        handler->PSendSysMessage(
+            "Route build {} -> {} | path {} | nodes {} | traveled ~{:.1f} yd | {:.1f} yd from last saved point | {}.",
+            routePathBuildSession.StartName,
+            routePathBuildSession.EndName,
+            routePathBuildSession.PathId,
+            routePathBuildSession.NodeCount,
+            routePathBuildSession.TotalDistance,
+            currentGap,
+            routePathBuildSession.Paused ? "PAUSED" : "RECORDING");
+        return true;
+    }
+
+    static bool HandleRoutePathBuildPauseCommand(ChatHandler* handler)
+    {
+        if (!routePathBuildActive)
+        {
+            handler->SendSysMessage("No automatic route path build is active.");
+            return false;
+        }
+        Player* player = GetCommandPlayer(handler);
+        if (!player || player->GetGUID() != routePathBuildSession.OwnerGuid)
+            return false;
+
+        routePathBuildSession.Paused = true;
+        handler->SendSysMessage("Automatic route path build paused. Movement while paused will not be recorded.");
+        return true;
+    }
+
+    static bool HandleRoutePathBuildResumeCommand(ChatHandler* handler)
+    {
+        if (!routePathBuildActive)
+        {
+            handler->SendSysMessage("No automatic route path build is active.");
+            return false;
+        }
+        Player* player = GetCommandPlayer(handler);
+        if (!player || player->GetGUID() != routePathBuildSession.OwnerGuid)
+            return false;
+        if (player->GetMapId() != routePathBuildSession.MapId)
+        {
+            handler->SendSysMessage("Return to the route build map before resuming.");
+            return false;
+        }
+
+        routePathBuildSession.Paused = false;
+        routePathBuildSession.HasLastSample = true;
+        routePathBuildSession.LastSampleX = player->GetPositionX();
+        routePathBuildSession.LastSampleY = player->GetPositionY();
+        routePathBuildSession.LastSampleZ = player->GetPositionZ();
+        routePathBuildSession.DistanceSinceLastNode = RouteDistance3D(
+            routePathBuildSession.LastRecordedX,
+            routePathBuildSession.LastRecordedY,
+            routePathBuildSession.LastRecordedZ,
+            player->GetPositionX(), player->GetPositionY(), player->GetPositionZ());
+        handler->SendSysMessage("Automatic route path build resumed.");
+        return true;
+    }
+
+    static bool HandleRoutePathBuildCancelCommand(ChatHandler* handler)
+    {
+        if (!routePathBuildActive)
+        {
+            handler->SendSysMessage("No automatic route path build is active.");
+            return true;
+        }
+        handler->PSendSysMessage(
+            "WARNING: canceling will delete unfinished path {} ({} -> {}) and its {} recorded movement nodes. Use .lwi route path cancel confirm.",
+            routePathBuildSession.PathId,
+            routePathBuildSession.StartName,
+            routePathBuildSession.EndName,
+            routePathBuildSession.NodeCount);
+        return true;
+    }
+
+    static bool HandleRoutePathBuildCancelConfirmCommand(ChatHandler* handler)
+    {
+        if (!routePathBuildActive)
+        {
+            handler->SendSysMessage("No automatic route path build is active.");
+            return true;
+        }
+        Player* player = GetCommandPlayer(handler);
+        if (!player || player->GetGUID() != routePathBuildSession.OwnerGuid)
+            return false;
+
+        uint32 const pathId = routePathBuildSession.PathId;
+        bool const deleteStartNode = routePathBuildSession.StartRouteNodeCreated;
+        uint32 const startNodeId = routePathBuildSession.StartRouteNodeId;
+
+        WorldDatabase.Execute(
+            "DELETE FROM `lwi_movement_node_action` WHERE `movement_node_id` IN (SELECT `id` FROM `lwi_movement_node` WHERE `path_id` = {})",
+            pathId);
+        WorldDatabase.Execute("DELETE FROM `lwi_movement_node` WHERE `path_id` = {}", pathId);
+        WorldDatabase.Execute("DELETE FROM `lwi_movement_path` WHERE `id` = {}", pathId);
+        if (deleteStartNode)
+            WorldDatabase.Execute("DELETE FROM `lwi_route_node` WHERE `id` = {}", startNodeId);
+
+        routePathBuildSession = {};
+        routePathBuildActive = false;
+        handler->PSendSysMessage("Canceled and deleted unfinished automatic route path {}.", pathId);
+        return true;
+    }
+
+    static bool HandleRouteNetworkResetCommand(ChatHandler* handler)
+    {
+        if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Debug))
+        {
+            handler->SendSysMessage("Living World Invasions debug commands are disabled. Set LWI.Debug = 1 first.");
+            return false;
+        }
+
+        QueryResult countResult = WorldDatabase.Query("SELECT COUNT(*) FROM `lwi_route_segment`");
+        uint32 const segmentCount = countResult ? countResult->Fetch()[0].Get<uint32>() : 0;
+        handler->PSendSysMessage(
+            "WARNING: this will delete all {} shared LWI route segment(s), their route nodes, and movement paths referenced by those segments. Non-route invasion movement paths are preserved.",
+            segmentCount);
+        handler->SendSysMessage("Use .lwi route network reset confirm to continue.");
+        return true;
+    }
+
+    static bool HandleRouteNetworkResetConfirmCommand(ChatHandler* handler)
+    {
+        if (routePathBuildActive || routeRecordingActive)
+        {
+            handler->SendSysMessage("Finish/cancel any active route build or manual recording before resetting the route network.");
+            return false;
+        }
+
+        std::vector<uint32> pathIds;
+        if (QueryResult result = WorldDatabase.Query("SELECT DISTINCT `movement_path_id` FROM `lwi_route_segment` ORDER BY `movement_path_id`"))
+        {
+            do
+            {
+                pathIds.push_back(result->Fetch()[0].Get<uint32>());
+            } while (result->NextRow());
+        }
+
+        WorldDatabase.Execute("DELETE FROM `lwi_route_segment`");
+        WorldDatabase.Execute("DELETE FROM `lwi_route_node`");
+
+        for (uint32 const pathId : pathIds)
+        {
+            WorldDatabase.Execute(
+                "DELETE FROM `lwi_movement_node_action` WHERE `movement_node_id` IN (SELECT `id` FROM `lwi_movement_node` WHERE `path_id` = {})",
+                pathId);
+            WorldDatabase.Execute("DELETE FROM `lwi_movement_node` WHERE `path_id` = {}", pathId);
+            WorldDatabase.Execute("DELETE FROM `lwi_movement_path` WHERE `id` = {}", pathId);
+        }
+
+        handler->PSendSysMessage(
+            "Shared LWI route network reset complete. Deleted {} route-linked movement path(s). Existing non-route invasion movement paths were preserved. Run .lwi reload.",
+            pathIds.size());
+        return true;
+    }
+
     static bool HandleRoutePathShowCommand(ChatHandler* handler, uint32 pathId)
     {
         if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Debug))
@@ -1936,329 +2342,6 @@ private:
         routeMovementLabCreatureGuid = ObjectGuid::Empty;
         routeMovementLabBreadcrumbState = RouteBreadcrumbState{};
         handler->SendSysMessage("LWI straight movement lab stopped.");
-        return true;
-    }
-
-    static bool StartRouteDebugBypassPlayback(ChatHandler* handler, uint32 pathId, bool reverse)
-    {
-        if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Debug))
-        {
-            handler->SendSysMessage("Living World Invasions debug commands are disabled. Set LWI.Debug = 1 first.");
-            return false;
-        }
-
-        if (routeBypassPlayback.Active)
-        {
-            handler->PSendSysMessage(
-                "A MovementController-bypass playback is already active on path {}. Use .lwi route debug bypass stop first.",
-                routeBypassPlayback.PathId);
-            return false;
-        }
-
-        Creature* creature = handler->getSelectedCreature();
-        if (!creature)
-        {
-            handler->SendSysMessage(
-                "Select a creature, then use .lwi route debug bypass forward <pathId> or reverse <pathId>.");
-            return false;
-        }
-
-        lwi::MovementPathDefinition const* path = sInvasionMgr.GetMovementPath(pathId);
-        auto const* loadedNodes = sInvasionMgr.GetMovementNodes(pathId);
-        if (!path || !loadedNodes || loadedNodes->empty())
-        {
-            handler->PSendSysMessage("Movement path {} does not exist, is disabled, or has no loaded nodes.", pathId);
-            return false;
-        }
-
-        std::vector<lwi::MovementNodeDefinition> traversal = *loadedNodes;
-        if (reverse)
-            std::reverse(traversal.begin(), traversal.end());
-
-        if (creature->GetMapId() != traversal.front().MapId)
-        {
-            handler->PSendSysMessage(
-                "Selected creature is on map {}, but the first traversal node for path {} is on map {}.",
-                creature->GetMapId(),
-                pathId,
-                traversal.front().MapId);
-            return false;
-        }
-
-        routeBypassPlayback.Active = true;
-        routeBypassPlayback.CreatureGuid = creature->GetGUID();
-        routeBypassPlayback.MapId = creature->GetMapId();
-        routeBypassPlayback.PathId = pathId;
-        routeBypassPlayback.Reverse = reverse;
-        routeBypassPlayback.Nodes = std::move(traversal);
-        routeBypassPlayback.NodeIndex = 0;
-        routeBypassPlayback.MovementStarted = false;
-        routeBypassPlayback.WaitRemainingMs = 0;
-        routeBypassPlayback.BreadcrumbState = RouteBreadcrumbState{};
-
-        LOG_INFO("server.loading",
-            "[LWI Route Bypass] START path {} ({}) direction={} creature={} with {} node(s). MovementController is NOT involved.",
-            pathId,
-            path->Name,
-            reverse ? "REVERSE" : "FORWARD",
-            creature->GetGUID().GetCounter(),
-            routeBypassPlayback.Nodes.size());
-
-        handler->PSendSysMessage(
-            "MovementController-bypass playback started for path {} ({}) {} with {} node(s). This test does not create a runtime group or call MovementController.",
-            pathId,
-            path->Name,
-            reverse ? "REVERSE" : "FORWARD",
-            routeBypassPlayback.Nodes.size());
-
-        return LaunchRouteBypassNode(creature);
-    }
-
-    static uint32 BuildNativeWaypointTempPathId(uint32 sourcePathId)
-    {
-        return RouteNativeWaypointTempBase + (sourcePathId % 200000000u);
-    }
-
-    static void StopNativeWaypointTestCreature()
-    {
-        if (!routeNativeWaypointTestActive)
-            return;
-
-        if (Map* map = sMapMgr->FindMap(routeNativeWaypointMapId, 0))
-        {
-            if (Creature* creature = map->GetCreature(routeNativeWaypointCreatureGuid))
-            {
-                creature->CombatStop(true);
-                creature->StopMoving();
-                creature->GetMotionMaster()->Initialize();
-            }
-        }
-
-        routeNativeWaypointTestActive = false;
-        routeNativeWaypointCreatureGuid = ObjectGuid::Empty;
-        routeNativeWaypointMapId = 0;
-        routeNativeWaypointSourcePathId = 0;
-        routeNativeWaypointBreadcrumbState = RouteBreadcrumbState{};
-    }
-
-    static bool StartRouteDebugNativeWaypointTest(ChatHandler* handler, uint32 pathId, bool reverse)
-    {
-        if (!lwiConfig.GetConfigValue<bool>(LwiConfig::Debug))
-        {
-            handler->SendSysMessage("Living World Invasions debug commands are disabled. Set LWI.Debug = 1 first.");
-            return false;
-        }
-
-        Creature* creature = handler->getSelectedCreature();
-        if (!creature)
-        {
-            handler->SendSysMessage("Select a creature, then use .lwi route debug native forward <pathId> or reverse <pathId>.");
-            return false;
-        }
-
-        lwi::MovementPathDefinition const* path = sInvasionMgr.GetMovementPath(pathId);
-        std::vector<lwi::MovementNodeDefinition> const* nodes = sInvasionMgr.GetMovementNodes(pathId);
-        if (!path || !nodes || nodes->size() < 2)
-        {
-            handler->PSendSysMessage("LWI movement path {} does not exist, is disabled, or has fewer than two loaded nodes.", pathId);
-            return false;
-        }
-
-        std::vector<lwi::MovementNodeDefinition const*> orderedNodes;
-        orderedNodes.reserve(nodes->size());
-        for (lwi::MovementNodeDefinition const& node : *nodes)
-        {
-            if (!node.Enabled)
-                continue;
-
-            if (node.MapId != creature->GetMapId())
-            {
-                handler->PSendSysMessage(
-                    "LWI movement path {} contains enabled node {} on map {}, but the selected creature is on map {}. Native waypoint test aborted.",
-                    pathId,
-                    node.Id,
-                    node.MapId,
-                    creature->GetMapId());
-                return false;
-            }
-
-            orderedNodes.push_back(&node);
-        }
-
-        if (orderedNodes.size() < 2)
-        {
-            handler->PSendSysMessage("LWI movement path {} has fewer than two enabled nodes.", pathId);
-            return false;
-        }
-
-        if (reverse)
-            std::reverse(orderedNodes.begin(), orderedNodes.end());
-
-        StopNativeWaypointTestCreature();
-
-        uint32 const tempPathId = BuildNativeWaypointTempPathId(pathId);
-        WorldDatabase.DirectExecute(("DELETE FROM `waypoint_data` WHERE `id` = " + std::to_string(tempPathId)).c_str());
-
-        uint32 point = 1;
-        for (lwi::MovementNodeDefinition const* node : orderedNodes)
-        {
-            std::string const sql =
-                "INSERT INTO `waypoint_data` "
-                "(`id`, `point`, `position_x`, `position_y`, `position_z`, `orientation`, `velocity`, `delay`, `smoothTransition`, `move_type`, `action`, `action_chance`, `wpguid`) VALUES (" +
-                std::to_string(tempPathId) + ", " +
-                std::to_string(point++) + ", " +
-                std::to_string(node->X) + ", " +
-                std::to_string(node->Y) + ", " +
-                std::to_string(node->Z) + ", " +
-                std::to_string(node->Orientation) + ", 0, " +
-                std::to_string(node->WaitMs) + ", 0, 1, 0, 100, 0)";
-            WorldDatabase.DirectExecute(sql.c_str());
-        }
-
-        sWaypointMgr->ReloadPath(tempPathId);
-
-        creature->CombatStop(true);
-        creature->StopMoving();
-        creature->GetMotionMaster()->Initialize();
-        creature->GetMotionMaster()->MoveWaypoint(tempPathId, false, PathSource::WAYPOINT_MGR);
-
-        routeNativeWaypointTestActive = true;
-        routeNativeWaypointCreatureGuid = creature->GetGUID();
-        routeNativeWaypointMapId = static_cast<uint16>(creature->GetMapId());
-        routeNativeWaypointSourcePathId = pathId;
-        routeNativeWaypointTempPathId = tempPathId;
-        routeNativeWaypointBreadcrumbState = RouteBreadcrumbState{};
-
-        LOG_INFO(
-            "server.loading",
-            "[LWI Route Native] START sourcePath={} ({}) tempWaypointPath={} direction={} creature={} nodes={}. AzerothCore WaypointMovementGenerator is executing the mirrored path directly; MovementController is NOT involved.",
-            pathId,
-            path->Name,
-            tempPathId,
-            reverse ? "REVERSE" : "FORWARD",
-            creature->GetEntry(),
-            orderedNodes.size());
-
-        handler->PSendSysMessage(
-            "Native AzerothCore waypoint test started for LWI path {} ({}) {} using temporary waypoint_data path {} with {} nodes. Use .lwi route debug native stop when finished.",
-            pathId,
-            path->Name,
-            reverse ? "REVERSE" : "FORWARD",
-            tempPathId,
-            orderedNodes.size());
-        return true;
-    }
-
-    static bool HandleRouteDebugNativeForwardCommand(ChatHandler* handler, uint32 pathId)
-    {
-        return StartRouteDebugNativeWaypointTest(handler, pathId, false);
-    }
-
-    static bool HandleRouteDebugNativeReverseCommand(ChatHandler* handler, uint32 pathId)
-    {
-        return StartRouteDebugNativeWaypointTest(handler, pathId, true);
-    }
-
-    static bool HandleRouteDebugNativeStopCommand(ChatHandler* handler)
-    {
-        if (!routeNativeWaypointTestActive)
-        {
-            handler->SendSysMessage("No native waypoint route test is active.");
-            return true;
-        }
-
-        uint32 const sourcePathId = routeNativeWaypointSourcePathId;
-        uint32 const tempPathId = routeNativeWaypointTempPathId;
-        StopNativeWaypointTestCreature();
-
-        handler->PSendSysMessage(
-            "Stopped native waypoint test for LWI path {}. Temporary waypoint_data path {} remains for inspection; use .lwi route debug native clear to delete it.",
-            sourcePathId,
-            tempPathId);
-        return true;
-    }
-
-    static bool HandleRouteDebugNativeStatusCommand(ChatHandler* handler)
-    {
-        if (!routeNativeWaypointTestActive)
-        {
-            handler->PSendSysMessage(
-                "Native waypoint route test: inactive. Last temporary waypoint_data path ID: {}.",
-                routeNativeWaypointTempPathId);
-            return true;
-        }
-
-        handler->PSendSysMessage(
-            "Native waypoint route test: ACTIVE. LWI source path {}, temporary waypoint_data path {}, creature map {}.",
-            routeNativeWaypointSourcePathId,
-            routeNativeWaypointTempPathId,
-            routeNativeWaypointMapId);
-        return true;
-    }
-
-    static bool HandleRouteDebugNativeClearCommand(ChatHandler* handler)
-    {
-        uint32 const tempPathId = routeNativeWaypointTempPathId;
-        if (routeNativeWaypointTestActive)
-            StopNativeWaypointTestCreature();
-
-        if (!tempPathId)
-        {
-            handler->SendSysMessage("No temporary native waypoint path has been created in this worldserver session.");
-            return true;
-        }
-
-        WorldDatabase.DirectExecute(("DELETE FROM `waypoint_data` WHERE `id` = " + std::to_string(tempPathId)).c_str());
-        routeNativeWaypointTempPathId = 0;
-        handler->PSendSysMessage("Deleted temporary native waypoint_data path {} from the world database.", tempPathId);
-        return true;
-    }
-
-    static bool HandleRouteDebugBypassForwardCommand(ChatHandler* handler, uint32 pathId)
-    {
-        return StartRouteDebugBypassPlayback(handler, pathId, false);
-    }
-
-    static bool HandleRouteDebugBypassReverseCommand(ChatHandler* handler, uint32 pathId)
-    {
-        return StartRouteDebugBypassPlayback(handler, pathId, true);
-    }
-
-    static bool HandleRouteDebugBypassStopCommand(ChatHandler* handler)
-    {
-        if (!routeBypassPlayback.Active)
-        {
-            handler->SendSysMessage("No MovementController-bypass playback is active.");
-            return true;
-        }
-
-        uint32 const pathId = routeBypassPlayback.PathId;
-        ResetRouteBypassPlayback(true);
-        handler->PSendSysMessage("MovementController-bypass playback for path {} stopped.", pathId);
-        return true;
-    }
-
-    static bool HandleRouteDebugBypassStatusCommand(ChatHandler* handler)
-    {
-        if (!routeBypassPlayback.Active)
-        {
-            handler->SendSysMessage("MovementController-bypass playback: INACTIVE.");
-            return true;
-        }
-
-        uint16 nodeOrder = 0;
-        if (routeBypassPlayback.NodeIndex < routeBypassPlayback.Nodes.size())
-            nodeOrder = routeBypassPlayback.Nodes[routeBypassPlayback.NodeIndex].NodeOrder;
-
-        handler->PSendSysMessage(
-            "MovementController-bypass playback: ACTIVE path={} direction={} node={}/{} (order {}) movementStarted={} waitMs={}.",
-            routeBypassPlayback.PathId,
-            routeBypassPlayback.Reverse ? "REVERSE" : "FORWARD",
-            routeBypassPlayback.NodeIndex + 1,
-            routeBypassPlayback.Nodes.size(),
-            nodeOrder,
-            routeBypassPlayback.MovementStarted ? "yes" : "no",
-            routeBypassPlayback.WaitRemainingMs);
         return true;
     }
 
