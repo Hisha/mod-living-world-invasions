@@ -18,6 +18,8 @@ Permanent reusable definitions:
 | `lwi_movement_path` | Reusable movement route |
 | `lwi_movement_node` | Ordered path coordinates |
 | `lwi_movement_profile` | Movement mode/profile data |
+| `lwi_route_node` | Logical connection point in the shared world-travel graph |
+| `lwi_route_segment` | Bidirectional graph edge backed by an `lwi_movement_path` |
 | `lwi_runtime_signal` | Reusable signal names/IDs |
 | `lwi_dialogue` | Say/Yell text definitions |
 | `lwi_announcement` | Announcement text definitions |
@@ -108,12 +110,12 @@ Tactical role currently controls formation positioning, not combat AI.
 ## Movement tables
 
 ### `lwi_movement_path`
-Names/enables a reusable route.
+Names/enables a reusable movement path.
 
 ### `lwi_movement_node`
 Contains ordered nodes with `map_id`, coordinates, orientation, `wait_ms`, and optional `profile_override_id`. Nodes are ordered by `node_order`, not by primary-key value.
 
-Use enough nodes to follow roads/terrain. Very long direct jumps can fail MMAP path generation even when the overall start and destination are both valid.
+Use enough nodes to follow roads/terrain. For shared road infrastructure, the in-game automatic route builder records at a fixed 5-yard spacing so creatures reproduce curves, fenced corridors, bridges, and other constrained geometry reliably instead of taking long point-to-point chords.
 
 ### `lwi_movement_profile`
 Fields: `default_mode`, walk/run speed multipliers, stealth flag, enabled state.
@@ -121,6 +123,19 @@ Fields: `default_mode`, walk/run speed multipliers, stealth flag, enabled state.
 `default_mode`: `0` provider/default, `1` walk, `2` run.
 
 The current movement controller applies walk/run mode and per-node profile selection. The speed multiplier and stealth fields are loaded but are not currently applied by movement execution.
+
+
+## Shared route network
+
+### `lwi_route_node`
+
+Defines a reusable logical connection point with `name`, `map_id`, X/Y/Z/orientation, `arrival_radius`, enabled state, and optional comment. Nodes may represent road junctions, settlements, gates, bridges, docks, or other travel connection points.
+
+### `lwi_route_segment`
+
+Connects `start_node_id` and `end_node_id` using `movement_path_id`. A segment is shared infrastructure rather than invasion-owned data. Runtime consumers may traverse the same segment forward or reverse.
+
+Connected segments form a graph. `.lwi route travel <fromNodeId> <destinationNodeId>` resolves a connected path through that graph and chains the necessary segments automatically. See [RouteNetwork.md](RouteNetwork.md) for authoring and test commands.
 
 ## `lwi_runtime_signal`
 

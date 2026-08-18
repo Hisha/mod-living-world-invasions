@@ -16,6 +16,9 @@ This snapshot marks the point where the core framework is considered sufficient 
 - Tactical roles and role-aware formation movement.
 - MMAP/PathGenerator route traversal.
 - Multi-node long-distance routes.
+- Reusable bidirectional `lwi_route_node` / `lwi_route_segment` world-travel graph.
+- Automatic in-game shared-route authoring at fixed 5-yard waypoint spacing.
+- Single-segment forward/reverse testing and automatic multi-segment graph travel.
 - Combat interruption and post-combat MMAP resume.
 - Casualty-tolerant intermediate-node regrouping.
 - Final-objective arrival while combat is active.
@@ -39,6 +42,7 @@ This snapshot marks the point where the core framework is considered sufficient 
 - No dedicated LWI objective system, contribution/reward system, achievements, or Playerbot invasion-awareness integration yet.
 - `LWI.Playerbots.Enable` exists as configuration, but dedicated Playerbot participation logic is not implemented.
 - Active runtime rows persist stage state, but runtime world-entity GUID/state is not a complete restart-recovery system.
+- Shared route authoring writes directly to the world database; portable SQL export of completed route networks is not automated yet.
 
 ## First content target
 

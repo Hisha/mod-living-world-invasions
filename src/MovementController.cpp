@@ -28,7 +28,6 @@ namespace
 {
 constexpr uint32 MovementUpdateIntervalMs = 250;
 constexpr float ArrivalTolerance = 2.0f;
-constexpr float RouteArrivalTolerance = 0.75f;
 constexpr float FormationArrivalTolerance = 10.0f;
 constexpr uint32 FormationArrivalPercent = 75;
 constexpr uint32 FormationArrivalGraceMs = 3000;
@@ -181,8 +180,7 @@ bool MovementController::StartPath(
     uint32 pathId,
     uint32 profileId,
     uint32 completionSignalId,
-    MovementDirection direction,
-    bool routeMovement)
+    MovementDirection direction)
 {
     RuntimeEntityGroup* group = sRuntimeEntityGroupMgr.GetGroup(runtimeGroupId);
     if (!group)
@@ -234,7 +232,6 @@ bool MovementController::StartPath(
     movement.ProfileId = profileId;
     movement.CompletionSignalId = completionSignalId;
     movement.Direction = direction;
-    movement.RouteMovement = routeMovement;
     movement.NodeIndex = direction == MovementDirection::Reverse ? nodes->size() - 1 : 0;
     movement.State = RuntimeMovementState::Moving;
 
@@ -316,8 +313,7 @@ bool MovementController::StartRouteSegment(
             segment->MovementPathId,
             profileId,
             completionSignalId,
-            direction,
-            true))
+            direction))
     {
         LOG_ERROR("server.loading",
             "[LWI Route] Runtime entity group #{} failed to start route segment {} ({}) from {} to {} using movement path {}.",
@@ -577,20 +573,6 @@ bool MovementController::IsGroupMoving(uint64 runtimeGroupId) const
     return _activeMovements.find(runtimeGroupId) != _activeMovements.end();
 }
 
-void MovementController::SetRouteDebugEnabled(bool enabled)
-{
-    _routeDebugEnabled = enabled;
-
-    LOG_INFO("server.loading",
-        "[LWI Route Debug] Route movement debug logging {}.",
-        enabled ? "enabled" : "disabled");
-}
-
-bool MovementController::IsRouteDebugEnabled() const
-{
-    return _routeDebugEnabled;
-}
-
 void MovementController::Update(uint32 diff)
 {
     if (_activeMovements.empty())
@@ -805,82 +787,6 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
         float targetZ = node.Z;
         BuildFormationDestination(node, movement.Direction, entity.TacticalRole, roleSlot, targetX, targetY, targetZ);
 
-        if (movement.RouteMovement && _routeDebugEnabled)
-        {
-            LOG_INFO("server.loading",
-                "[LWI Route Debug] Group #{} path {} node {} direction={} creature={} member={} "
-                "current=({:.3f}, {:.3f}, {:.3f}) recorded=({:.3f}, {:.3f}, {:.3f}) "
-                "formationTarget=({:.3f}, {:.3f}, {:.3f}) role={} slot={}.",
-                movement.RuntimeGroupId,
-                movement.PathId,
-                node.NodeOrder,
-                movement.Direction == MovementDirection::Reverse ? "REVERSE" : "FORWARD",
-                entity.Entry,
-                entity.MemberId,
-                creature->GetPositionX(),
-                creature->GetPositionY(),
-                creature->GetPositionZ(),
-                node.X,
-                node.Y,
-                node.Z,
-                targetX,
-                targetY,
-                targetZ,
-                entity.TacticalRole,
-                roleSlot);
-        }
-
-        // Shared routes are deliberately authored corridors. For this diagnostic,
-        // execute each route node with the exact same two-point escort-style
-        // movement sequence proven by the in-game movement lab: clear any
-        // existing motion, stop, then MoveSplinePath from the creature's actual
-        // current position directly to the authored formation destination.
-        // Normal invasion movement continues through the MMAP branch below.
-        if (movement.RouteMovement)
-        {
-            creature->CombatStop(true);
-            creature->GetMotionMaster()->Clear();
-            creature->StopMoving();
-
-            Movement::PointsArray routePoints;
-            routePoints.emplace_back(
-                creature->GetPositionX(),
-                creature->GetPositionY(),
-                creature->GetPositionZ());
-            routePoints.emplace_back(targetX, targetY, targetZ);
-
-            RuntimeMovementDestination destination;
-            destination.Guid = entity.Guid;
-            destination.MapId = entity.MapId;
-            destination.X = targetX;
-            destination.Y = targetY;
-            destination.Z = targetZ;
-            movement.Destinations.push_back(destination);
-
-            creature->GetMotionMaster()->MoveSplinePath(
-                &routePoints,
-                FORCED_MOVEMENT_NONE);
-
-            if (_routeDebugEnabled)
-            {
-                LOG_INFO("server.loading",
-                    "[LWI Route Debug] Group #{} path {} node {} launched EXACT LAB ESCORT movement "
-                    "from=({:.3f}, {:.3f}, {:.3f}) to=({:.3f}, {:.3f}, {:.3f}); MMAP bypassed for route node.",
-                    movement.RuntimeGroupId,
-                    movement.PathId,
-                    node.NodeOrder,
-                    routePoints.front().x,
-                    routePoints.front().y,
-                    routePoints.front().z,
-                    targetX,
-                    targetY,
-                    targetZ);
-            }
-
-            ++moved;
-            continue;
-        }
-
         PathGenerator path(creature);
 
         // Do not force the destination. We want the navmesh to choose a valid,
@@ -924,34 +830,6 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
         }
 
         G3D::Vector3 const& actualEnd = pathPoints.back();
-
-        if (movement.RouteMovement && _routeDebugEnabled)
-        {
-            LOG_INFO("server.loading",
-                "[LWI Route Debug] Group #{} path {} node {} MMAP generated {} point(s); "
-                "requested=({:.3f}, {:.3f}, {:.3f}) actualEnd=({:.3f}, {:.3f}, {:.3f}).",
-                movement.RuntimeGroupId,
-                movement.PathId,
-                node.NodeOrder,
-                pathPoints.size(),
-                targetX,
-                targetY,
-                targetZ,
-                actualEnd.x,
-                actualEnd.y,
-                actualEnd.z);
-
-            for (std::size_t pathPointIndex = 0; pathPointIndex < pathPoints.size(); ++pathPointIndex)
-            {
-                G3D::Vector3 const& pathPoint = pathPoints[pathPointIndex];
-                LOG_INFO("server.loading",
-                    "[LWI Route Debug]   MMAP[{}] = ({:.3f}, {:.3f}, {:.3f})",
-                    pathPointIndex,
-                    pathPoint.x,
-                    pathPoint.y,
-                    pathPoint.z);
-            }
-        }
 
         RuntimeMovementDestination destination;
         destination.Guid = entity.Guid;
@@ -1052,43 +930,6 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
             creature->GetVictim() != nullptr,
             destination.WasInCombat,
             creature->GetDistance(destination.X, destination.Y, destination.Z));
-
-        if (movement.RouteMovement)
-        {
-            creature->GetMotionMaster()->Clear();
-            creature->StopMoving();
-
-            Movement::PointsArray routePoints;
-            routePoints.emplace_back(
-                creature->GetPositionX(),
-                creature->GetPositionY(),
-                creature->GetPositionZ());
-            routePoints.emplace_back(destination.X, destination.Y, destination.Z);
-
-            destination.WasInCombat = false;
-
-            creature->GetMotionMaster()->MoveSplinePath(
-                &routePoints,
-                FORCED_MOVEMENT_NONE);
-
-            if (_routeDebugEnabled)
-            {
-                LOG_INFO("server.loading",
-                    "[LWI Route Debug] Group #{} path {} node {} resumed with EXACT LAB ESCORT movement "
-                    "from=({:.3f}, {:.3f}, {:.3f}) to=({:.3f}, {:.3f}, {:.3f}).",
-                    movement.RuntimeGroupId,
-                    movement.PathId,
-                    node.NodeOrder,
-                    routePoints.front().x,
-                    routePoints.front().y,
-                    routePoints.front().z,
-                    destination.X,
-                    destination.Y,
-                    destination.Z);
-            }
-
-            continue;
-        }
 
         PathGenerator path(creature);
         bool const pathFound = path.CalculatePath(
@@ -1222,58 +1063,6 @@ bool MovementController::HasGroupReachedCurrentNode(
 
     uint32 const requiredArrivals =
         std::max<uint32>(1, (living * FormationArrivalPercent + 99) / 100);
-
-    // Shared route segments are explicitly authored travel corridors. Unlike
-    // normal invasion movement, do not accept the broad formation tolerance or
-    // regroup grace here: issuing the next node early can cut a corner between
-    // two otherwise-correct authored/MMAP paths. Every surviving route member
-    // must reach its own exact formation destination before the route advances.
-    if (movement.RouteMovement)
-    {
-        uint32 strictRouteArrivals = 0;
-
-        for (RuntimeMovementDestination const& destination : movement.Destinations)
-        {
-            Map* map = sMapMgr->FindMap(destination.MapId, 0);
-            if (!map)
-                continue;
-
-            Creature* creature = map->GetCreature(destination.Guid);
-            if (!creature || !creature->IsAlive())
-                continue;
-
-            if (creature->IsInCombat())
-            {
-                movement.ArrivalGraceStartedAtMs = 0;
-                return false;
-            }
-
-            if (creature->GetDistance(destination.X, destination.Y, destination.Z) <= RouteArrivalTolerance)
-                ++strictRouteArrivals;
-        }
-
-        if (strictRouteArrivals == living)
-        {
-            if (_routeDebugEnabled)
-            {
-                LOG_INFO("server.loading",
-                    "[LWI Route Debug] Group #{} strictly reached path {} node {}: "
-                    "{}/{} surviving creature(s) within {:.2f} yd; advancing with no regroup grace.",
-                    movement.RuntimeGroupId,
-                    movement.PathId,
-                    node.NodeOrder,
-                    strictRouteArrivals,
-                    living,
-                    RouteArrivalTolerance);
-            }
-
-            movement.ArrivalGraceStartedAtMs = 0;
-            return true;
-        }
-
-        movement.ArrivalGraceStartedAtMs = 0;
-        return false;
-    }
 
     // The final strategic node is an objective area, not another parade-ground
     // formation check. Once enough surviving members reach the objective radius,

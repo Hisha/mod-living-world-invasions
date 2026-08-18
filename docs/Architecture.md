@@ -137,6 +137,14 @@ LWI observes creatures interrupted by combat. After combat ends it recalculates 
 
 If an actively moving runtime group has no living creature entities, the movement controller fails the runtime immediately. The scheduler then puts that invasion into normal cooldown without counting it as a successful completion.
 
+## Shared route graph
+
+`lwi_route_node` and `lwi_route_segment` form reusable world-travel infrastructure above the existing movement-path system. A route segment references one `lwi_movement_path` and can be traversed in either direction. Connected segments form a graph, allowing a consumer to request travel between logical route nodes without hard-coding every intermediate segment.
+
+The preferred road-authoring tool records the GM's traveled position every 5 yards. Dense deterministic spacing is intentional: the movement engine only knows the authored coordinates, not the semantic shape of a visible road, so long chords between sparse nodes can cut outside curves or fenced corridors.
+
+See [RouteNetwork.md](RouteNetwork.md) for the graph model and authoring commands.
+
 ## Runtime signals
 
 Runtime signals are reusable definitions stored in `acore_world`, while emitted signal state is transient and held by `RuntimeSignalManager`. Signals are idempotent within a runtime.

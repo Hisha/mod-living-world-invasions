@@ -16,6 +16,8 @@ The current framework can:
 - spawn and track mixed Creature/GameObject runtime groups;
 - apply creature level overrides and tactical roles;
 - move temporary creature groups over MMAP paths in role-aware formations;
+- define reusable bidirectional route nodes/segments and chain them through a shared world-travel graph;
+- author shared road segments in game with an automatic 5-yard path recorder;
 - pause movement for combat and resume survivors afterward;
 - tolerate casualties and imperfect regrouping at intermediate nodes;
 - recognize a final objective area without requiring combat to stop;
@@ -37,6 +39,7 @@ The current framework can:
 - [Architecture](docs/Architecture.md) — framework ownership and runtime flow.
 - [Database Schema](docs/DatabaseSchema.md) — current tables, values, and action parameter mappings.
 - [Creating an Invasion](docs/CreatingAnInvasion.md) — practical SQL-first creation process.
+- [Shared Route Network](docs/RouteNetwork.md) — reusable road graph, automatic 5-yard authoring, and route test/travel commands.
 - [Testing](docs/Testing.md) — GM commands and validation checklist.
 - [Current Status](docs/Status.md) — proven features, known limitations, and next development focus.
 - [Roadmap](docs/Roadmap.md) — remaining framework/gameplay work.

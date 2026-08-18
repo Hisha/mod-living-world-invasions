@@ -10,6 +10,9 @@
 - [x] Level overrides
 - [x] Tactical roles and role-aware formation
 - [x] MMAP movement paths and ordered nodes
+- [x] Reusable bidirectional shared route-node/segment graph
+- [x] Automatic 5-yard in-game shared-route recorder
+- [x] Multi-segment graph route resolution/travel
 - [x] Per-node waits and profile overrides
 - [x] Walk/run movement mode
 - [x] Combat interruption/resume
@@ -49,6 +52,8 @@
 
 ### Movement
 
+- [ ] Export completed shared route networks to portable module SQL
+- [ ] Transport/transition route edges for true map changes (boats, zeppelins, portals, etc.)
 - [ ] Apply movement-profile speed multipliers
 - [ ] Apply movement-profile stealth
 - [ ] Patrol/loop routes

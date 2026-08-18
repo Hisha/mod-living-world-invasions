@@ -100,8 +100,10 @@ If the group moves:
 
 ### Route design rules
 
+For roads or other travel corridors that may be reused by more than one event, prefer the shared route network and automatic 5-yard builder documented in [RouteNetwork.md](RouteNetwork.md) instead of creating duplicate invasion-specific road data.
+
 - Use MMAP-friendly coordinates on traversable terrain.
-- Follow roads and terrain with intermediate nodes instead of expecting one enormous path calculation.
+- Follow roads and terrain with intermediate nodes instead of expecting one enormous path calculation. Shared road segments should normally use the automatic 5-yard builder.
 - The spawn point does not need to duplicate node 10; node 10 is the first destination.
 - Use `wait_ms` only when you actually want a pause at a node.
 - The last node is special: it is treated as an objective area. The current engine accepts final arrival when at least 75% of living members are within 20 yards, even during combat.
