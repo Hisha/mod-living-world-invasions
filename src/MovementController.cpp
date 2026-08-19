@@ -1185,6 +1185,24 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
         }
     }
 
+    auto describeEntity = [&](ObjectGuid const& guid, uint32& memberId, uint32& entry)
+    {
+        memberId = 0;
+        entry = 0;
+        if (RuntimeEntityGroup* runtimeGroup = sRuntimeEntityGroupMgr.GetGroup(movement.RuntimeGroupId))
+        {
+            for (RuntimeEntity const& entity : runtimeGroup->Entities)
+            {
+                if (entity.Guid == guid)
+                {
+                    memberId = entity.MemberId;
+                    entry = entity.Entry;
+                    return;
+                }
+            }
+        }
+    };
+
     auto launchReachableRejoinNode = [&](Creature* creature, RuntimeMovementDestination& destination, uint64 nowMs) -> bool
     {
         if (nowMs < destination.RejoinRetryAfterMs)
@@ -1273,24 +1291,6 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
             movement.PathId,
             RouteRejoinRetryDelayMs);
         return false;
-    };
-
-    auto describeEntity = [&](ObjectGuid const& guid, uint32& memberId, uint32& entry)
-    {
-        memberId = 0;
-        entry = 0;
-        if (RuntimeEntityGroup* runtimeGroup = sRuntimeEntityGroupMgr.GetGroup(movement.RuntimeGroupId))
-        {
-            for (RuntimeEntity const& entity : runtimeGroup->Entities)
-            {
-                if (entity.Guid == guid)
-                {
-                    memberId = entity.MemberId;
-                    entry = entity.Entry;
-                    return;
-                }
-            }
-        }
     };
 
     for (RuntimeMovementDestination& destination : movement.Destinations)
