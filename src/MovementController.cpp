@@ -1006,7 +1006,29 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
             }
         }
 
-        movement.RouteLeaderGuid = !preferredLeaderGuid.IsEmpty() ? preferredLeaderGuid : fallbackLeaderGuid;
+        // Keep the route leader stable across node rebuilds.  Re-selecting a
+        // commander at every 5-yard breadcrumb can make followers change
+        // recovery targets mid-catch-up when a group contains more than one
+        // Commander-role creature.  Only elect a new leader when the existing
+        // leader is missing or dead.
+        bool keepExistingLeader = false;
+        if (!movement.RouteLeaderGuid.IsEmpty())
+        {
+            for (RuntimeEntity const& entity : group->Entities)
+            {
+                if (entity.Guid != movement.RouteLeaderGuid ||
+                    entity.EntityType != static_cast<uint8>(EntityProviderType::Creature))
+                    continue;
+
+                Map* map = sMapMgr->FindMap(entity.MapId, 0);
+                Creature* creature = map ? map->GetCreature(entity.Guid) : nullptr;
+                keepExistingLeader = creature && creature->IsAlive();
+                break;
+            }
+        }
+
+        if (!keepExistingLeader)
+            movement.RouteLeaderGuid = !preferredLeaderGuid.IsEmpty() ? preferredLeaderGuid : fallbackLeaderGuid;
     }
 
     uint32 moved = 0;
@@ -1384,8 +1406,13 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
         if (!creature || !creature->IsAlive())
             continue;
 
-        if (creature->IsInCombat() || creature->GetVictim())
+        bool const inCombatNow = creature->IsInCombat() || creature->GetVictim();
+        if (inCombatNow)
         {
+            // This is the rising edge/latch for a combat episode.  WasInCombat
+            // remains true until we observe the corresponding out-of-combat
+            // edge below.  Do not manufacture post-combat transitions merely
+            // because the creature remains out of combat on later updates.
             destination.WasInCombat = true;
             destination.RouteCatchupActive = false;
             destination.RouteCatchupRefreshAtMs = 0;
@@ -1396,8 +1423,13 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
 
         if (movement.RouteMovement && !isRouteLeader && routeLeader)
         {
-            if (destination.WasInCombat)
+            bool const justLeftCombat = destination.WasInCombat;
+            if (justLeftCombat)
             {
+                // Consume the falling edge exactly once.  RouteCatchupActive
+                // is the persistent post-combat state; subsequent out-of-
+                // combat updates must not re-enter recovery unless a real new
+                // combat episode sets WasInCombat again.
                 destination.WasInCombat = false;
                 destination.RouteCatchupActive = true;
                 destination.RouteCatchupRefreshAtMs = 0;
