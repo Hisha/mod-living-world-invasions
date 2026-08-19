@@ -3,11 +3,16 @@
 #include "Creature.h"
 #include "CreatureAI.h"
 #include "Log.h"
+#include "LivingWorldInvasions.h"
 #include "Map.h"
 #include "MapMgr.h"
+#include "MotionMaster.h"
+#include "PathGenerator.h"
+#include "Random.h"
 #include "RuntimeEntityGroup.h"
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <vector>
 
@@ -18,6 +23,16 @@ namespace
 constexpr float DefaultSearchRadius = 40.0f;
 constexpr uint32 DefaultReacquireIntervalMs = 2000;
 constexpr uint32 MinimumReacquireIntervalMs = 500;
+
+constexpr uint32 AssaultWanderMinimumDelayMs = 4000;
+constexpr uint32 AssaultWanderMaximumDelayMs = 10000;
+constexpr uint32 AssaultWanderRetryMinimumMs = 1500;
+constexpr uint32 AssaultWanderRetryMaximumMs = 3500;
+constexpr uint32 AssaultWanderMoveWatchdogMs = 15000;
+constexpr float AssaultWanderArrivalTolerance = 2.0f;
+constexpr float AssaultCommanderWanderRadius = 5.0f;
+constexpr uint32 AssaultWanderPathAttempts = 8;
+constexpr float TwoPi = 6.28318530717958647692f;
 
 // World defenders that are dramatically above the invasion force can dominate
 // low-level events (for example level-65 flight gryphons in Westfall). Leave
@@ -394,6 +409,164 @@ void AssaultManager::RestoreAllOverrides()
     _temporaryNpcOverrides.clear();
 }
 
+bool AssaultManager::TryStartIdleWander(
+    ActiveAssault& assault,
+    RuntimeEntity const& entity,
+    Creature* creature,
+    AssaultWanderState& state)
+{
+    if (!creature || !creature->IsAlive() || creature->IsInCombat() || creature->GetVictim())
+        return false;
+
+    Map* map = creature->GetMap();
+    if (!map || map->GetId() != assault.CenterMapId)
+        return false;
+
+    bool const isCommander =
+        static_cast<TacticalRole>(entity.TacticalRole) == TacticalRole::Commander;
+
+    float const maxRadius = isCommander
+        ? std::min<float>(AssaultCommanderWanderRadius, assault.SearchRadius)
+        : assault.SearchRadius;
+
+    if (maxRadius <= 1.0f)
+        return false;
+
+    for (uint32 attempt = 0; attempt < AssaultWanderPathAttempts; ++attempt)
+    {
+        float const angle = frand(0.0f, TwoPi);
+        float const radiusRoll = std::sqrt(frand(0.0f, 1.0f));
+        float const distance = std::max<float>(1.5f, radiusRoll * maxRadius);
+
+        float const requestedX = assault.CenterX + std::cos(angle) * distance;
+        float const requestedY = assault.CenterY + std::sin(angle) * distance;
+        float requestedZ = map->GetHeight(
+            requestedX,
+            requestedY,
+            assault.CenterZ + 5.0f,
+            true,
+            50.0f);
+
+        if (requestedZ <= INVALID_HEIGHT)
+            continue;
+
+        PathGenerator path(creature);
+        bool const pathFound = path.CalculatePath(requestedX, requestedY, requestedZ, false);
+        if (!pathFound || (path.GetPathType() & PATHFIND_NOPATH))
+            continue;
+
+        Movement::PointsArray pathPoints = path.GetPath();
+        if (pathPoints.size() < 2)
+            continue;
+
+        G3D::Vector3 const& actualEnd = pathPoints.back();
+        float const dx = actualEnd.x - assault.CenterX;
+        float const dy = actualEnd.y - assault.CenterY;
+        float const centerDistance = std::sqrt(dx * dx + dy * dy);
+        if (centerDistance > maxRadius + 2.0f)
+            continue;
+
+        creature->GetMotionMaster()->MoveSplinePath(&pathPoints, FORCED_MOVEMENT_NONE);
+
+        state.MoveActive = true;
+        state.MoveElapsedMs = 0;
+        state.DestinationX = actualEnd.x;
+        state.DestinationY = actualEnd.y;
+        state.DestinationZ = actualEnd.z;
+        state.TimerMs = 0;
+
+        LOG_DEBUG("server.loading",
+            "[LWI Assault] Runtime #{} group #{} creature {} member {} began independent idle wander "
+            "to ({:.2f}, {:.2f}, {:.2f}) {:.1f} yd from assault center{}.",
+            assault.RuntimeId,
+            assault.RuntimeGroupId,
+            entity.Entry,
+            entity.MemberId,
+            state.DestinationX,
+            state.DestinationY,
+            state.DestinationZ,
+            centerDistance,
+            isCommander ? " [COMMANDER]" : "");
+        return true;
+    }
+
+    return false;
+}
+
+void AssaultManager::UpdateIdleWandering(ActiveAssault& assault, uint32 diff)
+{
+    RuntimeEntityGroup* group = sRuntimeEntityGroupMgr.GetGroup(assault.RuntimeGroupId);
+    if (!group)
+        return;
+
+    auto findState = [&assault](ObjectGuid guid) -> AssaultWanderState*
+    {
+        for (AssaultWanderState& state : assault.WanderStates)
+            if (state.Guid == guid)
+                return &state;
+        return nullptr;
+    };
+
+    for (RuntimeEntity const& entity : group->Entities)
+    {
+        if (entity.EntityType != static_cast<uint8>(EntityProviderType::Creature))
+            continue;
+
+        Map* map = sMapMgr->FindMap(entity.MapId, 0);
+        if (!map)
+            continue;
+
+        Creature* creature = map->GetCreature(entity.Guid);
+        if (!creature || !creature->IsAlive())
+            continue;
+
+        AssaultWanderState* state = findState(entity.Guid);
+        if (!state)
+        {
+            AssaultWanderState newState;
+            newState.Guid = entity.Guid;
+            newState.TimerMs = urand(AssaultWanderMinimumDelayMs, AssaultWanderMaximumDelayMs);
+            assault.WanderStates.push_back(newState);
+            state = &assault.WanderStates.back();
+        }
+
+        if (creature->IsInCombat() || creature->GetVictim())
+        {
+            state->MoveActive = false;
+            state->MoveElapsedMs = 0;
+            state->TimerMs = urand(AssaultWanderMinimumDelayMs, AssaultWanderMaximumDelayMs);
+            continue;
+        }
+
+        if (state->MoveActive)
+        {
+            state->MoveElapsedMs += diff;
+            float const destinationDistance = creature->GetDistance(
+                state->DestinationX,
+                state->DestinationY,
+                state->DestinationZ);
+
+            if (destinationDistance <= AssaultWanderArrivalTolerance ||
+                state->MoveElapsedMs >= AssaultWanderMoveWatchdogMs)
+            {
+                state->MoveActive = false;
+                state->MoveElapsedMs = 0;
+                state->TimerMs = urand(AssaultWanderMinimumDelayMs, AssaultWanderMaximumDelayMs);
+            }
+            continue;
+        }
+
+        if (state->TimerMs > diff)
+        {
+            state->TimerMs -= diff;
+            continue;
+        }
+
+        if (!TryStartIdleWander(assault, entity, creature, *state))
+            state->TimerMs = urand(AssaultWanderRetryMinimumMs, AssaultWanderRetryMaximumMs);
+    }
+}
+
 bool AssaultManager::Start(
     uint64 runtimeId,
     uint32 spawnGroupId,
@@ -424,16 +597,69 @@ bool AssaultManager::Start(
     assault.ReacquireTimerMs = 0;
     assault.TargetPolicy = targetPolicy;
 
+    Creature* commander = nullptr;
+    uint32 centerCount = 0;
+    double centerX = 0.0;
+    double centerY = 0.0;
+    double centerZ = 0.0;
+
+    for (RuntimeEntity const& entity : group->Entities)
+    {
+        if (entity.EntityType != static_cast<uint8>(EntityProviderType::Creature))
+            continue;
+
+        Map* map = sMapMgr->FindMap(entity.MapId, 0);
+        if (!map)
+            continue;
+
+        Creature* creature = map->GetCreature(entity.Guid);
+        if (!creature || !creature->IsAlive())
+            continue;
+
+        if (!commander && static_cast<TacticalRole>(entity.TacticalRole) == TacticalRole::Commander)
+            commander = creature;
+
+        centerX += creature->GetPositionX();
+        centerY += creature->GetPositionY();
+        centerZ += creature->GetPositionZ();
+        ++centerCount;
+
+        AssaultWanderState wanderState;
+        wanderState.Guid = entity.Guid;
+        wanderState.TimerMs = urand(AssaultWanderMinimumDelayMs, AssaultWanderMaximumDelayMs);
+        assault.WanderStates.push_back(wanderState);
+    }
+
+    if (commander)
+    {
+        assault.CenterMapId = commander->GetMapId();
+        assault.CenterX = commander->GetPositionX();
+        assault.CenterY = commander->GetPositionY();
+        assault.CenterZ = commander->GetPositionZ();
+    }
+    else if (centerCount != 0)
+    {
+        assault.CenterMapId = group->Entities.empty() ? 0 : group->Entities.front().MapId;
+        assault.CenterX = static_cast<float>(centerX / static_cast<double>(centerCount));
+        assault.CenterY = static_cast<float>(centerY / static_cast<double>(centerCount));
+        assault.CenterZ = static_cast<float>(centerZ / static_cast<double>(centerCount));
+    }
+
     _activeAssaults[group->Id] = assault;
 
     LOG_INFO("server.loading",
         "[LWI Assault] Runtime #{} runtime entity group #{} started assault behavior "
-        "with {:.1f} yard search radius, {} ms reacquire interval, target policy {}.",
+        "with {:.1f} yard search radius, {} ms reacquire interval, target policy {}; "
+        "idle wandering centered at ({:.2f}, {:.2f}, {:.2f}), commanders capped at {:.1f} yd.",
         runtimeId,
         group->Id,
         assault.SearchRadius,
         assault.ReacquireIntervalMs,
-        assault.TargetPolicy);
+        assault.TargetPolicy,
+        assault.CenterX,
+        assault.CenterY,
+        assault.CenterZ,
+        std::min<float>(AssaultCommanderWanderRadius, assault.SearchRadius));
 
     TryAcquireTargets(_activeAssaults[group->Id]);
     return true;
@@ -495,6 +721,8 @@ void AssaultManager::Update(uint32 diff)
                 continue;
             }
         }
+
+        UpdateIdleWandering(assault, diff);
 
         if (assault.ReacquireTimerMs > diff)
         {

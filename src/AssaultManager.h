@@ -12,6 +12,7 @@ class Creature;
 
 namespace lwi
 {
+struct RuntimeEntity;
 struct TemporaryNpcCombatOverride
 {
     ObjectGuid Guid;
@@ -34,6 +35,17 @@ struct TemporaryNpcCombatOverride
     std::unordered_set<uint64> RuntimeIds;
 };
 
+struct AssaultWanderState
+{
+    ObjectGuid Guid;
+    uint32 TimerMs = 0;
+    bool MoveActive = false;
+    uint32 MoveElapsedMs = 0;
+    float DestinationX = 0.0f;
+    float DestinationY = 0.0f;
+    float DestinationZ = 0.0f;
+};
+
 struct ActiveAssault
 {
     uint64 RuntimeId = 0;
@@ -43,6 +55,12 @@ struct ActiveAssault
     uint32 ReacquireIntervalMs = 2000;
     uint32 TargetPolicy = 0;
     uint32 ReacquireTimerMs = 0;
+
+    uint32 CenterMapId = 0;
+    float CenterX = 0.0f;
+    float CenterY = 0.0f;
+    float CenterZ = 0.0f;
+    std::vector<AssaultWanderState> WanderStates;
 };
 
 class AssaultManager
@@ -58,6 +76,8 @@ public:
 
 private:
     bool TryAcquireTargets(ActiveAssault& assault);
+    void UpdateIdleWandering(ActiveAssault& assault, uint32 diff);
+    bool TryStartIdleWander(ActiveAssault& assault, RuntimeEntity const& entity, Creature* creature, AssaultWanderState& state);
 
     bool EnsureWorldDefenderAttackable(uint64 runtimeId, Creature* attacker, Creature* target, float searchRadius);
     void NormalizeWorldDefenderForAssault(uint64 runtimeId, Creature* attacker, Creature* target);
