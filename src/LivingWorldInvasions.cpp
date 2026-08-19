@@ -223,7 +223,7 @@ void InvasionMgr::LoadDefinitions()
     LOG_INFO("server.loading", "Living World Invasions: loaded {} enabled stage definition(s) for {} invasion(s).",
         stageCount, _stagesByInvasion.size());
 
-    if (QueryResult result = WorldDatabase.Query("SELECT `id`, `stage_id`, `action_order`, `action_type`, `target_id`, `parameter1`, `parameter2`, `parameter3`, `delay_seconds`, `enabled` FROM `lwi_stage_action` WHERE `enabled` = 1 ORDER BY `stage_id`, `action_order`"))
+    if (QueryResult result = WorldDatabase.Query("SELECT `id`, `stage_id`, `action_order`, `action_type`, `target_id`, `parameter1`, `parameter2`, `parameter3`, `parameter4`, `delay_seconds`, `enabled` FROM `lwi_stage_action` WHERE `enabled` = 1 ORDER BY `stage_id`, `action_order`"))
     {
         do
         {
@@ -237,8 +237,9 @@ void InvasionMgr::LoadDefinitions()
             action.Parameter1 = fields[5].Get<uint32>();
             action.Parameter2 = fields[6].Get<uint32>();
             action.Parameter3 = fields[7].Get<uint32>();
-            action.DelaySeconds = fields[8].Get<uint32>();
-            action.Enabled = fields[9].Get<bool>();
+            action.Parameter4 = fields[8].Get<uint32>();
+            action.DelaySeconds = fields[9].Get<uint32>();
+            action.Enabled = fields[10].Get<bool>();
             _actionsByStage[action.StageId].push_back(std::move(action));
         } while (result->NextRow());
     }

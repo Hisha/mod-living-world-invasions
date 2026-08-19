@@ -31,6 +31,7 @@ struct StageActionDefinition
     uint32 Parameter1 = 0;
     uint32 Parameter2 = 0;
     uint32 Parameter3 = 0;
+    uint32 Parameter4 = 0;
     uint32 DelaySeconds = 0;
     bool Enabled = false;
 };

@@ -71,7 +71,13 @@ public:
     void Reset();
     void Update(uint32 diff);
 
-    bool Start(uint64 runtimeId, uint32 spawnGroupId, uint32 radiusYards, uint32 reacquireIntervalMs, uint32 targetPolicy);
+    bool Start(
+        uint64 runtimeId,
+        uint32 spawnGroupId,
+        uint32 radiusYards,
+        uint32 reacquireIntervalMs,
+        uint32 targetPolicy,
+        uint32 assaultCenterRouteNodeId);
     void CancelRuntime(uint64 runtimeId);
 
 private:

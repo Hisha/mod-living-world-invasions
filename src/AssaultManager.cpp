@@ -574,7 +574,8 @@ bool AssaultManager::Start(
     uint32 spawnGroupId,
     uint32 radiusYards,
     uint32 reacquireIntervalMs,
-    uint32 targetPolicy)
+    uint32 targetPolicy,
+    uint32 assaultCenterRouteNodeId)
 {
     RuntimeEntityGroup* group = sRuntimeEntityGroupMgr.FindLatestGroup(runtimeId, spawnGroupId);
     if (!group)
@@ -599,11 +600,33 @@ bool AssaultManager::Start(
     assault.ReacquireTimerMs = 0;
     assault.TargetPolicy = targetPolicy;
 
-    Creature* commander = nullptr;
-    uint32 centerCount = 0;
-    double centerX = 0.0;
-    double centerY = 0.0;
-    double centerZ = 0.0;
+    // Assault wandering uses an EXPLICIT authored route-node center.  Do not
+    // infer this from current/home/formation positions: those are runtime state
+    // and can legitimately be somewhere else when the assault stage begins.
+    if (assaultCenterRouteNodeId == 0)
+    {
+        LOG_ERROR("server.loading",
+            "[LWI Assault] Runtime #{} cannot start assault for spawn group {} because no assault center route node was authored.",
+            runtimeId,
+            spawnGroupId);
+        return false;
+    }
+
+    RouteNodeDefinition const* assaultCenter = sInvasionMgr.GetRouteNode(assaultCenterRouteNodeId);
+    if (!assaultCenter || !assaultCenter->Enabled)
+    {
+        LOG_ERROR("server.loading",
+            "[LWI Assault] Runtime #{} cannot start assault for spawn group {} because route node {} is missing or disabled.",
+            runtimeId,
+            spawnGroupId,
+            assaultCenterRouteNodeId);
+        return false;
+    }
+
+    assault.CenterMapId = assaultCenter->MapId;
+    assault.CenterX = assaultCenter->X;
+    assault.CenterY = assaultCenter->Y;
+    assault.CenterZ = assaultCenter->Z;
 
     for (RuntimeEntity const& entity : group->Entities)
     {
@@ -618,45 +641,12 @@ bool AssaultManager::Start(
         if (!creature || !creature->IsAlive())
             continue;
 
-        if (!commander && static_cast<TacticalRole>(entity.TacticalRole) == TacticalRole::Commander)
-            commander = creature;
-
-        // MovementController updates each surviving creature's home position
-        // to its FINAL route/formation destination before emitting the route
-        // completion signal that starts the assault stage.  Use that final
-        // position rather than the creature's instantaneous position here:
-        // combat/catch-up can leave an NPC physically back near staging at the
-        // exact moment StartAssault executes.
-        Position const& finalHome = creature->GetHomePosition();
-        centerX += finalHome.GetPositionX();
-        centerY += finalHome.GetPositionY();
-        centerZ += finalHome.GetPositionZ();
-        ++centerCount;
-
         AssaultWanderState wanderState;
         wanderState.Guid = entity.Guid;
-        wanderState.TimerMs = urand(AssaultWanderMinimumDelayMs, AssaultWanderMaximumDelayMs);
+        wanderState.TimerMs = urand(
+            AssaultWanderMinimumDelayMs,
+            AssaultWanderMaximumDelayMs);
         assault.WanderStates.push_back(wanderState);
-    }
-
-    if (commander)
-    {
-        // The commander occupies march slot 0, so after a completed route its
-        // home position is the authored final route endpoint.  This gives the
-        // assault a stable objective-centered wander area even if the commander
-        // is temporarily displaced when assault mode begins.
-        Position const& finalHome = commander->GetHomePosition();
-        assault.CenterMapId = commander->GetMapId();
-        assault.CenterX = finalHome.GetPositionX();
-        assault.CenterY = finalHome.GetPositionY();
-        assault.CenterZ = finalHome.GetPositionZ();
-    }
-    else if (centerCount != 0)
-    {
-        assault.CenterMapId = group->Entities.empty() ? 0 : group->Entities.front().MapId;
-        assault.CenterX = static_cast<float>(centerX / static_cast<double>(centerCount));
-        assault.CenterY = static_cast<float>(centerY / static_cast<double>(centerCount));
-        assault.CenterZ = static_cast<float>(centerZ / static_cast<double>(centerCount));
     }
 
     _activeAssaults[group->Id] = assault;
@@ -664,13 +654,14 @@ bool AssaultManager::Start(
     LOG_INFO("server.loading",
         "[LWI Assault] Runtime #{} runtime entity group #{} started assault behavior "
         "with {:.1f} yard search radius, {} ms reacquire interval, target policy {}; "
-        "idle wandering centered on FINAL route/home position ({:.2f}, {:.2f}, {:.2f}), "
+        "idle wandering centered on authored route node {} at ({:.2f}, {:.2f}, {:.2f}), "
         "commanders capped at {:.1f} yd; idle movement uses WALK speed.",
         runtimeId,
         group->Id,
         assault.SearchRadius,
         assault.ReacquireIntervalMs,
         assault.TargetPolicy,
+        assaultCenterRouteNodeId,
         assault.CenterX,
         assault.CenterY,
         assault.CenterZ,

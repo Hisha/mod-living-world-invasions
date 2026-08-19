@@ -296,17 +296,19 @@ bool InvasionRuntime::BeginCurrentStage(uint64 now)
                     action.TargetId,
                     action.Parameter1,
                     action.Parameter2,
-                    action.Parameter3))
+                    action.Parameter3,
+                    action.Parameter4))
                 {
                     LOG_ERROR("server.loading",
                         "[LWI Runtime] Runtime #{} failed assault action {} "
-                        "(spawn group {}, radius {}, reacquire interval {}, target policy {}).",
+                        "(spawn group {}, radius {}, reacquire interval {}, target policy {}, assault center route node {}).",
                         _runtimeId,
                         action.Id,
                         action.TargetId,
                         action.Parameter1,
                         action.Parameter2,
-                        action.Parameter3);
+                        action.Parameter3,
+                        action.Parameter4);
                 }
             }
 

@@ -22,7 +22,7 @@
 --   target_id  = spawn_group_id whose latest runtime entity group contains the speaker
 --   parameter1 = dialogue_id
 --   parameter2 = speaker spawn_member_id (0 = first available creature)
---   parameter3 = target policy bitmask: 1 quest givers, 2 vendors (legacy bit 4 is ignored; flight masters are always excluded)
+--   parameter3 = target policy bitmask: 1 quest givers, 2 vendors, 4 flight masters
 --
 -- World Announcement parameter mapping:
 --   target_id  = announcement_id
@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS `lwi_stage_action` (
     `parameter1` INT UNSIGNED NOT NULL DEFAULT 0,
     `parameter2` INT UNSIGNED NOT NULL DEFAULT 0,
     `parameter3` INT UNSIGNED NOT NULL DEFAULT 0,
+    `parameter4` INT UNSIGNED NOT NULL DEFAULT 0,
     `delay_seconds` INT UNSIGNED NOT NULL DEFAULT 0,
     `enabled` TINYINT UNSIGNED NOT NULL DEFAULT 1,
     `comment` VARCHAR(255) NULL,
@@ -65,7 +66,8 @@ CREATE TABLE IF NOT EXISTS `lwi_stage_action` (
 --   target_id  = spawn_group_id whose latest runtime entity group should assault
 --   parameter1 = search radius in yards (0 = 40)
 --   parameter2 = target reacquire interval in milliseconds (0 = 2000; minimum 500)
---   parameter3 = target policy bitmask: 1 quest givers, 2 vendors (legacy bit 4 is ignored; flight masters are always excluded)
+--   parameter3 = target policy bitmask: 1 quest givers, 2 vendors
+--   parameter4 = assault-center route_node_id (REQUIRED)
 --
 -- Assault uses AzerothCore hostility/attackability rules to select a target,
 -- then explicitly calls the invader AI AttackStart. This lets invasion NPCs
