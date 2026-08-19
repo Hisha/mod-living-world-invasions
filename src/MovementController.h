@@ -36,7 +36,11 @@ struct RuntimeMovementDestination
     float Z = 0.0f;
     bool WasInCombat = false;
     bool RouteCatchupActive = false;
+    bool RouteCatchupMoveIssued = false;
     uint64 RouteCatchupRefreshAtMs = 0;
+    float RouteCatchupEndX = 0.0f;
+    float RouteCatchupEndY = 0.0f;
+    float RouteCatchupEndZ = 0.0f;
 };
 
 

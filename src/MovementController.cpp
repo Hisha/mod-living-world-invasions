@@ -38,6 +38,8 @@ constexpr float RouteCatchupDistance = 12.0f;
 constexpr float RouteOffRoadRecoveryDistance = 10.0f;
 constexpr float RouteBreadcrumbTolerance = 2.5f;
 constexpr uint32 RouteCatchupRefreshMs = 1500;
+constexpr uint32 RouteCatchupWatchdogMs = 30000;
+constexpr float RouteCatchupEndpointTolerance = 2.0f;
 constexpr std::size_t RouteRecoveryCandidateLimit = 24;
 constexpr float Pi = 3.14159265358979323846f;
 
@@ -961,7 +963,11 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
     {
         bool WasInCombat = false;
         bool RouteCatchupActive = false;
+        bool RouteCatchupMoveIssued = false;
         uint64 RouteCatchupRefreshAtMs = 0;
+        float RouteCatchupEndX = 0.0f;
+        float RouteCatchupEndY = 0.0f;
+        float RouteCatchupEndZ = 0.0f;
     };
 
     std::unordered_map<uint64, PreviousRouteState> previousRouteStates;
@@ -975,7 +981,11 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
                 PreviousRouteState{
                     previous.WasInCombat,
                     previous.RouteCatchupActive,
-                    previous.RouteCatchupRefreshAtMs });
+                    previous.RouteCatchupMoveIssued,
+                    previous.RouteCatchupRefreshAtMs,
+                    previous.RouteCatchupEndX,
+                    previous.RouteCatchupEndY,
+                    previous.RouteCatchupEndZ });
         }
     }
 
@@ -1097,7 +1107,11 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
             {
                 destination.WasInCombat = stateItr->second.WasInCombat;
                 destination.RouteCatchupActive = stateItr->second.RouteCatchupActive;
+                destination.RouteCatchupMoveIssued = stateItr->second.RouteCatchupMoveIssued;
                 destination.RouteCatchupRefreshAtMs = stateItr->second.RouteCatchupRefreshAtMs;
+                destination.RouteCatchupEndX = stateItr->second.RouteCatchupEndX;
+                destination.RouteCatchupEndY = stateItr->second.RouteCatchupEndY;
+                destination.RouteCatchupEndZ = stateItr->second.RouteCatchupEndZ;
             }
 
             // Never overwrite combat movement.  Likewise, a follower already
@@ -1107,6 +1121,7 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
             {
                 destination.WasInCombat = true;
                 destination.RouteCatchupActive = false;
+                destination.RouteCatchupMoveIssued = false;
                 destination.RouteCatchupRefreshAtMs = 0;
                 movement.Destinations.push_back(destination);
                 ++moved;
@@ -1316,6 +1331,7 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
         float breadcrumbDistance = 0.0f;
         if (!findReachableBreadcrumb(creature, breadcrumbIndex, breadcrumbDistance))
         {
+            destination.RouteCatchupMoveIssued = false;
             destination.RouteCatchupRefreshAtMs = nowMs + RouteCatchupRefreshMs;
             LOG_WARN("server.loading",
                 "[LWI Movement] Runtime #{} group #{} entry={} guid={} could not find a reachable "
@@ -1383,7 +1399,13 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
             return false;
 
         creature->GetMotionMaster()->MoveSplinePath(&catchupPoints, FORCED_MOVEMENT_NONE);
-        destination.RouteCatchupRefreshAtMs = nowMs + RouteCatchupRefreshMs;
+        destination.RouteCatchupMoveIssued = true;
+        destination.RouteCatchupEndX = destination.X;
+        destination.RouteCatchupEndY = destination.Y;
+        destination.RouteCatchupEndZ = destination.Z;
+        // Single-flight: this timestamp is now a watchdog, not a periodic refresh.
+        // Normal route-node advancement must not replace this spline while it is in flight.
+        destination.RouteCatchupRefreshAtMs = nowMs + RouteCatchupWatchdogMs;
 
         LOG_INFO("server.loading",
             "[LWI Movement] Runtime #{} group #{} entry={} guid={} launched route catch-up on path {} "
@@ -1415,6 +1437,7 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
             // because the creature remains out of combat on later updates.
             destination.WasInCombat = true;
             destination.RouteCatchupActive = false;
+            destination.RouteCatchupMoveIssued = false;
             destination.RouteCatchupRefreshAtMs = 0;
             continue;
         }
@@ -1432,6 +1455,7 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
                 // combat episode sets WasInCombat again.
                 destination.WasInCombat = false;
                 destination.RouteCatchupActive = true;
+                destination.RouteCatchupMoveIssued = false;
                 destination.RouteCatchupRefreshAtMs = 0;
 
                 LOG_INFO("server.loading",
@@ -1450,6 +1474,7 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
             if (creature->GetDistance(routeLeader) <= RouteCatchupDistance)
             {
                 destination.RouteCatchupActive = false;
+                destination.RouteCatchupMoveIssued = false;
                 destination.RouteCatchupRefreshAtMs = 0;
 
                 // Snap back into the current compact MARCH destination once;
@@ -1473,7 +1498,55 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
                 continue;
             }
 
-            if (nowMs >= destination.RouteCatchupRefreshAtMs)
+            // SINGLE-FLIGHT catch-up.  Once a breadcrumb-chain spline is launched,
+            // leave it completely alone while the commander continues advancing.
+            // Only launch another leg after this creature reaches the endpoint that
+            // was captured when the current leg started.
+            if (destination.RouteCatchupMoveIssued)
+            {
+                float const endpointDistance = creature->GetDistance(
+                    destination.RouteCatchupEndX,
+                    destination.RouteCatchupEndY,
+                    destination.RouteCatchupEndZ);
+
+                if (endpointDistance <= RouteCatchupEndpointTolerance)
+                {
+                    destination.RouteCatchupMoveIssued = false;
+                    destination.RouteCatchupRefreshAtMs = 0;
+
+                    LOG_INFO("server.loading",
+                        "[LWI Movement] Runtime #{} group #{} entry={} guid={} finished route catch-up "
+                        "leg at captured endpoint ({:.2f} yd); evaluating next leg against commander.",
+                        movement.RuntimeId,
+                        movement.RuntimeGroupId,
+                        creature->GetEntry(),
+                        creature->GetGUID().ToString(),
+                        endpointDistance);
+                }
+                else if (nowMs < destination.RouteCatchupRefreshAtMs)
+                {
+                    // The current spline is still in flight.  Do not replace it merely
+                    // because movement.NodeIndex/destination advanced another 5 yards.
+                    continue;
+                }
+                else
+                {
+                    // Safety watchdog only: if AzerothCore stopped the spline without
+                    // combat and without reaching its endpoint, allow one fresh leg.
+                    destination.RouteCatchupMoveIssued = false;
+                    destination.RouteCatchupRefreshAtMs = 0;
+                    LOG_WARN("server.loading",
+                        "[LWI Movement] Runtime #{} group #{} entry={} guid={} route catch-up leg "
+                        "watchdog expired {:.2f} yd from captured endpoint; rebuilding one leg.",
+                        movement.RuntimeId,
+                        movement.RuntimeGroupId,
+                        creature->GetEntry(),
+                        creature->GetGUID().ToString(),
+                        endpointDistance);
+                }
+            }
+
+            if (!destination.RouteCatchupMoveIssued && nowMs >= destination.RouteCatchupRefreshAtMs)
                 launchRouteCatchup(creature, destination);
 
             continue;
@@ -1486,6 +1559,7 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
         {
             destination.WasInCombat = false;
             destination.RouteCatchupActive = false;
+            destination.RouteCatchupMoveIssued = false;
             destination.RouteCatchupRefreshAtMs = 0;
             continue;
         }
@@ -1495,6 +1569,7 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
 
         destination.WasInCombat = false;
         destination.RouteCatchupActive = false;
+        destination.RouteCatchupMoveIssued = false;
         destination.RouteCatchupRefreshAtMs = 0;
 
         PathGenerator path(creature);
