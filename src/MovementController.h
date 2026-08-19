@@ -35,10 +35,8 @@ struct RuntimeMovementDestination
     float Y = 0.0f;
     float Z = 0.0f;
     bool WasInCombat = false;
-    bool RejoiningLeader = false;
-    std::size_t RejoinNodeIndex = 0;
-    bool RejoinMoveIssued = false;
-    uint64 RejoinRetryAfterMs = 0;
+    bool RouteCatchupActive = false;
+    uint64 RouteCatchupRefreshAtMs = 0;
 };
 
 
@@ -74,6 +72,7 @@ struct ActiveRuntimeMovement
     uint64 WaitEndsAtMs = 0;
     uint64 ArrivalGraceStartedAtMs = 0;
     bool RouteMovement = false;
+    ObjectGuid RouteLeaderGuid;
     std::vector<RuntimeMovementDestination> Destinations;
 };
 
