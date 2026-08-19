@@ -18,7 +18,7 @@ SET @EVENT_ID := 1;
 
 -- Pick the draft-animal Creature entry after visually testing candidates.
 -- Do NOT enable the event while this remains zero.
-SET @LEADER_ENTRY := 0;
+SET @LEADER_ENTRY := 582;
 
 -- Confirmed physical wagon GameObject from in-game testing.
 SET @WAGON_GO_ENTRY := 180036;
