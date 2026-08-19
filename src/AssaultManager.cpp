@@ -79,6 +79,29 @@ void AssaultManager::NormalizeWorldDefenderForAssault(
         return;
     }
 
+    // Entry 9526 is the level-65 Enraged Gryphon used as flight-master
+    // protection. It is intentionally excluded from Living World Invasions.
+    // This function is a proven interception point for gryphons that enter
+    // combat through AzerothCore's normal faction/AI logic, so terminate the
+    // engagement here instead of normalizing the gryphon into an invasion
+    // participant.
+    if (target->GetEntry() == EnragedGryphonEntry)
+    {
+        ObjectGuid const gryphonGuid = target->GetGUID();
+        ObjectGuid const attackerGuid = attacker->GetGUID();
+
+        target->CombatStop(true);
+        if (attacker->GetVictim() == target || attacker->IsInCombat())
+            attacker->CombatStop(true);
+
+        LOG_INFO("server.loading",
+            "[LWI Assault] Runtime #{} HARD-EXCLUDED Enraged Gryphon {} from combat with LWI creature {}; combat forcibly stopped.",
+            runtimeId,
+            gryphonGuid.ToString(),
+            attackerGuid.ToString());
+        return;
+    }
+
     uint8 const attackerLevel = attacker->GetLevel();
     uint8 const targetLevel = target->GetLevel();
 
@@ -156,6 +179,18 @@ bool AssaultManager::EnsureWorldDefenderAttackable(
 {
     if (!attacker || !target)
     {
+        return false;
+    }
+
+    // Never create a temporary attackability/faction override for the
+    // flight-master Enraged Gryphon. This prevents later assault logic from
+    // accidentally turning it back into a valid LWI target after combat was
+    // suppressed.
+    if (target->GetEntry() == EnragedGryphonEntry)
+    {
+        target->CombatStop(true);
+        if (attacker->GetVictim() == target)
+            attacker->CombatStop(true);
         return false;
     }
 
@@ -441,7 +476,24 @@ void AssaultManager::Update(uint32 diff)
             Unit* victim = invasionCreature->GetVictim();
             Creature* defender = victim ? victim->ToCreature() : nullptr;
             if (defender && defender->GetEntry() == EnragedGryphonEntry)
-                NormalizeWorldDefenderForAssault(assault.RuntimeId, invasionCreature, defender);
+            {
+                // This is the same proven path that previously logged
+                // "temporarily normalized world defender 9526".  Do not let
+                // the fight continue long enough to normalize it: immediately
+                // terminate both sides of this specific engagement.
+                ObjectGuid const gryphonGuid = defender->GetGUID();
+                ObjectGuid const invasionGuid = invasionCreature->GetGUID();
+
+                defender->CombatStop(true);
+                invasionCreature->CombatStop(true);
+
+                LOG_INFO("server.loading",
+                    "[LWI Assault] Runtime #{} HARD-EXCLUDED Enraged Gryphon {} after it engaged LWI creature {}; combat forcibly stopped in AssaultManager.",
+                    assault.RuntimeId,
+                    gryphonGuid.ToString(),
+                    invasionGuid.ToString());
+                continue;
+            }
         }
 
         if (assault.ReacquireTimerMs > diff)
