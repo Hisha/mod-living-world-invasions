@@ -9,6 +9,7 @@
 #include "Map.h"
 #include "MapMgr.h"
 #include "MovementController.h"
+#include "QueryResult.h"
 #include "RuntimeEntityGroup.h"
 #include "TemporarySummon.h"
 
