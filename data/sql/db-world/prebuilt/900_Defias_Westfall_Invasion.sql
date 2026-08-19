@@ -14,13 +14,13 @@ WHERE id IN (1001,1002,1003,1004,1005,1006);
 -- lwi_stage_action Clear Data
 -- ===========================================================================
 DELETE FROM lwi_stage_action
-WHERE id IN (10001,10002,10003,10004,10005,10006,10007,10008,10009,10010,10011,10012,10013,10014,10015,10016,10017,10018,10019,10020,10021,10022,10023,10024,10025,10026,10027,10028,10029,10030,10031,10032,10033,10034,10035);
+WHERE id IN (10001,10002,10003,10004,10005,10006,10007,10008,10009,10010,10011,10012,10013,10014,10015,10016,10017,10018,10019,10020,10021,10022,10023,10024,10025,10026,10027,10028,10029,10030,10031,10032,10033,10034,10035,10036,10037,10038);
 
 -- ===========================================================================
 -- lwi_spawn_group Clear Data
 -- ===========================================================================
 DELETE FROM lwi_spawn_group
-WHERE id IN (100,101,102,103,104,105,106);
+WHERE id IN (100,101,102,103,104,105,106,107);
 
 -- ===========================================================================
 -- lwi_creature_template Clear Data
@@ -38,7 +38,7 @@ WHERE id IN (1,2,3,4,5,6);
 -- lwi_spawn_member Clear Data
 -- ===========================================================================
 DELETE FROM lwi_spawn_member
-WHERE id IN (100001,100002,100003,100004,100005,100006,100007,100008,100009,100010,100011,100012,100013,100014,100015,100016);
+WHERE id IN (100001,100002,100003,100004,100005,100006,100007,100008,100009,100010,100011,100012,100013,100014,100015,100016,100017,100018,100019);
 
 -- ===========================================================================
 -- lwi_movement_path Clear Data
@@ -135,15 +135,18 @@ VALUES (10001, 1001, 1, 1, 100, 0, 0, 0, 0, 1, 'Spawn Defias Scout group.'),
        (10024, 1004, 2, 3, 105, 101, 100012, 0, 0, 1, 'Defias Leadership yells a warning.'),
        (10025, 1004, 3, 7, 105, 75, 2000, 7, 0, 1, 'Defias Leadership assaults Sentinel Hill.'),
        (10026, 1005, 1, 1, 106, 0, 0, 0, 0, 1, 'Spawn Stormwind Response Force.'),
-       (10027, 1005, 2, 2, 106, 140, 70, 103, 0, 1, 'Route Stormwind Response Force from Stormwind_Response_Force_Spawn to Sentinel_Hill_Tower.'),
+       (10027, 1005, 2, 2, 106, 140, 70, 103, 0, 1, 'Route main Stormwind Response Force from Stormwind_Response_Force_Spawn to Sentinel_Hill_Tower.'),
+       (10036, 1005, 3, 1, 107, 0, 0, 0, 0, 1, 'Spawn Stormwind Sentinel Hill Inn detachment.'),
+       (10037, 1005, 4, 2, 107, 140, 230, 0, 0, 1, 'Route Stormwind Inn detachment with the main column until Sentinel_Hill_Split, then branch to Sentinel_Hill_Inn.'),
        (10028, 1006, 1, 3, 106, 103, 100014, 0, 0, 1, 'Commander Aldric yells the battle cry.'),
-       (10029, 1006, 2, 7, 106, 100, 2000, 0, 0, 1, 'Stormwind Response Force assaults the Defias.'),
-       (10030, 1006, 3, 8, 100, 104, 1, 0, 0, 1, 'Stormwind victory watch - Defias Scouts'),
-       (10031, 1006, 4, 8, 101, 104, 1, 0, 0, 1, 'Stormwind victory watch - Defias 2nd Scouts'),
-       (10032, 1006, 5, 8, 102, 104, 1, 0, 0, 1, 'Stormwind victory watch - Defias Control Team'),
-       (10033, 1006, 6, 8, 103, 104, 1, 0, 0, 1, 'Stormwind victory watch - Defias 2nd Control Team'),
-       (10034, 1006, 7, 8, 104, 104, 1, 0, 0, 1, 'Stormwind victory watch - Defias 3rd Control Team'),
-       (10035, 1006, 8, 8, 105, 104, 1, 0, 0, 1, 'Stormwind victory watch - Defias Leadership');
+       (10029, 1006, 2, 7, 106, 100, 2000, 0, 0, 1, 'Main Stormwind Response Force assaults the Defias.'),
+       (10038, 1006, 3, 7, 107, 60, 2000, 0, 0, 1, 'Stormwind Inn detachment secures the Sentinel Hill inn area.'),
+       (10030, 1006, 4, 8, 100, 104, 1, 0, 0, 1, 'Stormwind victory watch - Defias Scouts'),
+       (10031, 1006, 5, 8, 101, 104, 1, 0, 0, 1, 'Stormwind victory watch - Defias 2nd Scouts'),
+       (10032, 1006, 6, 8, 102, 104, 1, 0, 0, 1, 'Stormwind victory watch - Defias Control Team'),
+       (10033, 1006, 7, 8, 103, 104, 1, 0, 0, 1, 'Stormwind victory watch - Defias 2nd Control Team'),
+       (10034, 1006, 8, 8, 104, 104, 1, 0, 0, 1, 'Stormwind victory watch - Defias 3rd Control Team'),
+       (10035, 1006, 9, 8, 105, 104, 1, 0, 0, 1, 'Stormwind victory watch - Defias Leadership');
 
 -- ===========================================================================
 -- lwi_spawn_group(Spawn anchors are stable lwi_route_node IDs from 801_routes.sql.):
@@ -155,7 +158,8 @@ VALUES (100, 'Defias Scouts', 150, 10, 1),
        (103, 'Defias 2nd Control Team', 180, 10, 1),
        (104, 'Defias 3rd Control Team', 180, 10, 1),
        (105, 'Defias Leadership', 70, 10, 1),
-       (106, 'Stormwind Response Force', 140, 10, 1);
+       (106, 'Stormwind Response Force', 140, 10, 1),
+       (107, 'Stormwind Sentinel Hill Inn Detachment', 140, 10, 1);
 
 -- ===========================================================================
 -- lwi_creature_template(Create custom NPCs to be able to rename/reRank/etc an existing NPC.):
@@ -191,10 +195,13 @@ VALUES (100001, 100, 1, 449, NULL, 3, 30, 3, 'Defias scouts - Melee DPS'),
        (100010, 104, 1, 0, 3, 10, 30, 5, 'Defias 3rd Control Team - Healer'),
        (100011, 104, 1, 0, 1, 5, 30, 3, 'Defias 3rd Control Team - Melee DPS'),
        (100012, 105, 1, 0, 2, 1, 35, 1, 'Defias Leadership - Melee DPS'),
-       (100013, 106, 1, 68, NULL, 50, 25, 3, 'Stormwind Guard - Melee DPS'),
+       (100013, 106, 1, 68, NULL, 40, 25, 3, 'Stormwind Guard - Melee DPS (main column)'),
        (100014, 106, 1, 0, 4, 1, 35, 1, 'Stormwind Commander - Melee DPS'),
-       (100015, 106, 1, 0, 5, 20, 30, 5, 'Stormwind Battle Chaplain - Healer'),
-       (100016, 106, 1, 0, 6, 25, 30, 3, 'Stormwind Paladin - Melee DPS');
+       (100015, 106, 1, 0, 5, 15, 30, 5, 'Stormwind Battle Chaplain - Healer (main column)'),
+       (100016, 106, 1, 0, 6, 20, 30, 3, 'Stormwind Paladin - Melee DPS (main column)'),
+       (100017, 107, 1, 68, NULL, 10, 25, 3, 'Stormwind Inn Detachment Guard - Melee DPS'),
+       (100018, 107, 1, 0, 5, 5, 30, 5, 'Stormwind Inn Detachment Battle Chaplain - Healer'),
+       (100019, 107, 1, 0, 6, 5, 30, 3, 'Stormwind Inn Detachment Paladin - Melee DPS');
 
 -- ===========================================================================
 -- Movement paths/nodes are no longer invasion-owned.

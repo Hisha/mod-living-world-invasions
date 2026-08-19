@@ -25,6 +25,7 @@ constexpr uint32 MinimumReacquireIntervalMs = 500;
 // attacking creature's level for the duration of the invasion.
 constexpr uint8 DefenderNormalizationThresholdLevels = 10;
 constexpr uint8 DefenderNormalizationBonusLevels = 2;
+constexpr uint32 EnragedGryphonEntry = 9526;
 
 }
 
@@ -414,6 +415,33 @@ void AssaultManager::Update(uint32 diff)
         {
             finished.push_back(runtimeGroupId);
             continue;
+        }
+
+        // Enraged Gryphons (entry 9526) around flight masters are level-65
+        // world defenders. They can enter combat through normal AzerothCore
+        // faction aggro before the assault reacquire pass selects them, which
+        // previously left them at full level long enough to erase low-level
+        // invasion forces. Normalize an already-active gryphon engagement on
+        // every AssaultManager update instead of waiting for the 2-second
+        // reacquire timer. The normal temporary-override cleanup still restores
+        // the gryphon when the invasion runtime ends.
+        for (RuntimeEntity const& entity : group->Entities)
+        {
+            if (entity.EntityType != static_cast<uint8>(EntityProviderType::Creature))
+                continue;
+
+            Map* map = sMapMgr->FindMap(entity.MapId, 0);
+            if (!map)
+                continue;
+
+            Creature* invasionCreature = map->GetCreature(entity.Guid);
+            if (!invasionCreature || !invasionCreature->IsAlive())
+                continue;
+
+            Unit* victim = invasionCreature->GetVictim();
+            Creature* defender = victim ? victim->ToCreature() : nullptr;
+            if (defender && defender->GetEntry() == EnragedGryphonEntry)
+                NormalizeWorldDefenderForAssault(assault.RuntimeId, invasionCreature, defender);
         }
 
         if (assault.ReacquireTimerMs > diff)
