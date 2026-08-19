@@ -583,6 +583,14 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
         if (Unit* hostile = creature->SelectNearestTarget(assault.SearchRadius))
         {
             target = hostile->ToCreature();
+            if (target && target->GetEntry() == EnragedGryphonEntry)
+            {
+                // Entry 9526 is a flight-master defender and is deliberately
+                // excluded from LWI combat.  Ignore the core hostile result and
+                // continue with the normal LWI defender scan.
+                target = nullptr;
+            }
+
             if (target)
             {
                 bestDistance = creature->GetDistance(target);
@@ -600,6 +608,14 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
             (void)spawnId;
 
             if (!candidate || candidate == creature || !candidate->IsAlive())
+            {
+                continue;
+            }
+
+            // Flight-master Enraged Gryphons are intentionally not participants
+            // in Living World Invasions.  Do not let the assault target scanner
+            // select them even though their normal faction makes them hostile.
+            if (candidate->GetEntry() == EnragedGryphonEntry)
             {
                 continue;
             }

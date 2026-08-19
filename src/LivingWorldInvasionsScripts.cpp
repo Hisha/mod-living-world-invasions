@@ -22,6 +22,7 @@
 #include "WaypointMgr.h"
 #include "TemporarySummon.h"
 #include "Map.h"
+#include "MapMgr.h"
 #include "ObjectAccessor.h"
 
 #include <algorithm>
@@ -46,6 +47,88 @@ std::unordered_set<uint64> routeTestGroupIds;
 
 std::vector<ObjectGuid> routePathMarkerGuids;
 constexpr uint32 RoutePathMarkerLifetimeMs = 600000;
+
+// Entry 9526 is the level-65 Enraged Gryphon used around flight masters.
+// It is a normal world-protection creature, not an intended LWI participant.
+constexpr uint32 LwiExcludedEnragedGryphonEntry = 9526;
+constexpr uint32 LwiCombatExclusionCheckIntervalMs = 100;
+uint32 lwiCombatExclusionTimerMs = 0;
+
+bool IsActiveLwiCreatureGuid(uint16 mapId, ObjectGuid const& guid)
+{
+    for (uint64 const runtimeGroupId : sRuntimeEntityGroupMgr.GetAllGroupIds())
+    {
+        lwi::RuntimeEntityGroup const* group = sRuntimeEntityGroupMgr.GetGroup(runtimeGroupId);
+        if (!group || group->RuntimeId == 0 || group->State != lwi::RuntimeEntityGroupState::Active)
+            continue;
+
+        for (lwi::RuntimeEntity const& entity : group->Entities)
+        {
+            if (entity.EntityType != static_cast<uint8>(lwi::EntityProviderType::Creature))
+                continue;
+
+            if (entity.MapId == mapId && entity.Guid == guid)
+                return true;
+        }
+    }
+
+    return false;
+}
+
+void SuppressExcludedGryphonCombat()
+{
+    // Invasions currently operate on normal world-map instances.  Scan only
+    // maps that actually contain active LWI creature groups, and only entry
+    // 9526.  This leaves all normal gryphon/player behavior unchanged unless
+    // the gryphon has acquired an LWI runtime creature.
+    std::unordered_set<uint16> activeMapIds;
+    for (uint64 const runtimeGroupId : sRuntimeEntityGroupMgr.GetAllGroupIds())
+    {
+        lwi::RuntimeEntityGroup const* group = sRuntimeEntityGroupMgr.GetGroup(runtimeGroupId);
+        if (!group || group->RuntimeId == 0 || group->State != lwi::RuntimeEntityGroupState::Active)
+            continue;
+
+        for (lwi::RuntimeEntity const& entity : group->Entities)
+        {
+            if (entity.EntityType == static_cast<uint8>(lwi::EntityProviderType::Creature))
+                activeMapIds.insert(entity.MapId);
+        }
+    }
+
+    for (uint16 const mapId : activeMapIds)
+    {
+        Map* map = sMapMgr->FindMap(mapId, 0);
+        if (!map)
+            continue;
+
+        for (auto const& [spawnId, candidate] : map->GetCreatureBySpawnIdStore())
+        {
+            (void)spawnId;
+            Creature* gryphon = candidate;
+            if (!gryphon || !gryphon->IsAlive() || gryphon->GetEntry() != LwiExcludedEnragedGryphonEntry)
+                continue;
+
+            Unit* victim = gryphon->GetVictim();
+            if (!victim || !IsActiveLwiCreatureGuid(mapId, victim->GetGUID()))
+                continue;
+
+            ObjectGuid const victimGuid = victim->GetGUID();
+            gryphon->CombatStop(true);
+
+            // If the LWI creature retaliated against the gryphon, break that
+            // side too.  Movement/assault control will immediately choose the
+            // appropriate authored route or intended defender afterward.
+            if (victim->GetVictim() == gryphon)
+                victim->CombatStop(true);
+
+            LOG_INFO("server.loading",
+                "[LWI Combat] Suppressed excluded Enraged Gryphon {} combat against LWI creature {} on map {}.",
+                gryphon->GetGUID().ToString(),
+                victimGuid.ToString(),
+                mapId);
+        }
+    }
+}
 
 struct RouteRecordingSession
 {
@@ -582,6 +665,16 @@ public:
     void OnUpdate(uint32 diff) override
     {
         sInvasionRuntimeMgr.Update(diff);
+
+        if (lwiCombatExclusionTimerMs > diff)
+        {
+            lwiCombatExclusionTimerMs -= diff;
+        }
+        else
+        {
+            lwiCombatExclusionTimerMs = LwiCombatExclusionCheckIntervalMs;
+            SuppressExcludedGryphonCombat();
+        }
 
         if (routePathBuildActive && !routePathBuildSession.Paused)
         {
