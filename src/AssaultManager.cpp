@@ -466,7 +466,9 @@ bool AssaultManager::TryStartIdleWander(
         if (centerDistance > maxRadius + 2.0f)
             continue;
 
-        creature->GetMotionMaster()->MoveSplinePath(&pathPoints, FORCED_MOVEMENT_NONE);
+        // Assault-idle movement is intentionally walking pace. Combat/chase
+        // movement remains untouched and can still run normally.
+        creature->GetMotionMaster()->MoveSplinePath(&pathPoints, FORCED_MOVEMENT_WALK);
 
         state.MoveActive = true;
         state.MoveElapsedMs = 0;
@@ -619,9 +621,16 @@ bool AssaultManager::Start(
         if (!commander && static_cast<TacticalRole>(entity.TacticalRole) == TacticalRole::Commander)
             commander = creature;
 
-        centerX += creature->GetPositionX();
-        centerY += creature->GetPositionY();
-        centerZ += creature->GetPositionZ();
+        // MovementController updates each surviving creature's home position
+        // to its FINAL route/formation destination before emitting the route
+        // completion signal that starts the assault stage.  Use that final
+        // position rather than the creature's instantaneous position here:
+        // combat/catch-up can leave an NPC physically back near staging at the
+        // exact moment StartAssault executes.
+        Position const& finalHome = creature->GetHomePosition();
+        centerX += finalHome.GetPositionX();
+        centerY += finalHome.GetPositionY();
+        centerZ += finalHome.GetPositionZ();
         ++centerCount;
 
         AssaultWanderState wanderState;
@@ -632,10 +641,15 @@ bool AssaultManager::Start(
 
     if (commander)
     {
+        // The commander occupies march slot 0, so after a completed route its
+        // home position is the authored final route endpoint.  This gives the
+        // assault a stable objective-centered wander area even if the commander
+        // is temporarily displaced when assault mode begins.
+        Position const& finalHome = commander->GetHomePosition();
         assault.CenterMapId = commander->GetMapId();
-        assault.CenterX = commander->GetPositionX();
-        assault.CenterY = commander->GetPositionY();
-        assault.CenterZ = commander->GetPositionZ();
+        assault.CenterX = finalHome.GetPositionX();
+        assault.CenterY = finalHome.GetPositionY();
+        assault.CenterZ = finalHome.GetPositionZ();
     }
     else if (centerCount != 0)
     {
@@ -650,7 +664,8 @@ bool AssaultManager::Start(
     LOG_INFO("server.loading",
         "[LWI Assault] Runtime #{} runtime entity group #{} started assault behavior "
         "with {:.1f} yard search radius, {} ms reacquire interval, target policy {}; "
-        "idle wandering centered at ({:.2f}, {:.2f}, {:.2f}), commanders capped at {:.1f} yd.",
+        "idle wandering centered on FINAL route/home position ({:.2f}, {:.2f}, {:.2f}), "
+        "commanders capped at {:.1f} yd; idle movement uses WALK speed.",
         runtimeId,
         group->Id,
         assault.SearchRadius,
