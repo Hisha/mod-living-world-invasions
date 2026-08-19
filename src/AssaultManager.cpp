@@ -694,7 +694,11 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
             // parameter3 is an assault target-policy bitmask:
             //   bit 0 (1) = quest givers
             //   bit 1 (2) = vendors
-            //   bit 2 (4) = flight masters
+            //
+            // Flight masters are intentionally NEVER valid LWI defenders.
+            // Their normal world AI can invoke protected-flight-master mechanics
+            // (including high-level defenders), so LWI treats them as infrastructure
+            // rather than combatants regardless of the legacy bit-2 policy value.
             //
             // Ordinary humanoid civilians do not need a policy bit. They are
             // eligible when they are not friendly to the invader. This catches
@@ -703,14 +707,20 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
             bool const isQuestGiver = (npcFlags & UNIT_NPC_FLAG_QUESTGIVER) != 0;
             bool const isVendor = (npcFlags & UNIT_NPC_FLAG_VENDOR) != 0;
             bool const isFlightMaster = (npcFlags & UNIT_NPC_FLAG_FLIGHTMASTER) != 0;
-            bool const isProtectedServiceNpc = isQuestGiver || isVendor || isFlightMaster;
+
+            // Hard design rule: flight masters never participate in LWI combat.
+            // Do this before any attackability override or defender normalization.
+            if (isFlightMaster)
+            {
+                continue;
+            }
+
+            bool const isProtectedServiceNpc = isQuestGiver || isVendor;
 
             bool const allowedQuestGiver =
                 (assault.TargetPolicy & 1u) != 0 && isQuestGiver;
             bool const allowedVendor =
                 (assault.TargetPolicy & 2u) != 0 && isVendor;
-            bool const allowedFlightMaster =
-                (assault.TargetPolicy & 4u) != 0 && isFlightMaster;
 
             bool const allowedCivilianHumanoid =
                 !isProtectedServiceNpc &&
@@ -719,7 +729,6 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
 
             if (!allowedQuestGiver &&
                 !allowedVendor &&
-                !allowedFlightMaster &&
                 !allowedCivilianHumanoid)
             {
                 continue;
@@ -758,6 +767,22 @@ bool AssaultManager::TryAcquireTargets(ActiveAssault& assault)
         if (!target)
         {
             continue;
+        }
+
+        // Targets can come from AzerothCore's hostile-target search or LWI's
+        // explicit world-defender scan. Apply the exclusion here too so no
+        // flight master can reach normalization, temporary overrides, or AttackStart().
+        if (CreatureTemplate const* targetTemplate = target->GetCreatureTemplate())
+        {
+            if ((targetTemplate->npcflag & UNIT_NPC_FLAG_FLIGHTMASTER) != 0)
+            {
+                LOG_DEBUG("server.loading",
+                    "[LWI Assault] Runtime #{} ignored flight master {} GUID {} as an invasion defender.",
+                    assault.RuntimeId,
+                    target->GetEntry(),
+                    target->GetGUID().ToString());
+                continue;
+            }
         }
 
         if (creature->AI())
