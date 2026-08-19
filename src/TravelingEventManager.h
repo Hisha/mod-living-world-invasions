@@ -8,6 +8,9 @@
 #include <unordered_map>
 #include <vector>
 
+class Creature;
+class GameObject;
+
 namespace lwi
 {
 enum class TravelingEventState : uint8
@@ -42,9 +45,20 @@ struct TravelingEventDefinition
 {
     uint32 Id = 0;
     std::string Name;
-    uint32 WagonEntry = 0;
+
+    // Route movement is owned by a normal Creature.  The visible wagon is a
+    // GameObject that is relocated behind that leader while traveling.
+    uint32 LeaderEntry = 0;
+    uint32 WagonGameObjectEntry = 0;
+
+    // Merchant is optional during the mobile-wagon proof-of-concept.  A zero
+    // entry means "wagon movement test only".
     uint32 MerchantEntry = 0;
-    int8 MerchantSeatId = 0;
+
+    float WagonDistanceBehind = 4.5f;
+    float WagonLateralOffset = 0.0f;
+    float WagonVerticalOffset = 0.0f;
+
     bool Enabled = false;
     std::vector<TravelingStopDefinition> Stops;
     std::vector<TravelingPropDefinition> Props;
@@ -57,8 +71,12 @@ struct ActiveTravelingEvent
     uint32 StopIndex = 0;
     TravelingEventState State = TravelingEventState::Camped;
     uint32 StateTimerMs = 0;
+    uint32 WagonUpdateTimerMs = 0;
+
+    ObjectGuid LeaderGuid;
     ObjectGuid WagonGuid;
     ObjectGuid MerchantGuid;
+
     uint16 MapId = 0;
     std::vector<ObjectGuid> CampPropGuids;
 };
@@ -84,8 +102,13 @@ private:
     bool BeginCamp(ActiveTravelingEvent& runtime, TravelingEventDefinition const& definition);
     void EndCamp(ActiveTravelingEvent& runtime, TravelingEventDefinition const& definition);
     void CleanupRuntime(ActiveTravelingEvent& runtime);
-    void ApplyProtectedState(class Creature* creature) const;
-    class Creature* GetCreature(uint16 mapId, ObjectGuid guid) const;
+
+    bool UpdateMobileWagon(ActiveTravelingEvent& runtime, TravelingEventDefinition const& definition);
+    bool PlaceMobileWagon(ActiveTravelingEvent& runtime, TravelingEventDefinition const& definition);
+
+    void ApplyProtectedState(Creature* creature) const;
+    Creature* GetCreature(uint16 mapId, ObjectGuid guid) const;
+    GameObject* GetGameObject(uint16 mapId, ObjectGuid guid) const;
 
     std::unordered_map<uint32, TravelingEventDefinition> _definitions;
     std::unordered_map<uint32, ActiveTravelingEvent> _active;

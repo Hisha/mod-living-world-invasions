@@ -1,77 +1,62 @@
 -- ============================================================================
 -- 901_Traveling_Sales_Wagon.sql
--- Prototype for the reusable LWI Traveling World Event subsystem.
+-- Phase-one prototype for the reusable LWI Traveling World Event subsystem.
 --
--- PURPOSE
---   Prove:
---     * wagon is the route/movement owner
---     * one merchant rides the wagon when the selected wagon supports vehicles
---     * wagon + merchant are protected/non-aggro
---     * merchant cannot vend while traveling
---     * merchant dismounts and vends while camped
---     * optional camp props appear only while camped
---     * event loops through authored LWI route nodes
+-- FIRST MILESTONE
+--   Prove that a normal Creature can own an authored LWI route while a real
+--   GameObject wagon is continuously relocated behind it.
 --
--- IMPORTANT FIRST-TEST SETUP
---   Set @WAGON_ENTRY to a creature_template entry that has a working VehicleId.
---   Set @MERCHANT_ENTRY to an EXISTING vendor creature entry whose inventory you
---   want to use for the prototype. The runtime vendor flag is removed while
---   traveling and restored while camped.
+--   Route leader: creature_template entry chosen as the draft animal/anchor.
+--   Wagon:        gameobject_template entry 180036 (Darkmoon Faire Wagon, unloaded).
+--   Merchant:     deliberately disabled for this first movement-only test.
 --
---   This prebuilt is intentionally DISABLED until those two entries are chosen.
+-- The leader + wagon are protected/non-aggro.  Once the mobile GO follows the
+-- route cleanly, merchant attachment/camp setup becomes phase two.
 -- ============================================================================
 
 SET @EVENT_ID := 1;
 
--- TODO FOR FIRST TEST:
-SET @WAGON_ENTRY := 0;
+-- Pick the draft-animal Creature entry after visually testing candidates.
+-- Do NOT enable the event while this remains zero.
+SET @LEADER_ENTRY := 0;
+
+-- Confirmed physical wagon GameObject from in-game testing.
+SET @WAGON_GO_ENTRY := 180036;
+
+-- Phase one: no merchant.  Zero is explicitly supported by the runtime.
 SET @MERCHANT_ENTRY := 0;
-SET @MERCHANT_SEAT := 0;
 
 DELETE FROM `lwi_traveling_event_prop` WHERE `event_id` = @EVENT_ID;
 DELETE FROM `lwi_traveling_event_stop` WHERE `event_id` = @EVENT_ID;
 DELETE FROM `lwi_traveling_event` WHERE `id` = @EVENT_ID;
 
 INSERT INTO `lwi_traveling_event`
-    (`id`,`name`,`wagon_entry`,`merchant_entry`,`merchant_seat_id`,`enabled`,`comment`)
+    (`id`,`name`,`leader_entry`,`wagon_entry`,`merchant_entry`,
+     `wagon_distance_behind`,`wagon_lateral_offset`,`wagon_vertical_offset`,
+     `enabled`,`comment`)
 VALUES
-    (@EVENT_ID,'Traveling Sales Wagon',@WAGON_ENTRY,@MERCHANT_ENTRY,@MERCHANT_SEAT,0,
-     'Prototype caravan. Enable after choosing a working vehicle wagon and vendor entry.');
+    (@EVENT_ID,'Traveling Sales Wagon',@LEADER_ENTRY,@WAGON_GO_ENTRY,@MERCHANT_ENTRY,
+     4.5,0.0,0.0,
+     0,
+     'Phase-one mobile GO wagon test. Enable after choosing leader_entry.');
 
--- Test loop uses the route network already proven by the Westfall work:
+-- Existing route-network test loop:
 --   Stormwind_Gate -> Goldshire -> Sentinel_Hill_Tower -> Goldshire -> Stormwind_Gate
 --
--- Repeating Goldshire intentionally creates the return journey without needing
--- special reverse-loop code.
+-- Short 30-second stops make repeated travel legs easy to observe while testing.
 INSERT INTO `lwi_traveling_event_stop`
     (`id`,`event_id`,`stop_order`,`route_node_id`,`dwell_seconds`,`arrival_text`,`departure_text`,`enabled`,`comment`)
 VALUES
-    (90101,@EVENT_ID,10,10,120,
-     'The traveling sales wagon has arrived! Come see what I have for sale!',
-     'Pack it up! Goldshire is next!',1,'Stormwind Gate camp'),
-    (90102,@EVENT_ID,20,20,120,
-     'Fresh goods from Stormwind! I will be here for a short while!',
-     'Westfall calls! Last chance before I move on!',1,'Goldshire outbound camp'),
-    (90103,@EVENT_ID,30,70,120,
-     'Sentinel Hill! The traveling merchant is open for business!',
-     'Time to head back toward Goldshire!',1,'Sentinel Hill camp'),
-    (90104,@EVENT_ID,40,20,120,
-     'Back in Goldshire! Come browse before the wagon rolls north!',
-     'Stormwind Gate is our next stop!',1,'Goldshire return camp');
+    (90101,@EVENT_ID,10,10,30,'','',1,'Stormwind Gate test stop'),
+    (90102,@EVENT_ID,20,20,30,'','',1,'Goldshire outbound test stop'),
+    (90103,@EVENT_ID,30,70,30,'','',1,'Sentinel Hill test stop'),
+    (90104,@EVENT_ID,40,20,30,'','',1,'Goldshire return test stop');
 
--- Optional camp props.
--- Leave these commented until you choose gameobject_template entries you like.
--- Offsets are relative to the authored stop route node.
+-- No camp props during phase one.  Keep the test focused on the moving GO.
 --
--- INSERT INTO `lwi_traveling_event_prop`
---     (`id`,`event_id`,`gameobject_entry`,`offset_x`,`offset_y`,`offset_z`,`orientation_offset`,`enabled`,`comment`)
--- VALUES
---     (90151,@EVENT_ID,<CAMPFIRE_GO_ENTRY>, 3.0,  2.0, 0.0, 0.0,1,'Campfire'),
---     (90152,@EVENT_ID,<CRATE_GO_ENTRY>,   -2.0,  2.5, 0.0, 0.5,1,'Merchant crate');
-
--- After choosing entries:
+-- After choosing a draft animal:
 -- UPDATE lwi_traveling_event
--- SET wagon_entry=<wagon>, merchant_entry=<vendor>, merchant_seat_id=0, enabled=1
+-- SET leader_entry=<CREATURE_ENTRY>, enabled=1
 -- WHERE id=1;
 --
 -- Then:

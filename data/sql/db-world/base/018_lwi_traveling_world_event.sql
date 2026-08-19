@@ -1,13 +1,21 @@
 -- Living World Invasions: reusable non-combat traveling-world-event framework.
 -- This intentionally sits beside the invasion runtime rather than pretending
 -- caravans, merchants, Darkmoon travel, patrols, etc. are invasions.
+--
+-- Mobile-wagon design:
+--   leader_entry  = Creature route owner (draft animal / driver anchor)
+--   wagon_entry   = GameObject entry relocated behind the leader while traveling
+--   merchant_entry= optional Creature used later for camp/vendor behavior
 
 CREATE TABLE IF NOT EXISTS `lwi_traveling_event` (
     `id` INT UNSIGNED NOT NULL,
     `name` VARCHAR(120) NOT NULL,
+    `leader_entry` INT UNSIGNED NOT NULL DEFAULT 0,
     `wagon_entry` INT UNSIGNED NOT NULL DEFAULT 0,
     `merchant_entry` INT UNSIGNED NOT NULL DEFAULT 0,
-    `merchant_seat_id` TINYINT NOT NULL DEFAULT 0,
+    `wagon_distance_behind` FLOAT NOT NULL DEFAULT 4.5,
+    `wagon_lateral_offset` FLOAT NOT NULL DEFAULT 0,
+    `wagon_vertical_offset` FLOAT NOT NULL DEFAULT 0,
     `enabled` TINYINT UNSIGNED NOT NULL DEFAULT 1,
     `comment` VARCHAR(255) NULL,
     PRIMARY KEY (`id`)

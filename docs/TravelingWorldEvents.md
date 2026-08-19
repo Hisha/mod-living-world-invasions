@@ -1,20 +1,34 @@
 # Traveling World Events
 
-Traveling World Events are non-invasion LWI runtimes for persistent civilian/world activity.
+Traveling World Events are non-invasion LWI runtimes for persistent civilian/world activity such as traveling merchants, patrols, convoys, and a future Darkmoon caravan.
 
 The first prototype is `901_Traveling_Sales_Wagon.sql`.
 
-## Prototype lifecycle
+## Mobile GameObject wagon architecture
+
+The prototype deliberately does **not** use WoW's Vehicle system for the wagon.
+
+- A normal Creature (`leader_entry`) owns movement and uses the existing authored LWI route network.
+- The visible wagon is a GameObject (`wagon_entry`) and is moved with `Map::GameObjectRelocation()` behind that Creature.
+- The wagon offset is data driven through distance-behind, lateral, and vertical values.
+- The leader is forced passive/non-attackable/immune so incidental combat cannot derail the route test.
+- The optional merchant remains protected as well.
+
+This separates the visual wagon from the movement anchor and lets LWI use actual wagon GameObjects such as `180036` rather than hunting for a creature model with a suitable `VehicleId`.
+
+## Phase one
+
+Phase one intentionally has no merchant. It proves only:
+
+`draft-animal Creature -> authored LWI route -> mobile GameObject wagon follows`
+
+The wagon is updated every 100 ms. Its Z currently follows the leader's Z plus the configured vertical offset. Terrain-height correction is intentionally deferred until the first visual route test tells us whether it is needed.
+
+## Event lifecycle
 
 `CAMPED -> TRAVELING -> CAMPED -> ...`
 
-The wagon owns route movement. A merchant is mounted as a vehicle passenger when the wagon template supports a
-VehicleKit. The merchant's vendor NPC flag is removed while traveling and restored only while camped.
-
-Both wagon and merchant are continuously forced passive, non-attackable, and immune to PC/NPC combat during this
-prototype. Combat-capable caravans can be added later as a separate policy.
-
-Stops reference `lwi_route_node.id`, so all travel uses the same authored route graph as invasions.
+Stops reference `lwi_route_node.id`, so the same route graph used by invasions drives traveling events.
 
 ## Commands
 
@@ -22,13 +36,24 @@ Stops reference `lwi_route_node.id`, so all travel uses the same authored route 
 - `.lwi travel stop <eventId>`
 - `.lwi travel status`
 
-## First test
+## Database
 
-Apply `019_lwi_traveling_world_event.sql`, load `901_Traveling_Sales_Wagon.sql`, choose a wagon creature entry with a
-working `VehicleId`, choose an existing vendor creature entry, enable event 1, then `.lwi reload`.
+Fresh installs use `018_lwi_traveling_world_event.sql`.
 
-The prototype route is:
+Existing installs created with the older creature/VehicleId wagon prototype must run **once**:
+
+`019_lwi_mobile_gameobject_wagon_migration.sql`
+
+The legacy `merchant_seat_id` column may remain in an upgraded database; it is ignored.
+
+## First test data
+
+`901_Traveling_Sales_Wagon.sql` uses:
+
+- wagon GameObject: `180036` (Darkmoon Faire Wagon, unloaded)
+- merchant: disabled (`0`) for phase one
+- leader creature: intentionally left for the server owner to choose and visually verify
+
+The test loop is:
 
 `Stormwind_Gate -> Goldshire -> Sentinel_Hill_Tower -> Goldshire -> Stormwind_Gate`
-
-Camp props are optional and data-driven through `lwi_traveling_event_prop`.
