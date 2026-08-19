@@ -9,6 +9,7 @@
 #include "LwiCreatureTemplateManager.h"
 #include "CreatureAbilityManager.h"
 #include "RuntimeSignalManager.h"
+#include "TravelingEventManager.h"
 
 #include "ConfigValueCache.h"
 #include "Creature.h"
@@ -612,6 +613,7 @@ public:
             LOG_INFO("server.loading", "Living World Invasions is disabled.");
             sInvasionRuntimeMgr.Reset();
             sInvasionScheduler.Reset();
+            sTravelingEventMgr.Reset();
             return;
         }
 
@@ -632,6 +634,7 @@ public:
         }
 
         sInvasionMgr.LoadDefinitions();
+        sTravelingEventMgr.LoadDefinitions();
 
         lwi::SchedulerSettings settings;
         settings.Enabled = lwiConfig.GetConfigValue<bool>(LwiConfig::SchedulerEnabled);
@@ -665,6 +668,7 @@ public:
     void OnUpdate(uint32 diff) override
     {
         sInvasionRuntimeMgr.Update(diff);
+        sTravelingEventMgr.Update(diff);
 
         if (lwiCombatExclusionTimerMs > diff)
         {
@@ -1023,6 +1027,28 @@ public:
             }
         };
 
+        static ChatCommandTable travelCommandTable =
+        {
+            {
+                "start",
+                HandleTravelStartCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::Yes
+            },
+            {
+                "stop",
+                HandleTravelStopCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::Yes
+            },
+            {
+                "status",
+                HandleTravelStatusCommand,
+                rbac::RBAC_PERM_COMMAND_SERVER_INFO,
+                Console::Yes
+            }
+        };
+
         static ChatCommandTable lwiCommandTable =
         {
             {
@@ -1080,6 +1106,10 @@ public:
             {
                 "route",
                 routeCommandTable
+            },
+            {
+                "travel",
+                travelCommandTable
             },
             {
                 "trigger",
@@ -2785,6 +2815,44 @@ private:
             destinationNode->Name,
             creature->GetName(),
             creature->GetEntry());
+        return true;
+    }
+
+    static bool HandleTravelStartCommand(ChatHandler* handler, uint32 eventId)
+    {
+        std::string error;
+        if (!sTravelingEventMgr.Start(eventId, &error))
+        {
+            handler->PSendSysMessage(
+                "LWI traveling event {} could not start: {}.",
+                eventId,
+                error);
+            return false;
+        }
+
+        handler->PSendSysMessage("LWI traveling event {} started.", eventId);
+        return true;
+    }
+
+    static bool HandleTravelStopCommand(ChatHandler* handler, uint32 eventId)
+    {
+        std::string error;
+        if (!sTravelingEventMgr.Stop(eventId, &error))
+        {
+            handler->PSendSysMessage(
+                "LWI traveling event {} could not stop: {}.",
+                eventId,
+                error);
+            return false;
+        }
+
+        handler->PSendSysMessage("LWI traveling event {} stopped.", eventId);
+        return true;
+    }
+
+    static bool HandleTravelStatusCommand(ChatHandler* handler)
+    {
+        handler->SendSysMessage(sTravelingEventMgr.BuildStatusReport());
         return true;
     }
 
