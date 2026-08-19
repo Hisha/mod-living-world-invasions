@@ -1247,10 +1247,13 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
             destination.RejoinRetryAfterMs = 0;
 
             LOG_INFO("server.loading",
-                "[LWI Movement] Runtime entity group #{} creature {} selected reachable route-rejoin "
+                "[LWI Movement] Runtime #{} group #{} member={} entry={} guid={} selected reachable route-rejoin "
                 "breadcrumb path {} node {} ({:.2f} yd away) after checking {}/{} nearby candidate(s).",
+                movement.RuntimeId,
                 movement.RuntimeGroupId,
+                [&](){ uint32 m=0,e=0; describeEntity(destination.Guid,m,e); return m; }(),
                 creature->GetEntry(),
+                creature->GetGUID().ToString(),
                 movement.PathId,
                 rejoinNode.NodeOrder,
                 candidates[candidateNumber].first,
@@ -1270,6 +1273,24 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
             movement.PathId,
             RouteRejoinRetryDelayMs);
         return false;
+    };
+
+    auto describeEntity = [&](ObjectGuid const& guid, uint32& memberId, uint32& entry)
+    {
+        memberId = 0;
+        entry = 0;
+        if (RuntimeEntityGroup* runtimeGroup = sRuntimeEntityGroupMgr.GetGroup(movement.RuntimeGroupId))
+        {
+            for (RuntimeEntity const& entity : runtimeGroup->Entities)
+            {
+                if (entity.Guid == guid)
+                {
+                    memberId = entity.MemberId;
+                    entry = entity.Entry;
+                    return;
+                }
+            }
+        }
     };
 
     for (RuntimeMovementDestination& destination : movement.Destinations)
@@ -1356,10 +1377,13 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
                 destination.RejoinRetryAfterMs = 0;
 
                 LOG_INFO("server.loading",
-                    "[LWI Movement] Runtime entity group #{} creature {} left combat {:.2f} yd from "
+                    "[LWI Movement] Runtime #{} group #{} member={} entry={} guid={} left combat {:.2f} yd from "
                     "nearest safe route breadcrumb; rejoining path {} at node {} instead of stale node {}.",
+                    movement.RuntimeId,
                     movement.RuntimeGroupId,
+                    [&](){ uint32 m=0,e=0; describeEntity(destination.Guid,m,e); return m; }(),
                     creature->GetEntry(),
+                    creature->GetGUID().ToString(),
                     bestDistance,
                     movement.PathId,
                     (*nodes)[bestIndex].NodeOrder,
@@ -1408,10 +1432,13 @@ void MovementController::ResumeInterruptedCreatures(ActiveRuntimeMovement& movem
                     destination.RejoiningLeader = false;
                     destination.WasInCombat = false;
                     LOG_INFO("server.loading",
-                        "[LWI Movement] Runtime entity group #{} creature {} completed route rejoin at "
+                        "[LWI Movement] Runtime #{} group #{} member={} entry={} guid={} completed route rejoin at "
                         "current path {} node {} ({:.2f} yd); normal MARCH movement resumes.",
+                        movement.RuntimeId,
                         movement.RuntimeGroupId,
+                        [&](){ uint32 m=0,e=0; describeEntity(destination.Guid,m,e); return m; }(),
                         creature->GetEntry(),
+                        creature->GetGUID().ToString(),
                         movement.PathId,
                         rejoinNode.NodeOrder,
                         breadcrumbDistance);

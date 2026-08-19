@@ -168,6 +168,10 @@ bool InvasionRuntime::BeginCurrentStage(uint64 now)
     {
         for (auto const& action : *actions)
         {
+            LOG_INFO("server.loading",
+                "[LWI StageTrace] Runtime #{} invasion={} stage={} ({}) action={} type={} target={} p1={} p2={} p3={} executing.",
+                _runtimeId, _invasionId, stage->Id, stage->Name, action.Id, action.ActionType,
+                action.TargetId, action.Parameter1, action.Parameter2, action.Parameter3);
             if (action.ActionType == SpawnGroupActionType)
             {
                 uint64 runtimeGroupId = 0;
@@ -176,6 +180,11 @@ bool InvasionRuntime::BeginCurrentStage(uint64 now)
                     SpawnGroupDefinition const* spawnGroup = sInvasionMgr.GetSpawnGroup(action.TargetId);
                     if (spawnGroup && spawnGroup->RouteNodeId != 0)
                         sMovementController.NotifyRouteNodeReached(runtimeGroupId, spawnGroup->RouteNodeId, _invasionId);
+
+                    LOG_INFO("server.loading",
+                        "[LWI StageTrace] Runtime #{} stage={} SPAWNED spawnGroup={} runtimeGroup=#{} routeNode={}.",
+                        _runtimeId, stage->Id, action.TargetId, runtimeGroupId,
+                        spawnGroup ? spawnGroup->RouteNodeId : 0);
                 }
                 continue;
             }
@@ -202,6 +211,14 @@ bool InvasionRuntime::BeginCurrentStage(uint64 now)
                         "[LWI Runtime] Runtime #{} failed route movement action {} for runtime entity group #{} "
                         "(start route node {}, destination route node {}, completion signal {}).",
                         _runtimeId, action.Id, group->Id, action.Parameter1, action.Parameter2, action.Parameter3);
+                }
+                else
+                {
+                    LOG_INFO("server.loading",
+                        "[LWI StageTrace] Runtime #{} stage={} RELEASED spawnGroup={} runtimeGroup=#{} "
+                        "route {} -> {} completionSignal={} via action={}.",
+                        _runtimeId, stage->Id, action.TargetId, group->Id, action.Parameter1,
+                        action.Parameter2, action.Parameter3, action.Id);
                 }
             }
 
