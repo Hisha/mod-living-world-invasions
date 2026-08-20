@@ -36,7 +36,7 @@ INSERT INTO `lwi_traveling_event`
      `enabled`,`comment`)
 VALUES
     (@EVENT_ID,'Traveling Sales Wagon',@LEADER_ENTRY,@WAGON_GO_ENTRY,@MERCHANT_ENTRY,
-     4.5,0.0,0.0,
+     4.5,0.0,0.75,
      0,
      'Phase-one mobile GO wagon test. Enable after choosing leader_entry.');
 
