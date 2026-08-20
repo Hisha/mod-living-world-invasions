@@ -374,26 +374,52 @@ bool TravelingEventManager::SpawnRuntime(
     return true;
 }
 
-bool TravelingEventManager::Start(uint32 eventId, std::string* error)
+TravelingEventStartResult TravelingEventManager::Start(uint32 eventId, std::string* error)
 {
     if (_active.find(eventId) != _active.end())
     {
         if (error)
             *error = "event is already active";
-        return false;
+        LOG_INFO("server.loading", "[LWI Travel] Start event {} refused: event is already active.", eventId);
+        return TravelingEventStartResult::AlreadyActive;
     }
 
     TravelingEventDefinition const* definition = GetDefinition(eventId);
-    if (!definition || !definition->Enabled)
+    if (!definition)
     {
         if (error)
-            *error = "event does not exist or is disabled";
-        return false;
+            *error = "event is not loaded; check lwi_traveling_event and run .lwi reload";
+        LOG_ERROR("server.loading", "[LWI Travel] Start event {} failed: definition is not loaded.", eventId);
+        return TravelingEventStartResult::NotFound;
+    }
+
+    if (!definition->Enabled)
+    {
+        if (error)
+            *error = "event is loaded but disabled";
+        LOG_INFO("server.loading", "[LWI Travel] Start event {} ({}) refused: definition is disabled.", eventId, definition->Name);
+        return TravelingEventStartResult::Disabled;
+    }
+
+    if (definition->Stops.size() < 2 || definition->LeaderEntry == 0 || definition->WagonGameObjectEntry == 0)
+    {
+        if (error)
+            *error = definition->Stops.size() < 2
+                ? "invalid configuration: at least two enabled stops are required"
+                : "invalid configuration: leader_entry and wagon_entry must both be configured";
+        LOG_ERROR("server.loading", "[LWI Travel] Start event {} ({}) failed validation: {}.", eventId, definition->Name, error ? *error : "invalid configuration");
+        return TravelingEventStartResult::InvalidConfiguration;
     }
 
     ActiveTravelingEvent runtime;
-    if (!SpawnRuntime(*definition, runtime, error))
-        return false;
+    std::string spawnError;
+    if (!SpawnRuntime(*definition, runtime, &spawnError))
+    {
+        if (error)
+            *error = spawnError;
+        LOG_ERROR("server.loading", "[LWI Travel] Start event {} ({}) failed while creating runtime: {}.", eventId, definition->Name, spawnError);
+        return TravelingEventStartResult::SpawnFailed;
+    }
 
     _active.emplace(eventId, std::move(runtime));
 
@@ -402,7 +428,7 @@ bool TravelingEventManager::Start(uint32 eventId, std::string* error)
         definition->Id,
         definition->Name);
 
-    return true;
+    return TravelingEventStartResult::Started;
 }
 
 void TravelingEventManager::CleanupRuntime(ActiveTravelingEvent& runtime)

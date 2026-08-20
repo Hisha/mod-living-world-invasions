@@ -2821,13 +2821,17 @@ private:
     static bool HandleTravelStartCommand(ChatHandler* handler, uint32 eventId)
     {
         std::string error;
-        if (!sTravelingEventMgr.Start(eventId, &error))
+        lwi::TravelingEventStartResult const result = sTravelingEventMgr.Start(eventId, &error);
+        if (result != lwi::TravelingEventStartResult::Started)
         {
             handler->PSendSysMessage(
                 "LWI traveling event {} could not start: {}.",
                 eventId,
-                error);
-            return false;
+                error.empty() ? "unknown start failure" : error);
+
+            // The command syntax was valid. Returning false here makes AzerothCore
+            // print command usage text, which hides the useful runtime failure.
+            return true;
         }
 
         handler->PSendSysMessage("LWI traveling event {} started.", eventId);

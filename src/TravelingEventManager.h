@@ -19,6 +19,16 @@ enum class TravelingEventState : uint8
     Camped = 1
 };
 
+enum class TravelingEventStartResult : uint8
+{
+    Started = 0,
+    NotFound,
+    Disabled,
+    AlreadyActive,
+    InvalidConfiguration,
+    SpawnFailed
+};
+
 struct TravelingStopDefinition
 {
     uint32 Id = 0;
@@ -90,7 +100,7 @@ public:
     void Reset();
     void Update(uint32 diff);
 
-    bool Start(uint32 eventId, std::string* error = nullptr);
+    TravelingEventStartResult Start(uint32 eventId, std::string* error = nullptr);
     bool Stop(uint32 eventId, std::string* error = nullptr);
 
     std::string BuildStatusReport() const;
