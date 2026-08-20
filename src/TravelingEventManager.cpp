@@ -21,7 +21,15 @@ namespace lwi
 {
 namespace
 {
-constexpr uint32 MobileWagonUpdateIntervalMs = 100;
+// Normal 3.3.5 GameObjects are client-stationary once created. Server-side
+// GameObjectRelocation() updates map/model state, but an already-visible normal
+// GO does not receive a useful moving-position update on the client. For this
+// prototype we therefore replace the temporary wagon GO with a fresh GUID at
+// the new position while the route leader moves.
+constexpr uint32 MobileWagonUpdateIntervalMs = 200;
+constexpr float MobileWagonMinimumRespawnDistance = 0.50f;
+constexpr float MobileWagonMinimumRespawnOrientation = 0.05f;
+constexpr float Pi = 3.14159265358979323846f;
 }
 
 TravelingEventManager& TravelingEventManager::Instance()
@@ -193,9 +201,9 @@ bool TravelingEventManager::PlaceMobileWagon(
 {
     Map* map = sMapMgr->FindMap(runtime.MapId, 0);
     Creature* leader = GetCreature(runtime.MapId, runtime.LeaderGuid);
-    GameObject* wagon = GetGameObject(runtime.MapId, runtime.WagonGuid);
+    GameObject* oldWagon = GetGameObject(runtime.MapId, runtime.WagonGuid);
 
-    if (!map || !leader || !wagon || !leader->IsInWorld() || !wagon->IsInWorld())
+    if (!map || !leader || !leader->IsInWorld())
         return false;
 
     float const orientation = leader->GetOrientation();
@@ -210,12 +218,70 @@ bool TravelingEventManager::PlaceMobileWagon(
         - sinO * definition.WagonDistanceBehind
         + cosO * definition.WagonLateralOffset;
 
-    // Phase-one intentionally follows the leader's Z.  If the wagon visibly
-    // floats/buries on slopes, terrain-height sampling is the next isolated
-    // refinement rather than mixing it into this proof-of-concept.
     float const z = leader->GetPositionZ() + definition.WagonVerticalOffset;
 
-    map->GameObjectRelocation(wagon, x, y, z, orientation);
+    if (oldWagon && oldWagon->IsInWorld())
+    {
+        float const dx = oldWagon->GetPositionX() - x;
+        float const dy = oldWagon->GetPositionY() - y;
+        float const dz = oldWagon->GetPositionZ() - z;
+        float const distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+
+        float orientationDelta = std::fabs(oldWagon->GetOrientation() - orientation);
+        while (orientationDelta > Pi)
+            orientationDelta = std::fabs(orientationDelta - 2.0f * Pi);
+
+        if (distance < MobileWagonMinimumRespawnDistance &&
+            orientationDelta < MobileWagonMinimumRespawnOrientation)
+        {
+            return true;
+        }
+    }
+
+    Position wagonPosition;
+    wagonPosition.Relocate(x, y, z, orientation);
+
+    // Normal 3.3.5 GameObjects are effectively stationary on the client once
+    // created. Spawn a fresh temporary GO with a fresh GUID at each meaningful
+    // visual position so the client receives the new XYZ/orientation in a
+    // create-object packet.
+    GameObject* newWagon = map->SummonGameObject(
+        definition.WagonGameObjectEntry,
+        wagonPosition,
+        0.0f,
+        0.0f,
+        0.0f,
+        0.0f,
+        0,
+        true);
+
+    if (!newWagon)
+    {
+        LOG_ERROR("server.loading",
+            "[LWI Travel] Event {} could not respawn mobile wagon GO {} at ({:.2f}, {:.2f}, {:.2f}).",
+            definition.Id,
+            definition.WagonGameObjectEntry,
+            x, y, z);
+        return false;
+    }
+
+    newWagon->setActive(true);
+
+    ObjectGuid const oldGuid = runtime.WagonGuid;
+    runtime.WagonGuid = newWagon->GetGUID();
+
+    if (oldWagon && oldWagon->IsInWorld())
+        oldWagon->Delete();
+
+    LOG_DEBUG("server.loading",
+        "[LWI Travel] Event {} advanced mobile wagon GO {} from GUID {} to GUID {} at "
+        "({:.2f}, {:.2f}, {:.2f}, o={:.3f}).",
+        definition.Id,
+        definition.WagonGameObjectEntry,
+        oldGuid.ToString(),
+        runtime.WagonGuid.ToString(),
+        x, y, z, orientation);
+
     return true;
 }
 
@@ -311,6 +377,8 @@ bool TravelingEventManager::SpawnRuntime(
             *error = "failed to summon mobile wagon GameObject";
         return false;
     }
+
+    wagon->setActive(true);
 
     ObjectGuid merchantGuid;
     if (definition.MerchantEntry != 0)
@@ -532,14 +600,15 @@ bool TravelingEventManager::BeginTravel(
 
     LOG_INFO("server.loading",
         "[LWI Travel] Event {} departed stop {} route node {} for stop {} route node {}; "
-        "leader {} is route owner and wagon GO {} will follow at 100 ms updates.",
+        "leader {} is route owner and wagon GO {} will follow using client-visible respawns at {} ms checks.",
         definition.Id,
         fromIndex,
         fromStop.RouteNodeId,
         toIndex,
         toStop.RouteNodeId,
         definition.LeaderEntry,
-        definition.WagonGameObjectEntry);
+        definition.WagonGameObjectEntry,
+        MobileWagonUpdateIntervalMs);
 
     return true;
 }
