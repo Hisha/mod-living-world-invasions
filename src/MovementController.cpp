@@ -92,7 +92,7 @@ FormationOffset GetCaravanFormationOffset(uint32 marchSlot)
     uint32 const rank = followerSlot / 2;
     bool const left = (followerSlot % 2U) == 0U;
 
-    float const forward = -3.5f - static_cast<float>(rank) * 2.25f;
+    float const forward = -5.0f - static_cast<float>(rank) * 2.25f;
     float const right = (left ? -1.35f : 1.35f);
     return { forward, right };
 }
@@ -1097,6 +1097,14 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
             {
                 creature->SetWalk(false);
             }
+        }
+
+        // Traveling caravans always use walking speed, regardless of the
+        // movement profile used by the underlying authored route.
+        if (movement.RouteMovement &&
+            group->RouteFormation == RouteFormationProfile::TravelingCaravan)
+        {
+            creature->SetWalk(true);
         }
 
         uint32 const roleSlot = roleSlots[entity.TacticalRole]++;
