@@ -16,6 +16,12 @@ enum class RuntimeEntityGroupState : uint8
     Completed = 2
 };
 
+enum class RouteFormationProfile : uint8
+{
+    DefaultMarch = 0,
+    TravelingCaravan = 1
+};
+
 struct RuntimeEntityGroup
 {
     uint64 Id = 0;
@@ -23,6 +29,7 @@ struct RuntimeEntityGroup
     uint32 SpawnGroupId = 0;
     uint32 ActiveBehaviorId = 0;
     RuntimeEntityGroupState State = RuntimeEntityGroupState::Active;
+    RouteFormationProfile RouteFormation = RouteFormationProfile::DefaultMarch;
     std::vector<RuntimeEntity> Entities;
 };
 

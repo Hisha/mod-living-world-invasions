@@ -223,6 +223,7 @@ bool TravelingEventManager::SpawnRuntime(
     merchant->RemoveNpcFlag(UNIT_NPC_FLAG_VENDOR);
 
     RuntimeEntityGroup& movementGroup = sRuntimeEntityGroupMgr.CreateGroup(0, 0);
+    movementGroup.RouteFormation = RouteFormationProfile::TravelingCaravan;
 
     RuntimeEntity merchantEntity;
     merchantEntity.EntityType = static_cast<uint8>(EntityProviderType::Creature);
@@ -230,9 +231,10 @@ bool TravelingEventManager::SpawnRuntime(
     merchantEntity.Entry = definition.MerchantEntry;
     merchantEntity.Guid = merchant->GetGUID();
 
-    // Entity ordering is intentional.  Route movement uses entity slot 0 as
-    // the route leader, so the merchant owns the authored route and the pack
-    // mules occupy the first follower slots in the compact marching formation.
+    // Entity ordering is intentional. Route movement uses entity slot 0 as
+    // the route leader. This group is marked TravelingCaravan, so follower
+    // slots 1 and 2 become a shallow V behind the merchant rather than using
+    // the generic five-wide marching formation.
     movementGroup.Entities.push_back(merchantEntity);
 
     std::vector<ObjectGuid> muleGuids;

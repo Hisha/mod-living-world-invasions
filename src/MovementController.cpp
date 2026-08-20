@@ -80,6 +80,23 @@ FormationOffset GetFormationOffset(uint8 tacticalRole, uint32 roleSlot)
 // the safe road centerline every ~5 yards, so route travel should keep the
 // entire force close to that centerline instead of allowing role slots to grow
 // outward into a large X.  Slot 0 is the route leader at the exact node center.
+FormationOffset GetCaravanFormationOffset(uint32 marchSlot)
+{
+    // Slot 0 is the merchant/route owner.  The first two followers are pack
+    // animals in a shallow V behind him instead of the generic five-wide road
+    // column.  Additional followers, if added later, continue in paired ranks.
+    if (marchSlot == 0)
+        return { 0.0f, 0.0f };
+
+    uint32 const followerSlot = marchSlot - 1;
+    uint32 const rank = followerSlot / 2;
+    bool const left = (followerSlot % 2U) == 0U;
+
+    float const forward = -3.5f - static_cast<float>(rank) * 2.25f;
+    float const right = (left ? -1.35f : 1.35f);
+    return { forward, right };
+}
+
 FormationOffset GetMarchFormationOffset(uint32 marchSlot)
 {
     if (marchSlot == 0)
@@ -107,11 +124,14 @@ void BuildMarchDestination(
     MovementNodeDefinition const& node,
     MovementDirection direction,
     uint32 marchSlot,
+    RouteFormationProfile formationProfile,
     float& x,
     float& y,
     float& z)
 {
-    FormationOffset const offset = GetMarchFormationOffset(marchSlot);
+    FormationOffset const offset = formationProfile == RouteFormationProfile::TravelingCaravan
+        ? GetCaravanFormationOffset(marchSlot)
+        : GetMarchFormationOffset(marchSlot);
 
     float const travelOrientation = node.Orientation +
         (direction == MovementDirection::Reverse ? Pi : 0.0f);
@@ -1089,7 +1109,7 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
         float targetZ = node.Z;
 
         if (movement.RouteMovement)
-            BuildMarchDestination(node, movement.Direction, thisMarchSlot, targetX, targetY, targetZ);
+            BuildMarchDestination(node, movement.Direction, thisMarchSlot, group->RouteFormation, targetX, targetY, targetZ);
         else
             BuildFormationDestination(node, movement.Direction, entity.TacticalRole, roleSlot, targetX, targetY, targetZ);
 

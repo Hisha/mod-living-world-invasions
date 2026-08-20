@@ -1,28 +1,73 @@
 -- ============================================================================
 -- 901_Traveling_Sales_Wagon.sql
--- Traveling salesman prototype: one merchant + two creature-based pack mules.
---
--- CURRENT PROTOTYPE COLUMN MAPPING
---   leader_entry = traveling merchant creature (route owner)
---   wagon_entry  = pack-mule CREATURE entry
---
--- We intentionally keep the existing prototype table layout for this pass so
--- no database migration is needed while the traveling-event model is evolving.
--- merchant_entry and the old wagon offset columns are ignored by current code.
---
--- Selected visuals:
---   Merchant: entry 221 (Dannus), CreatureDisplayID 23
---   Pack mule: entry 5525 (Caravan Packhorse), tested in-game as display 14551
---
--- First test goal:
---   Merchant and TWO pack mules walk the authored route together.
---   No camp props are installed by this prebuilt yet.
+-- Traveling salesman: custom merchant + two creature-based pack mules.
+-- Server-side only; no client patch required.
 -- ============================================================================
 
 SET @EVENT_ID := 1;
-SET @MERCHANT_ENTRY := 221;
-SET @PACK_MULE_ENTRY := 5525;
+SET @MERCHANT_ENTRY := 14999990;
+SET @MERCHANT_BASE := 221;       -- Dannus: display 23 / merchant visual
+SET @PACK_MULE_ENTRY := 5525;    -- Caravan Packhorse
 
+-- --------------------------------------------------------------------------
+-- Custom Traveling Salesman creature.
+-- Keep it below LWI's generated-creature allocation range (15000000+).
+-- Rebuild safely each time this prebuilt is applied.
+-- --------------------------------------------------------------------------
+DELETE FROM `npc_vendor` WHERE `entry` = @MERCHANT_ENTRY;
+DELETE FROM `creature_template_model` WHERE `CreatureID` = @MERCHANT_ENTRY;
+DELETE FROM `creature_template` WHERE `entry` = @MERCHANT_ENTRY;
+
+INSERT INTO `creature_template` (
+    `entry`,`difficulty_entry_1`,`difficulty_entry_2`,`difficulty_entry_3`,
+    `KillCredit1`,`KillCredit2`,`name`,`subname`,`IconName`,`gossip_menu_id`,
+    `minlevel`,`maxlevel`,`exp`,`faction`,`npcflag`,`speed_walk`,`speed_run`,
+    `speed_swim`,`speed_flight`,`detection_range`,`rank`,`dmgschool`,
+    `DamageModifier`,`BaseAttackTime`,`RangeAttackTime`,`BaseVariance`,`RangeVariance`,
+    `unit_class`,`unit_flags`,`unit_flags2`,`dynamicflags`,`family`,`type`,`type_flags`,
+    `lootid`,`pickpocketloot`,`skinloot`,`PetSpellDataId`,`VehicleId`,`mingold`,`maxgold`,
+    `AIName`,`MovementType`,`HoverHeight`,`HealthModifier`,`ManaModifier`,`ArmorModifier`,
+    `ExperienceModifier`,`RacialLeader`,`movementId`,`RegenHealth`,`CreatureImmunitiesId`,
+    `flags_extra`,`ScriptName`,`VerifiedBuild`)
+SELECT
+    @MERCHANT_ENTRY,0,0,0,0,0,
+    'Traveling Salesman','Traveling Merchant',b.`IconName`,0,
+    b.`minlevel`,b.`maxlevel`,b.`exp`,b.`faction`,128,
+    b.`speed_walk`,b.`speed_run`,b.`speed_swim`,b.`speed_flight`,b.`detection_range`,
+    b.`rank`,b.`dmgschool`,b.`DamageModifier`,b.`BaseAttackTime`,b.`RangeAttackTime`,
+    b.`BaseVariance`,b.`RangeVariance`,b.`unit_class`,b.`unit_flags`,b.`unit_flags2`,
+    b.`dynamicflags`,b.`family`,b.`type`,b.`type_flags`,0,0,0,0,0,0,0,'',0,
+    b.`HoverHeight`,b.`HealthModifier`,b.`ManaModifier`,b.`ArmorModifier`,
+    b.`ExperienceModifier`,0,0,b.`RegenHealth`,b.`CreatureImmunitiesId`,
+    b.`flags_extra`,'',b.`VerifiedBuild`
+FROM `creature_template` b
+WHERE b.`entry` = @MERCHANT_BASE;
+
+INSERT INTO `creature_template_model`
+    (`CreatureID`,`Idx`,`CreatureDisplayID`,`DisplayScale`,`Probability`,`VerifiedBuild`)
+SELECT @MERCHANT_ENTRY,`Idx`,`CreatureDisplayID`,`DisplayScale`,`Probability`,`VerifiedBuild`
+FROM `creature_template_model`
+WHERE `CreatureID` = @MERCHANT_BASE;
+
+-- Basic road/general-goods stock. The runtime removes the vendor flag while
+-- traveling and restores it only while camped.
+INSERT INTO `npc_vendor`
+    (`entry`,`slot`,`item`,`maxcount`,`incrtime`,`ExtendedCost`,`VerifiedBuild`)
+VALUES
+    (@MERCHANT_ENTRY,0,117,  0,0,0,NULL),   -- Tough Jerky
+    (@MERCHANT_ENTRY,1,159,  0,0,0,NULL),   -- Refreshing Spring Water
+    (@MERCHANT_ENTRY,2,454,  0,0,0,NULL),   -- Tough Hunk of Bread
+    (@MERCHANT_ENTRY,3,4496, 0,0,0,NULL),   -- Small Brown Pouch
+    (@MERCHANT_ENTRY,4,2320, 0,0,0,NULL),   -- Coarse Thread
+    (@MERCHANT_ENTRY,5,2321, 0,0,0,NULL),   -- Fine Thread
+    (@MERCHANT_ENTRY,6,3371, 0,0,0,NULL);   -- Empty Vial
+
+-- --------------------------------------------------------------------------
+-- Traveling event.
+-- Current prototype mapping:
+--   leader_entry = merchant creature / route owner
+--   wagon_entry  = pack-mule creature
+-- --------------------------------------------------------------------------
 DELETE FROM `lwi_traveling_event_prop` WHERE `event_id` = @EVENT_ID;
 DELETE FROM `lwi_traveling_event_stop` WHERE `event_id` = @EVENT_ID;
 DELETE FROM `lwi_traveling_event` WHERE `id` = @EVENT_ID;
@@ -32,18 +77,10 @@ INSERT INTO `lwi_traveling_event`
      `wagon_distance_behind`,`wagon_lateral_offset`,`wagon_vertical_offset`,
      `merchant_seat_id`,`enabled`,`comment`)
 VALUES
-    (@EVENT_ID,
-     'Traveling Salesman',
-     @MERCHANT_ENTRY,
-     @PACK_MULE_ENTRY,
-     0,
-     0,0,0,
-     0,
-     1,
-     'Creature caravan prototype: merchant route owner plus two Pack Mule followers.');
+    (@EVENT_ID,'Traveling Salesman',@MERCHANT_ENTRY,@PACK_MULE_ENTRY,0,
+     0,0,0,0,1,
+     'Custom traveling merchant with two Pack Mule followers; dedicated caravan formation.');
 
--- Test loop:
---   Stormwind_Gate -> Goldshire -> Sentinel_Hill_Tower -> Goldshire -> Stormwind_Gate
 INSERT INTO `lwi_traveling_event_stop`
     (`id`,`event_id`,`stop_order`,`route_node_id`,`dwell_seconds`,
      `arrival_text`,`departure_text`,`enabled`,`comment`)
@@ -60,5 +97,3 @@ VALUES
     (90104,@EVENT_ID,40,20,30,
      'Goldshire again. We will rest here for a moment.',
      'Stormwind Gate is our next stop.',1,'Goldshire return stop');
-
--- Camp props intentionally omitted in this pass.
