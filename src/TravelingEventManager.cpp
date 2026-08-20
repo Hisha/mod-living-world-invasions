@@ -14,24 +14,10 @@
 #include "TemporarySummon.h"
 
 #include <algorithm>
-#include <cmath>
 #include <sstream>
 
 namespace lwi
 {
-namespace
-{
-// Normal 3.3.5 GameObjects are client-stationary once created. Server-side
-// GameObjectRelocation() updates map/model state, but an already-visible normal
-// GO does not receive a useful moving-position update on the client. For this
-// prototype we therefore replace the temporary wagon GO with a fresh GUID at
-// the new position while the route leader moves.
-constexpr uint32 MobileWagonUpdateIntervalMs = 200;
-constexpr float MobileWagonMinimumRespawnDistance = 0.50f;
-constexpr float MobileWagonMinimumRespawnOrientation = 0.05f;
-constexpr float Pi = 3.14159265358979323846f;
-}
-
 TravelingEventManager& TravelingEventManager::Instance()
 {
     static TravelingEventManager instance;
@@ -61,9 +47,12 @@ void TravelingEventManager::LoadDefinitions()
     _active.clear();
     _definitions.clear();
 
+    // The current DB column names are intentionally retained for compatibility
+    // with the prototype schema.  leader_entry is now the traveling merchant
+    // (and route owner), while wagon_entry is temporarily used as the pack-mule
+    // creature entry.  The old merchant_entry/wagon offset fields are ignored.
     QueryResult events = WorldDatabase.Query(
-        "SELECT `id`,`name`,`leader_entry`,`wagon_entry`,`merchant_entry`,"
-        "`wagon_distance_behind`,`wagon_lateral_offset`,`wagon_vertical_offset`,`enabled` "
+        "SELECT `id`,`name`,`leader_entry`,`wagon_entry`,`enabled` "
         "FROM `lwi_traveling_event` ORDER BY `id`");
 
     if (events)
@@ -75,13 +64,10 @@ void TravelingEventManager::LoadDefinitions()
             TravelingEventDefinition definition;
             definition.Id = fields[0].Get<uint32>();
             definition.Name = fields[1].Get<std::string>();
-            definition.LeaderEntry = fields[2].Get<uint32>();
-            definition.WagonGameObjectEntry = fields[3].Get<uint32>();
-            definition.MerchantEntry = fields[4].Get<uint32>();
-            definition.WagonDistanceBehind = fields[5].Get<float>();
-            definition.WagonLateralOffset = fields[6].Get<float>();
-            definition.WagonVerticalOffset = fields[7].Get<float>();
-            definition.Enabled = fields[8].Get<bool>();
+            definition.MerchantEntry = fields[2].Get<uint32>();
+            definition.PackMuleEntry = fields[3].Get<uint32>();
+            definition.PackMuleCount = 2;
+            definition.Enabled = fields[4].Get<bool>();
 
             _definitions.emplace(definition.Id, std::move(definition));
         }
@@ -172,18 +158,6 @@ Creature* TravelingEventManager::GetCreature(uint16 mapId, ObjectGuid guid) cons
     return map->GetCreature(guid);
 }
 
-GameObject* TravelingEventManager::GetGameObject(uint16 mapId, ObjectGuid guid) const
-{
-    if (guid.IsEmpty())
-        return nullptr;
-
-    Map* map = sMapMgr->FindMap(mapId, 0);
-    if (!map)
-        return nullptr;
-
-    return map->GetGameObject(guid);
-}
-
 void TravelingEventManager::ApplyProtectedState(Creature* creature) const
 {
     if (!creature)
@@ -193,112 +167,6 @@ void TravelingEventManager::ApplyProtectedState(Creature* creature) const
     creature->SetReactState(REACT_PASSIVE);
     creature->SetImmuneToAll(true);
     creature->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
-}
-
-bool TravelingEventManager::PlaceMobileWagon(
-    ActiveTravelingEvent& runtime,
-    TravelingEventDefinition const& definition)
-{
-    Map* map = sMapMgr->FindMap(runtime.MapId, 0);
-    Creature* leader = GetCreature(runtime.MapId, runtime.LeaderGuid);
-    GameObject* oldWagon = GetGameObject(runtime.MapId, runtime.WagonGuid);
-
-    if (!map || !leader || !leader->IsInWorld())
-        return false;
-
-    float const orientation = leader->GetOrientation();
-    float const cosO = std::cos(orientation);
-    float const sinO = std::sin(orientation);
-
-    float const x = leader->GetPositionX()
-        - cosO * definition.WagonDistanceBehind
-        - sinO * definition.WagonLateralOffset;
-
-    float const y = leader->GetPositionY()
-        - sinO * definition.WagonDistanceBehind
-        + cosO * definition.WagonLateralOffset;
-
-    float const z = leader->GetPositionZ() + definition.WagonVerticalOffset;
-
-    if (oldWagon && oldWagon->IsInWorld())
-    {
-        float const dx = oldWagon->GetPositionX() - x;
-        float const dy = oldWagon->GetPositionY() - y;
-        float const dz = oldWagon->GetPositionZ() - z;
-        float const distance = std::sqrt(dx * dx + dy * dy + dz * dz);
-
-        float orientationDelta = std::fabs(oldWagon->GetOrientation() - orientation);
-        while (orientationDelta > Pi)
-            orientationDelta = std::fabs(orientationDelta - 2.0f * Pi);
-
-        if (distance < MobileWagonMinimumRespawnDistance &&
-            orientationDelta < MobileWagonMinimumRespawnOrientation)
-        {
-            return true;
-        }
-    }
-
-    Position wagonPosition;
-    wagonPosition.Relocate(x, y, z, orientation);
-
-    // Normal 3.3.5 GameObjects are effectively stationary on the client once
-    // created. Spawn a fresh temporary GO with a fresh GUID at each meaningful
-    // visual position so the client receives the new XYZ/orientation in a
-    // create-object packet.
-    GameObject* newWagon = map->SummonGameObject(
-        definition.WagonGameObjectEntry,
-        wagonPosition,
-        0.0f,
-        0.0f,
-        0.0f,
-        0.0f,
-        0,
-        true);
-
-    if (!newWagon)
-    {
-        LOG_ERROR("server.loading",
-            "[LWI Travel] Event {} could not respawn mobile wagon GO {} at ({:.2f}, {:.2f}, {:.2f}).",
-            definition.Id,
-            definition.WagonGameObjectEntry,
-            x, y, z);
-        return false;
-    }
-
-    newWagon->setActive(true);
-
-    ObjectGuid const oldGuid = runtime.WagonGuid;
-    runtime.WagonGuid = newWagon->GetGUID();
-
-    if (oldWagon && oldWagon->IsInWorld())
-        oldWagon->Delete();
-
-    LOG_DEBUG("server.loading",
-        "[LWI Travel] Event {} advanced mobile wagon GO {} from GUID {} to GUID {} at "
-        "({:.2f}, {:.2f}, {:.2f}, o={:.3f}).",
-        definition.Id,
-        definition.WagonGameObjectEntry,
-        oldGuid.ToString(),
-        runtime.WagonGuid.ToString(),
-        x, y, z, orientation);
-
-    return true;
-}
-
-bool TravelingEventManager::UpdateMobileWagon(
-    ActiveTravelingEvent& runtime,
-    TravelingEventDefinition const& definition)
-{
-    if (!PlaceMobileWagon(runtime, definition))
-    {
-        LOG_ERROR("server.loading",
-            "[LWI Travel] Event {} lost its route leader or mobile wagon GO {} while updating.",
-            definition.Id,
-            definition.WagonGameObjectEntry);
-        return false;
-    }
-
-    return true;
 }
 
 bool TravelingEventManager::SpawnRuntime(
@@ -313,10 +181,10 @@ bool TravelingEventManager::SpawnRuntime(
         return false;
     }
 
-    if (definition.LeaderEntry == 0 || definition.WagonGameObjectEntry == 0)
+    if (definition.MerchantEntry == 0 || definition.PackMuleEntry == 0)
     {
         if (error)
-            *error = "leader_entry and wagon_entry (GameObject entry) must both be configured";
+            *error = "leader_entry (merchant) and wagon_entry (pack-mule creature) must both be configured";
         return false;
     }
 
@@ -336,108 +204,91 @@ bool TravelingEventManager::SpawnRuntime(
         return false;
     }
 
-    Position leaderPosition;
-    leaderPosition.Relocate(
+    Position startPosition;
+    startPosition.Relocate(
         startNode->X,
         startNode->Y,
         startNode->Z,
         startNode->Orientation);
 
-    TempSummon* leader = map->SummonCreature(definition.LeaderEntry, leaderPosition, nullptr, 0);
-    if (!leader)
+    TempSummon* merchant = map->SummonCreature(definition.MerchantEntry, startPosition, nullptr, 0);
+    if (!merchant)
     {
         if (error)
-            *error = "failed to summon traveling-event route leader creature";
+            *error = "failed to summon traveling merchant creature";
         return false;
     }
 
-    ApplyProtectedState(leader);
-
-    Position wagonPosition;
-    wagonPosition.Relocate(
-        startNode->X,
-        startNode->Y,
-        startNode->Z,
-        startNode->Orientation);
-
-    GameObject* wagon = map->SummonGameObject(
-        definition.WagonGameObjectEntry,
-        wagonPosition,
-        0.0f,
-        0.0f,
-        0.0f,
-        0.0f,
-        0,
-        true);
-
-    if (!wagon)
-    {
-        leader->DespawnOrUnsummon();
-        if (error)
-            *error = "failed to summon mobile wagon GameObject";
-        return false;
-    }
-
-    wagon->setActive(true);
-
-    ObjectGuid merchantGuid;
-    if (definition.MerchantEntry != 0)
-    {
-        TempSummon* merchant = map->SummonCreature(definition.MerchantEntry, leaderPosition, nullptr, 0);
-        if (!merchant)
-        {
-            wagon->Delete();
-            leader->DespawnOrUnsummon();
-            if (error)
-                *error = "failed to summon merchant creature";
-            return false;
-        }
-
-        ApplyProtectedState(merchant);
-        merchant->RemoveNpcFlag(UNIT_NPC_FLAG_VENDOR);
-        merchantGuid = merchant->GetGUID();
-    }
+    ApplyProtectedState(merchant);
+    merchant->RemoveNpcFlag(UNIT_NPC_FLAG_VENDOR);
 
     RuntimeEntityGroup& movementGroup = sRuntimeEntityGroupMgr.CreateGroup(0, 0);
 
-    RuntimeEntity leaderEntity;
-    leaderEntity.EntityType = static_cast<uint8>(EntityProviderType::Creature);
-    leaderEntity.MapId = startNode->MapId;
-    leaderEntity.Entry = definition.LeaderEntry;
-    leaderEntity.Guid = leader->GetGUID();
-    movementGroup.Entities.push_back(leaderEntity);
+    RuntimeEntity merchantEntity;
+    merchantEntity.EntityType = static_cast<uint8>(EntityProviderType::Creature);
+    merchantEntity.MapId = startNode->MapId;
+    merchantEntity.Entry = definition.MerchantEntry;
+    merchantEntity.Guid = merchant->GetGUID();
+
+    // Entity ordering is intentional.  Route movement uses entity slot 0 as
+    // the route leader, so the merchant owns the authored route and the pack
+    // mules occupy the first follower slots in the compact marching formation.
+    movementGroup.Entities.push_back(merchantEntity);
+
+    std::vector<ObjectGuid> muleGuids;
+    muleGuids.reserve(definition.PackMuleCount);
+
+    for (uint8 i = 0; i < definition.PackMuleCount; ++i)
+    {
+        TempSummon* mule = map->SummonCreature(definition.PackMuleEntry, startPosition, nullptr, 0);
+        if (!mule)
+        {
+            for (ObjectGuid const& guid : muleGuids)
+            {
+                if (Creature* existingMule = GetCreature(startNode->MapId, guid))
+                {
+                    if (TempSummon* summon = existingMule->ToTempSummon())
+                        summon->DespawnOrUnsummon();
+                }
+            }
+
+            merchant->DespawnOrUnsummon();
+            sRuntimeEntityGroupMgr.RemoveGroup(movementGroup.Id);
+
+            if (error)
+                *error = "failed to summon one of the traveling pack mules";
+            return false;
+        }
+
+        ApplyProtectedState(mule);
+
+        RuntimeEntity muleEntity;
+        muleEntity.EntityType = static_cast<uint8>(EntityProviderType::Creature);
+        muleEntity.MapId = startNode->MapId;
+        muleEntity.Entry = definition.PackMuleEntry;
+        muleEntity.Guid = mule->GetGUID();
+        movementGroup.Entities.push_back(muleEntity);
+
+        muleGuids.push_back(mule->GetGUID());
+    }
 
     runtime.EventId = definition.Id;
     runtime.RuntimeGroupId = movementGroup.Id;
     runtime.StopIndex = 0;
     runtime.State = TravelingEventState::Camped;
     runtime.StateTimerMs = 1000;
-    runtime.WagonUpdateTimerMs = 0;
-    runtime.LeaderGuid = leader->GetGUID();
-    runtime.WagonGuid = wagon->GetGUID();
-    runtime.MerchantGuid = merchantGuid;
+    runtime.MerchantGuid = merchant->GetGUID();
+    runtime.PackMuleGuids = std::move(muleGuids);
     runtime.MapId = startNode->MapId;
 
-    if (!PlaceMobileWagon(runtime, definition))
-    {
-        CleanupRuntime(runtime);
-        if (error)
-            *error = "failed to position mobile wagon behind route leader";
-        return false;
-    }
-
     LOG_INFO("server.loading",
-        "[LWI Travel] Event {} spawned leader creature {} GUID {} with mobile wagon GO {} GUID {}; "
-        "wagon offset behind={:.2f}, lateral={:.2f}, vertical={:.2f}; merchant {}.",
+        "[LWI Travel] Event {} spawned merchant creature {} GUID {} as route owner with {} pack mule(s) "
+        "using creature entry {}. All caravan members are protected/non-aggro.",
         definition.Id,
-        definition.LeaderEntry,
-        runtime.LeaderGuid.ToString(),
-        definition.WagonGameObjectEntry,
-        runtime.WagonGuid.ToString(),
-        definition.WagonDistanceBehind,
-        definition.WagonLateralOffset,
-        definition.WagonVerticalOffset,
-        definition.MerchantEntry == 0 ? "disabled for phase-one test" : "enabled");
+        definition.MerchantEntry,
+        runtime.MerchantGuid.ToString(),
+        runtime.PackMuleGuids.size(),
+        definition.PackMuleEntry);
 
     return true;
 }
@@ -465,17 +316,25 @@ TravelingEventStartResult TravelingEventManager::Start(uint32 eventId, std::stri
     {
         if (error)
             *error = "event is loaded but disabled";
-        LOG_INFO("server.loading", "[LWI Travel] Start event {} ({}) refused: definition is disabled.", eventId, definition->Name);
+        LOG_INFO("server.loading",
+            "[LWI Travel] Start event {} ({}) refused: definition is disabled.",
+            eventId,
+            definition->Name);
         return TravelingEventStartResult::Disabled;
     }
 
-    if (definition->Stops.size() < 2 || definition->LeaderEntry == 0 || definition->WagonGameObjectEntry == 0)
+    if (definition->Stops.size() < 2 || definition->MerchantEntry == 0 || definition->PackMuleEntry == 0)
     {
         if (error)
             *error = definition->Stops.size() < 2
                 ? "invalid configuration: at least two enabled stops are required"
-                : "invalid configuration: leader_entry and wagon_entry must both be configured";
-        LOG_ERROR("server.loading", "[LWI Travel] Start event {} ({}) failed validation: {}.", eventId, definition->Name, error ? *error : "invalid configuration");
+                : "invalid configuration: leader_entry must be the merchant and wagon_entry must be the pack-mule creature";
+
+        LOG_ERROR("server.loading",
+            "[LWI Travel] Start event {} ({}) failed validation: {}.",
+            eventId,
+            definition->Name,
+            error ? *error : "invalid configuration");
         return TravelingEventStartResult::InvalidConfiguration;
     }
 
@@ -485,7 +344,12 @@ TravelingEventStartResult TravelingEventManager::Start(uint32 eventId, std::stri
     {
         if (error)
             *error = spawnError;
-        LOG_ERROR("server.loading", "[LWI Travel] Start event {} ({}) failed while creating runtime: {}.", eventId, definition->Name, spawnError);
+
+        LOG_ERROR("server.loading",
+            "[LWI Travel] Start event {} ({}) failed while creating runtime: {}.",
+            eventId,
+            definition->Name,
+            spawnError);
         return TravelingEventStartResult::SpawnFailed;
     }
 
@@ -512,22 +376,24 @@ void TravelingEventManager::CleanupRuntime(ActiveTravelingEvent& runtime)
             if (GameObject* gameObject = map->GetGameObject(guid))
                 gameObject->Delete();
         }
-
-        if (GameObject* wagon = map->GetGameObject(runtime.WagonGuid))
-            wagon->Delete();
     }
 
     runtime.CampPropGuids.clear();
 
+    for (ObjectGuid const& guid : runtime.PackMuleGuids)
+    {
+        if (Creature* mule = GetCreature(runtime.MapId, guid))
+        {
+            if (TempSummon* summon = mule->ToTempSummon())
+                summon->DespawnOrUnsummon();
+        }
+    }
+
+    runtime.PackMuleGuids.clear();
+
     if (Creature* merchant = GetCreature(runtime.MapId, runtime.MerchantGuid))
     {
         if (TempSummon* summon = merchant->ToTempSummon())
-            summon->DespawnOrUnsummon();
-    }
-
-    if (Creature* leader = GetCreature(runtime.MapId, runtime.LeaderGuid))
-    {
-        if (TempSummon* summon = leader->ToTempSummon())
             summon->DespawnOrUnsummon();
     }
 
@@ -565,20 +431,22 @@ bool TravelingEventManager::BeginTravel(
     TravelingStopDefinition const& fromStop = definition.Stops[fromIndex];
     TravelingStopDefinition const& toStop = definition.Stops[toIndex];
 
-    Creature* leader = GetCreature(runtime.MapId, runtime.LeaderGuid);
-    GameObject* wagon = GetGameObject(runtime.MapId, runtime.WagonGuid);
-    if (!leader || !wagon)
+    Creature* merchant = GetCreature(runtime.MapId, runtime.MerchantGuid);
+    if (!merchant)
         return false;
+
+    for (ObjectGuid const& guid : runtime.PackMuleGuids)
+    {
+        if (!GetCreature(runtime.MapId, guid))
+            return false;
+    }
 
     EndCamp(runtime, definition);
 
-    if (Creature* merchant = GetCreature(runtime.MapId, runtime.MerchantGuid))
-    {
-        merchant->RemoveNpcFlag(UNIT_NPC_FLAG_VENDOR);
+    merchant->RemoveNpcFlag(UNIT_NPC_FLAG_VENDOR);
 
-        if (!fromStop.DepartureText.empty())
-            merchant->Say(fromStop.DepartureText, LANG_UNIVERSAL);
-    }
+    if (!fromStop.DepartureText.empty())
+        merchant->Say(fromStop.DepartureText, LANG_UNIVERSAL);
 
     if (!sMovementController.StartRouteJourney(
             runtime.RuntimeGroupId,
@@ -596,19 +464,17 @@ bool TravelingEventManager::BeginTravel(
     runtime.StopIndex = toIndex;
     runtime.State = TravelingEventState::Traveling;
     runtime.StateTimerMs = 0;
-    runtime.WagonUpdateTimerMs = 0;
 
     LOG_INFO("server.loading",
         "[LWI Travel] Event {} departed stop {} route node {} for stop {} route node {}; "
-        "leader {} is route owner and wagon GO {} will follow using client-visible respawns at {} ms checks.",
+        "merchant {} owns the route with {} pack-mule follower(s) in the movement group.",
         definition.Id,
         fromIndex,
         fromStop.RouteNodeId,
         toIndex,
         toStop.RouteNodeId,
-        definition.LeaderEntry,
-        definition.WagonGameObjectEntry,
-        MobileWagonUpdateIntervalMs);
+        definition.MerchantEntry,
+        runtime.PackMuleGuids.size());
 
     return true;
 }
@@ -647,28 +513,28 @@ bool TravelingEventManager::BeginCamp(
 
     runtime.MapId = node->MapId;
 
-    Creature* leader = GetCreature(runtime.MapId, runtime.LeaderGuid);
-    GameObject* wagon = GetGameObject(runtime.MapId, runtime.WagonGuid);
-    if (!leader || !wagon)
-        return false;
-
-    // Snap one final time using the exact leader position reached by the route.
-    if (!PlaceMobileWagon(runtime, definition))
-        return false;
-
     Creature* merchant = GetCreature(runtime.MapId, runtime.MerchantGuid);
-    if (merchant)
-    {
-        float const merchantX = node->X + 2.5f;
-        float const merchantY = node->Y + 1.5f;
-        merchant->NearTeleportTo(merchantX, merchantY, node->Z, node->Orientation);
-        ApplyProtectedState(merchant);
-        merchant->SetNpcFlag(UNIT_NPC_FLAG_VENDOR);
+    if (!merchant)
+        return false;
 
-        if (!stop.ArrivalText.empty())
-            merchant->Say(stop.ArrivalText, LANG_UNIVERSAL);
+    for (ObjectGuid const& guid : runtime.PackMuleGuids)
+    {
+        Creature* mule = GetCreature(runtime.MapId, guid);
+        if (!mule)
+            return false;
+
+        ApplyProtectedState(mule);
     }
 
+    ApplyProtectedState(merchant);
+    merchant->SetNpcFlag(UNIT_NPC_FLAG_VENDOR);
+
+    if (!stop.ArrivalText.empty())
+        merchant->Say(stop.ArrivalText, LANG_UNIVERSAL);
+
+    // Camp props remain supported but are deliberately optional.  For the
+    // current test the prebuilt contains none; this pass is proving that the
+    // merchant and both mules can complete the route together.
     Map* map = sMapMgr->FindMap(node->MapId, 0);
     if (map)
     {
@@ -703,13 +569,12 @@ bool TravelingEventManager::BeginCamp(
     runtime.StateTimerMs = std::max<uint32>(1, stop.DwellSeconds) * IN_MILLISECONDS;
 
     LOG_INFO("server.loading",
-        "[LWI Travel] Event {} camped at route node {} for {} second(s); mobile wagon GO {} parked; "
-        "merchant vending={}, {} prop(s) spawned.",
+        "[LWI Travel] Event {} stopped at route node {} for {} second(s); merchant vending enabled; "
+        "{} pack mule(s) remain with the caravan; {} camp prop(s) spawned.",
         definition.Id,
         stop.RouteNodeId,
         stop.DwellSeconds,
-        definition.WagonGameObjectEntry,
-        merchant ? "enabled" : "disabled (phase-one wagon test)",
+        runtime.PackMuleGuids.size(),
         runtime.CampPropGuids.size());
 
     return true;
@@ -729,50 +594,45 @@ void TravelingEventManager::Update(uint32 diff)
             continue;
         }
 
-        Creature* leader = GetCreature(runtime.MapId, runtime.LeaderGuid);
-        GameObject* wagon = GetGameObject(runtime.MapId, runtime.WagonGuid);
         Creature* merchant = GetCreature(runtime.MapId, runtime.MerchantGuid);
+        bool missingMule = false;
 
-        if (!leader || !wagon || (definition->MerchantEntry != 0 && !merchant))
+        for (ObjectGuid const& guid : runtime.PackMuleGuids)
+        {
+            if (!GetCreature(runtime.MapId, guid))
+            {
+                missingMule = true;
+                break;
+            }
+        }
+
+        if (!merchant || missingMule || runtime.PackMuleGuids.size() != definition->PackMuleCount)
         {
             LOG_ERROR("server.loading",
-                "[LWI Travel] Event {} lost its leader, wagon, or configured merchant; stopping runtime.",
+                "[LWI Travel] Event {} lost its merchant or one of its pack mules; stopping runtime.",
                 runtime.EventId);
             CleanupRuntime(runtime);
             itr = _active.erase(itr);
             continue;
         }
 
-        // Protection is deliberately enforced continuously. This prototype is
-        // testing caravan lifecycle and route behavior, not combat recovery.
-        ApplyProtectedState(leader);
-        if (merchant)
-            ApplyProtectedState(merchant);
+        ApplyProtectedState(merchant);
+        for (ObjectGuid const& guid : runtime.PackMuleGuids)
+        {
+            if (Creature* mule = GetCreature(runtime.MapId, guid))
+                ApplyProtectedState(mule);
+        }
 
         if (runtime.State == TravelingEventState::Traveling)
         {
-            if (merchant)
-                merchant->RemoveNpcFlag(UNIT_NPC_FLAG_VENDOR);
-
-            if (runtime.WagonUpdateTimerMs > diff)
-                runtime.WagonUpdateTimerMs -= diff;
-            else
-            {
-                runtime.WagonUpdateTimerMs = MobileWagonUpdateIntervalMs;
-                if (!UpdateMobileWagon(runtime, *definition))
-                {
-                    CleanupRuntime(runtime);
-                    itr = _active.erase(itr);
-                    continue;
-                }
-            }
+            merchant->RemoveNpcFlag(UNIT_NPC_FLAG_VENDOR);
 
             if (!sMovementController.IsGroupMoving(runtime.RuntimeGroupId))
             {
                 if (!BeginCamp(runtime, *definition))
                 {
                     LOG_ERROR("server.loading",
-                        "[LWI Travel] Event {} failed to establish camp; stopping runtime.",
+                        "[LWI Travel] Event {} failed to establish stop state; stopping runtime.",
                         runtime.EventId);
                     CleanupRuntime(runtime);
                     itr = _active.erase(itr);
@@ -782,15 +642,14 @@ void TravelingEventManager::Update(uint32 diff)
         }
         else
         {
-            if (merchant)
-                merchant->SetNpcFlag(UNIT_NPC_FLAG_VENDOR);
+            merchant->SetNpcFlag(UNIT_NPC_FLAG_VENDOR);
 
             if (runtime.StateTimerMs > diff)
                 runtime.StateTimerMs -= diff;
             else if (!BeginTravel(runtime, *definition))
             {
                 LOG_ERROR("server.loading",
-                    "[LWI Travel] Event {} failed to depart camp; stopping runtime.",
+                    "[LWI Travel] Event {} failed to depart stop; stopping runtime.",
                     runtime.EventId);
                 CleanupRuntime(runtime);
                 itr = _active.erase(itr);
@@ -817,8 +676,8 @@ std::string TravelingEventManager::BuildStatusReport() const
             << (runtime.State == TravelingEventState::Traveling ? "TRAVELING" : "CAMPED")
             << " stopIndex=" << runtime.StopIndex
             << " movementGroup=" << runtime.RuntimeGroupId
-            << " leaderGuid=" << runtime.LeaderGuid.ToString()
-            << " wagonGuid=" << runtime.WagonGuid.ToString()
+            << " merchantGuid=" << runtime.MerchantGuid.ToString()
+            << " packMules=" << runtime.PackMuleGuids.size()
             << "\n";
     }
 

@@ -56,18 +56,15 @@ struct TravelingEventDefinition
     uint32 Id = 0;
     std::string Name;
 
-    // Route movement is owned by a normal Creature.  The visible wagon is a
-    // GameObject that is relocated behind that leader while traveling.
-    uint32 LeaderEntry = 0;
-    uint32 WagonGameObjectEntry = 0;
-
-    // Merchant is optional during the mobile-wagon proof-of-concept.  A zero
-    // entry means "wagon movement test only".
+    // Compatibility note for the current prototype schema:
+    //   lwi_traveling_event.leader_entry -> MerchantEntry
+    //   lwi_traveling_event.wagon_entry  -> PackMuleEntry
+    //
+    // This lets us prove the all-creature caravan without forcing another
+    // schema migration while the traveling-event data model is still evolving.
     uint32 MerchantEntry = 0;
-
-    float WagonDistanceBehind = 4.5f;
-    float WagonLateralOffset = 0.0f;
-    float WagonVerticalOffset = 0.0f;
+    uint32 PackMuleEntry = 0;
+    uint8 PackMuleCount = 2;
 
     bool Enabled = false;
     std::vector<TravelingStopDefinition> Stops;
@@ -81,11 +78,9 @@ struct ActiveTravelingEvent
     uint32 StopIndex = 0;
     TravelingEventState State = TravelingEventState::Camped;
     uint32 StateTimerMs = 0;
-    uint32 WagonUpdateTimerMs = 0;
 
-    ObjectGuid LeaderGuid;
-    ObjectGuid WagonGuid;
     ObjectGuid MerchantGuid;
+    std::vector<ObjectGuid> PackMuleGuids;
 
     uint16 MapId = 0;
     std::vector<ObjectGuid> CampPropGuids;
@@ -113,12 +108,8 @@ private:
     void EndCamp(ActiveTravelingEvent& runtime, TravelingEventDefinition const& definition);
     void CleanupRuntime(ActiveTravelingEvent& runtime);
 
-    bool UpdateMobileWagon(ActiveTravelingEvent& runtime, TravelingEventDefinition const& definition);
-    bool PlaceMobileWagon(ActiveTravelingEvent& runtime, TravelingEventDefinition const& definition);
-
     void ApplyProtectedState(Creature* creature) const;
     Creature* GetCreature(uint16 mapId, ObjectGuid guid) const;
-    GameObject* GetGameObject(uint16 mapId, ObjectGuid guid) const;
 
     std::unordered_map<uint32, TravelingEventDefinition> _definitions;
     std::unordered_map<uint32, ActiveTravelingEvent> _active;
