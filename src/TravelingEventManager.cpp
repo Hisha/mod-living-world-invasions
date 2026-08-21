@@ -35,6 +35,7 @@ void TravelingEventManager::Reset()
 
     _active.clear();
     _campLayouts.clear();
+    _campNodeZOverrides.clear();
     _definitions.clear();
 }
 
@@ -48,6 +49,7 @@ void TravelingEventManager::LoadDefinitions()
 
     _active.clear();
     _campLayouts.clear();
+    _campNodeZOverrides.clear();
     _definitions.clear();
 
     // The current DB column names are intentionally retained for compatibility
@@ -171,10 +173,40 @@ void TravelingEventManager::LoadDefinitions()
         while (props->NextRow());
     }
 
+    QueryResult zOverrides = WorldDatabase.Query(
+        "SELECT `route_node_id`,`target_type`,`target_id`,`z_override` "
+        "FROM `lwi_traveling_camp_node_z_override` WHERE `enabled` = 1 "
+        "ORDER BY `route_node_id`,`target_type`,`target_id`");
+
+    if (zOverrides)
+    {
+        do
+        {
+            Field* fields = zOverrides->Fetch();
+
+            TravelingCampNodeZOverride overrideRow;
+            overrideRow.RouteNodeId = fields[0].Get<uint32>();
+            overrideRow.TargetType =
+                static_cast<TravelingCampTargetType>(fields[1].Get<uint8>());
+            overrideRow.TargetId = fields[2].Get<uint32>();
+            overrideRow.ZOverride = fields[3].Get<float>();
+
+            uint64 const key =
+                (static_cast<uint64>(overrideRow.RouteNodeId) << 32) |
+                (static_cast<uint64>(static_cast<uint8>(overrideRow.TargetType)) << 24) |
+                static_cast<uint64>(overrideRow.TargetId & 0x00FFFFFF);
+
+            _campNodeZOverrides[key] = overrideRow;
+        }
+        while (zOverrides->NextRow());
+    }
+
     LOG_INFO("server.loading",
-        "[LWI Travel] Loaded {} traveling-world-event definition(s) and {} reusable camp layout(s).",
+        "[LWI Travel] Loaded {} traveling-world-event definition(s), {} reusable camp layout(s), "
+        "and {} camp-node Z override(s).",
         _definitions.size(),
-        _campLayouts.size());
+        _campLayouts.size(),
+        _campNodeZOverrides.size());
 }
 
 TravelingEventDefinition const* TravelingEventManager::GetDefinition(uint32 eventId) const
@@ -193,6 +225,20 @@ TravelingCampLayoutDefinition const* TravelingEventManager::GetCampLayout(uint32
         return nullptr;
 
     return &itr->second;
+}
+
+float TravelingEventManager::GetCampNodeZOverride(
+    uint32 routeNodeId,
+    TravelingCampTargetType targetType,
+    uint32 targetId) const
+{
+    uint64 const key =
+        (static_cast<uint64>(routeNodeId) << 32) |
+        (static_cast<uint64>(static_cast<uint8>(targetType)) << 24) |
+        static_cast<uint64>(targetId & 0x00FFFFFF);
+
+    auto itr = _campNodeZOverrides.find(key);
+    return itr == _campNodeZOverrides.end() ? 0.0f : itr->second.ZOverride;
 }
 
 Creature* TravelingEventManager::GetCreature(uint16 mapId, ObjectGuid guid) const
@@ -622,7 +668,9 @@ bool TravelingEventManager::BeginCamp(
         buildCampPosition(
             layout->MerchantForward,
             layout->MerchantRight,
-            layout->MerchantZ,
+            layout->MerchantZ + GetCampNodeZOverride(
+                stop.RouteNodeId,
+                TravelingCampTargetType::Merchant),
             layout->MerchantOrientationOffset,
             x, y, z, orientation);
         merchant->NearTeleportTo(x, y, z, orientation);
@@ -632,7 +680,9 @@ bool TravelingEventManager::BeginCamp(
             buildCampPosition(
                 layout->Mule1Forward,
                 layout->Mule1Right,
-                layout->Mule1Z,
+                layout->Mule1Z + GetCampNodeZOverride(
+                    stop.RouteNodeId,
+                    TravelingCampTargetType::Mule1),
                 layout->Mule1OrientationOffset,
                 x, y, z, orientation);
             mules[0]->NearTeleportTo(x, y, z, orientation);
@@ -643,7 +693,9 @@ bool TravelingEventManager::BeginCamp(
             buildCampPosition(
                 layout->Mule2Forward,
                 layout->Mule2Right,
-                layout->Mule2Z,
+                layout->Mule2Z + GetCampNodeZOverride(
+                    stop.RouteNodeId,
+                    TravelingCampTargetType::Mule2),
                 layout->Mule2OrientationOffset,
                 x, y, z, orientation);
             mules[1]->NearTeleportTo(x, y, z, orientation);
@@ -670,7 +722,10 @@ bool TravelingEventManager::BeginCamp(
             buildCampPosition(
                 prop.ForwardOffset,
                 prop.RightOffset,
-                prop.ZOffset,
+                prop.ZOffset + GetCampNodeZOverride(
+                    stop.RouteNodeId,
+                    TravelingCampTargetType::LayoutProp,
+                    prop.Id),
                 prop.OrientationOffset,
                 x, y, z, orientation);
 

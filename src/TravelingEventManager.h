@@ -52,6 +52,22 @@ struct TravelingCampPropDefinition
     float OrientationOffset = 0.0f;
 };
 
+enum class TravelingCampTargetType : uint8
+{
+    Merchant = 1,
+    Mule1 = 2,
+    Mule2 = 3,
+    LayoutProp = 4
+};
+
+struct TravelingCampNodeZOverride
+{
+    uint32 RouteNodeId = 0;
+    TravelingCampTargetType TargetType = TravelingCampTargetType::LayoutProp;
+    uint32 TargetId = 0;
+    float ZOverride = 0.0f;
+};
+
 struct TravelingCampLayoutDefinition
 {
     uint32 Id = 0;
@@ -127,6 +143,10 @@ public:
 private:
     TravelingEventDefinition const* GetDefinition(uint32 eventId) const;
     TravelingCampLayoutDefinition const* GetCampLayout(uint32 layoutId) const;
+    float GetCampNodeZOverride(
+        uint32 routeNodeId,
+        TravelingCampTargetType targetType,
+        uint32 targetId = 0) const;
     bool SpawnRuntime(TravelingEventDefinition const& definition, ActiveTravelingEvent& runtime, std::string* error);
     bool BeginTravel(ActiveTravelingEvent& runtime, TravelingEventDefinition const& definition);
     bool BeginCamp(ActiveTravelingEvent& runtime, TravelingEventDefinition const& definition);
@@ -137,6 +157,7 @@ private:
     Creature* GetCreature(uint16 mapId, ObjectGuid guid) const;
 
     std::unordered_map<uint32, TravelingCampLayoutDefinition> _campLayouts;
+    std::unordered_map<uint64, TravelingCampNodeZOverride> _campNodeZOverrides;
     std::unordered_map<uint32, TravelingEventDefinition> _definitions;
     std::unordered_map<uint32, ActiveTravelingEvent> _active;
 };

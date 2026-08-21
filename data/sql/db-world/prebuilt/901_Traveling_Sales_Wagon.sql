@@ -10,6 +10,64 @@ SET @MERCHANT_BASE := 221;       -- Dannus: display 23 / merchant visual
 SET @PACK_MULE_ENTRY := 5525;    -- Caravan Packhorse
 SET @CAMP_LAYOUT_ID := 1;         -- Reusable Traveling Salesman camp
 
+-- LWI-owned custom camp GameObjects.
+SET @GO_SALESMAN_TENT := 14999001;      -- clones stock 180031
+SET @GO_SALESMAN_CRATE := 14999002;     -- clones stock 271
+SET @GO_SALESMAN_CAMPFIRE := 14999003;  -- clones stock 1798
+
+-- --------------------------------------------------------------------------
+-- Custom LWI-owned camp GameObject templates.
+-- One custom ID per logical asset; individual placements remain separate
+-- layout-prop rows.
+-- --------------------------------------------------------------------------
+DELETE FROM `gameobject_template`
+WHERE `entry` IN (@GO_SALESMAN_TENT,@GO_SALESMAN_CRATE,@GO_SALESMAN_CAMPFIRE);
+
+INSERT INTO `gameobject_template`
+    (`entry`,`type`,`displayId`,`name`,`IconName`,`castBarCaption`,`unk1`,`size`,
+     `Data0`,`Data1`,`Data2`,`Data3`,`Data4`,`Data5`,`Data6`,`Data7`,
+     `Data8`,`Data9`,`Data10`,`Data11`,`Data12`,`Data13`,`Data14`,`Data15`,
+     `Data16`,`Data17`,`Data18`,`Data19`,`Data20`,`Data21`,`Data22`,`Data23`,
+     `AIName`,`ScriptName`,`VerifiedBuild`)
+SELECT
+    @GO_SALESMAN_TENT,`type`,`displayId`,'LWI Traveling Salesman Tent',
+    `IconName`,`castBarCaption`,`unk1`,`size`,
+    `Data0`,`Data1`,`Data2`,`Data3`,`Data4`,`Data5`,`Data6`,`Data7`,
+    `Data8`,`Data9`,`Data10`,`Data11`,`Data12`,`Data13`,`Data14`,`Data15`,
+    `Data16`,`Data17`,`Data18`,`Data19`,`Data20`,`Data21`,`Data22`,`Data23`,
+    `AIName`,`ScriptName`,`VerifiedBuild`
+FROM `gameobject_template` WHERE `entry` = 180031;
+
+INSERT INTO `gameobject_template`
+    (`entry`,`type`,`displayId`,`name`,`IconName`,`castBarCaption`,`unk1`,`size`,
+     `Data0`,`Data1`,`Data2`,`Data3`,`Data4`,`Data5`,`Data6`,`Data7`,
+     `Data8`,`Data9`,`Data10`,`Data11`,`Data12`,`Data13`,`Data14`,`Data15`,
+     `Data16`,`Data17`,`Data18`,`Data19`,`Data20`,`Data21`,`Data22`,`Data23`,
+     `AIName`,`ScriptName`,`VerifiedBuild`)
+SELECT
+    @GO_SALESMAN_CRATE,`type`,`displayId`,'LWI Traveling Salesman Crates',
+    `IconName`,`castBarCaption`,`unk1`,`size`,
+    `Data0`,`Data1`,`Data2`,`Data3`,`Data4`,`Data5`,`Data6`,`Data7`,
+    `Data8`,`Data9`,`Data10`,`Data11`,`Data12`,`Data13`,`Data14`,`Data15`,
+    `Data16`,`Data17`,`Data18`,`Data19`,`Data20`,`Data21`,`Data22`,`Data23`,
+    `AIName`,`ScriptName`,`VerifiedBuild`
+FROM `gameobject_template` WHERE `entry` = 271;
+
+INSERT INTO `gameobject_template`
+    (`entry`,`type`,`displayId`,`name`,`IconName`,`castBarCaption`,`unk1`,`size`,
+     `Data0`,`Data1`,`Data2`,`Data3`,`Data4`,`Data5`,`Data6`,`Data7`,
+     `Data8`,`Data9`,`Data10`,`Data11`,`Data12`,`Data13`,`Data14`,`Data15`,
+     `Data16`,`Data17`,`Data18`,`Data19`,`Data20`,`Data21`,`Data22`,`Data23`,
+     `AIName`,`ScriptName`,`VerifiedBuild`)
+SELECT
+    @GO_SALESMAN_CAMPFIRE,`type`,`displayId`,'LWI Traveling Salesman Campfire',
+    `IconName`,`castBarCaption`,`unk1`,`size`,
+    `Data0`,`Data1`,`Data2`,`Data3`,`Data4`,`Data5`,`Data6`,`Data7`,
+    `Data8`,`Data9`,`Data10`,`Data11`,`Data12`,`Data13`,`Data14`,`Data15`,
+    `Data16`,`Data17`,`Data18`,`Data19`,`Data20`,`Data21`,`Data22`,`Data23`,
+    `AIName`,`ScriptName`,`VerifiedBuild`
+FROM `gameobject_template` WHERE `entry` = 1798;
+
 -- --------------------------------------------------------------------------
 -- Custom Traveling Salesman creature.
 -- Keep it below LWI's generated-creature allocation range (15000000+).
@@ -105,9 +163,9 @@ INSERT INTO `lwi_traveling_camp_layout`
      `enabled`,`comment`)
 VALUES
     (@CAMP_LAYOUT_ID,'Traveling Salesman Basic Camp',
-     0.0, 6.0, 0, 0,
-    -1.0,-6.0, 0, 0,
-    -4.5,-6.5, 0, 0,
+     0.5, 1.5, 0, 0,
+     0.0,-3.0, 0, 0,
+    -2.5,-3.5, 0, 0,
      1,'Reusable roadside camp centered and rotated by the stop route node.');
 
 INSERT INTO `lwi_traveling_camp_layout_prop`
@@ -115,10 +173,31 @@ INSERT INTO `lwi_traveling_camp_layout_prop`
      `forward_offset`,`right_offset`,`z_offset`,`orientation_offset`,
      `enabled`,`comment`)
 VALUES
-    (901101,@CAMP_LAYOUT_ID,180031, 4.0, 0.0,0,0,1,'Food Tent - purple/white'),
-    (901102,@CAMP_LAYOUT_ID,271,    4.0,-3.0,0,0,1,'Crates - left of tent'),
-    (901103,@CAMP_LAYOUT_ID,271,    4.0, 3.0,0,0,1,'Crates - right of tent'),
-    (901104,@CAMP_LAYOUT_ID,1798,  -6.5, 1.0,0,0,1,'Camp Fire');
+    (901101,@CAMP_LAYOUT_ID,@GO_SALESMAN_TENT, 4.0, 0.0,0,0,1,'Food Tent - purple/white'),
+    (901102,@CAMP_LAYOUT_ID,@GO_SALESMAN_CRATE,    4.0,-3.0,0,0,1,'Crates - left of tent'),
+    (901103,@CAMP_LAYOUT_ID,@GO_SALESMAN_CRATE,    4.0, 3.0,0,0,1,'Crates - right of tent'),
+    (901104,@CAMP_LAYOUT_ID,@GO_SALESMAN_CAMPFIRE,  -4.0, 2.5,0,0,1,'Camp Fire');
+
+-- --------------------------------------------------------------------------
+-- Per-physical-camp terrain Z overrides.
+--
+-- 240 = Goldshire camp
+-- 250 = Stormwind camp
+-- 260 = Sentinel Hill camp
+--
+-- target_type: 1=merchant, 2=mule1, 3=mule2, 4=layout prop
+-- For props, target_id is the layout-prop row ID:
+--   901101 tent, 901102 left crates, 901103 right crates, 901104 campfire.
+--
+-- Goldshire's campfire is the first known correction from testing.
+-- --------------------------------------------------------------------------
+DELETE FROM `lwi_traveling_camp_node_z_override`
+WHERE `route_node_id` IN (240,250,260);
+
+INSERT INTO `lwi_traveling_camp_node_z_override`
+    (`id`,`route_node_id`,`target_type`,`target_id`,`z_override`,`enabled`,`comment`)
+VALUES
+    (901201,240,4,901104,-0.75,1,'Goldshire: lower campfire to terrain');
 
 INSERT INTO `lwi_traveling_event_stop`
     (`id`,`event_id`,`stop_order`,`route_node_id`,`camp_layout_id`,`dwell_seconds`,
