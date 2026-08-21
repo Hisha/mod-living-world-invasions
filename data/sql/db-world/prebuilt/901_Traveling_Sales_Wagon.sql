@@ -85,15 +85,15 @@ INSERT INTO `lwi_traveling_event_stop`
     (`id`,`event_id`,`stop_order`,`route_node_id`,`dwell_seconds`,
      `arrival_text`,`departure_text`,`enabled`,`comment`)
 VALUES
-    (90101,@EVENT_ID,10,10,30,
+    (90101,@EVENT_ID,10,250,30,
      'I will be here for a short while if you need supplies.',
      'Come along, you two. Goldshire is next.',1,'Stormwind Gate stop'),
-    (90102,@EVENT_ID,20,20,30,
+    (90102,@EVENT_ID,20,240,30,
      'Fresh goods from Stormwind! Have a look while we rest.',
      'Time to get moving. Westfall is waiting.',1,'Goldshire outbound stop'),
-    (90103,@EVENT_ID,30,70,30,
+    (90103,@EVENT_ID,30,260,30,
      'Sentinel Hill! Supplies for anyone who needs them.',
      'Back toward Goldshire, then.',1,'Sentinel Hill stop'),
-    (90104,@EVENT_ID,40,20,30,
+    (90104,@EVENT_ID,40,240,30,
      'Goldshire again. We will rest here for a moment.',
      'Stormwind Gate is our next stop.',1,'Goldshire return stop');
