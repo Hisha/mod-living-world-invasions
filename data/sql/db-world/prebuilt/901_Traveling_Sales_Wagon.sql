@@ -8,6 +8,7 @@ SET @EVENT_ID := 1;
 SET @MERCHANT_ENTRY := 14999990;
 SET @MERCHANT_BASE := 221;       -- Dannus: display 23 / merchant visual
 SET @PACK_MULE_ENTRY := 5525;    -- Caravan Packhorse
+SET @CAMP_LAYOUT_ID := 1;         -- Reusable Traveling Salesman camp
 
 -- --------------------------------------------------------------------------
 -- Custom Traveling Salesman creature.
@@ -68,8 +69,10 @@ VALUES
 --   leader_entry = merchant creature / route owner
 --   wagon_entry  = pack-mule creature
 -- --------------------------------------------------------------------------
-DELETE FROM `lwi_traveling_event_prop` WHERE `event_id` = @EVENT_ID;
+DELETE FROM `lwi_traveling_event_prop` WHERE `event_id` = @EVENT_ID; -- legacy table, kept clean
 DELETE FROM `lwi_traveling_event_stop` WHERE `event_id` = @EVENT_ID;
+DELETE FROM `lwi_traveling_camp_layout_prop` WHERE `layout_id` = @CAMP_LAYOUT_ID;
+DELETE FROM `lwi_traveling_camp_layout` WHERE `id` = @CAMP_LAYOUT_ID;
 DELETE FROM `lwi_traveling_event` WHERE `id` = @EVENT_ID;
 
 INSERT INTO `lwi_traveling_event`
@@ -81,19 +84,55 @@ VALUES
      0,0,0,0,1,
      'Custom traveling merchant with two Pack Mule followers; dedicated caravan formation.');
 
+-- --------------------------------------------------------------------------
+-- One reusable campsite layout. The stop route node is the center/origin.
+--
+--                 Crate     Tent     Crate
+--
+--            Mule #1                Merchant
+--          Mule #2
+--
+--                                     Fire
+--
+-- Offsets below are intentionally easy to tune in SQL after the first visual
+-- test. +forward follows the route-node orientation; +right is local right.
+-- --------------------------------------------------------------------------
+INSERT INTO `lwi_traveling_camp_layout`
+    (`id`,`name`,
+     `merchant_forward`,`merchant_right`,`merchant_z`,`merchant_orientation_offset`,
+     `mule1_forward`,`mule1_right`,`mule1_z`,`mule1_orientation_offset`,
+     `mule2_forward`,`mule2_right`,`mule2_z`,`mule2_orientation_offset`,
+     `enabled`,`comment`)
+VALUES
+    (@CAMP_LAYOUT_ID,'Traveling Salesman Basic Camp',
+     0.5, 1.5, 0, 0,
+     0.0,-3.0, 0, 0,
+    -2.5,-3.5, 0, 0,
+     1,'Reusable roadside camp centered and rotated by the stop route node.');
+
+INSERT INTO `lwi_traveling_camp_layout_prop`
+    (`id`,`layout_id`,`gameobject_entry`,
+     `forward_offset`,`right_offset`,`z_offset`,`orientation_offset`,
+     `enabled`,`comment`)
+VALUES
+    (901101,@CAMP_LAYOUT_ID,180031, 4.0, 0.0,0,0,1,'Food Tent - purple/white'),
+    (901102,@CAMP_LAYOUT_ID,271,    4.0,-3.0,0,0,1,'Crates - left of tent'),
+    (901103,@CAMP_LAYOUT_ID,271,    4.0, 3.0,0,0,1,'Crates - right of tent'),
+    (901104,@CAMP_LAYOUT_ID,1798,  -4.0, 2.5,0,0,1,'Camp Fire');
+
 INSERT INTO `lwi_traveling_event_stop`
-    (`id`,`event_id`,`stop_order`,`route_node_id`,`dwell_seconds`,
+    (`id`,`event_id`,`stop_order`,`route_node_id`,`camp_layout_id`,`dwell_seconds`,
      `arrival_text`,`departure_text`,`enabled`,`comment`)
 VALUES
-    (90101,@EVENT_ID,10,250,30,
+    (90101,@EVENT_ID,10,250,@CAMP_LAYOUT_ID,30,
      'I will be here for a short while if you need supplies.',
      'Come along, you two. Goldshire is next.',1,'Stormwind Gate stop'),
-    (90102,@EVENT_ID,20,240,30,
+    (90102,@EVENT_ID,20,240,@CAMP_LAYOUT_ID,30,
      'Fresh goods from Stormwind! Have a look while we rest.',
      'Time to get moving. Westfall is waiting.',1,'Goldshire outbound stop'),
-    (90103,@EVENT_ID,30,260,30,
+    (90103,@EVENT_ID,30,260,@CAMP_LAYOUT_ID,30,
      'Sentinel Hill! Supplies for anyone who needs them.',
      'Back toward Goldshire, then.',1,'Sentinel Hill stop'),
-    (90104,@EVENT_ID,40,240,30,
+    (90104,@EVENT_ID,40,240,@CAMP_LAYOUT_ID,30,
      'Goldshire again. We will rest here for a moment.',
      'Stormwind Gate is our next stop.',1,'Goldshire return stop');

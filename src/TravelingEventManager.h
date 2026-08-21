@@ -35,20 +35,45 @@ struct TravelingStopDefinition
     uint32 EventId = 0;
     uint32 StopOrder = 0;
     uint32 RouteNodeId = 0;
+    uint32 CampLayoutId = 0;
     uint32 DwellSeconds = 120;
     std::string ArrivalText;
     std::string DepartureText;
 };
 
-struct TravelingPropDefinition
+struct TravelingCampPropDefinition
 {
     uint32 Id = 0;
-    uint32 EventId = 0;
+    uint32 LayoutId = 0;
     uint32 GameObjectEntry = 0;
-    float OffsetX = 0.0f;
-    float OffsetY = 0.0f;
-    float OffsetZ = 0.0f;
+    float ForwardOffset = 0.0f;
+    float RightOffset = 0.0f;
+    float ZOffset = 0.0f;
     float OrientationOffset = 0.0f;
+};
+
+struct TravelingCampLayoutDefinition
+{
+    uint32 Id = 0;
+    std::string Name;
+
+    float MerchantForward = 0.0f;
+    float MerchantRight = 0.0f;
+    float MerchantZ = 0.0f;
+    float MerchantOrientationOffset = 0.0f;
+
+    float Mule1Forward = 0.0f;
+    float Mule1Right = 0.0f;
+    float Mule1Z = 0.0f;
+    float Mule1OrientationOffset = 0.0f;
+
+    float Mule2Forward = 0.0f;
+    float Mule2Right = 0.0f;
+    float Mule2Z = 0.0f;
+    float Mule2OrientationOffset = 0.0f;
+
+    bool Enabled = true;
+    std::vector<TravelingCampPropDefinition> Props;
 };
 
 struct TravelingEventDefinition
@@ -68,7 +93,6 @@ struct TravelingEventDefinition
 
     bool Enabled = false;
     std::vector<TravelingStopDefinition> Stops;
-    std::vector<TravelingPropDefinition> Props;
 };
 
 struct ActiveTravelingEvent
@@ -102,6 +126,7 @@ public:
 
 private:
     TravelingEventDefinition const* GetDefinition(uint32 eventId) const;
+    TravelingCampLayoutDefinition const* GetCampLayout(uint32 layoutId) const;
     bool SpawnRuntime(TravelingEventDefinition const& definition, ActiveTravelingEvent& runtime, std::string* error);
     bool BeginTravel(ActiveTravelingEvent& runtime, TravelingEventDefinition const& definition);
     bool BeginCamp(ActiveTravelingEvent& runtime, TravelingEventDefinition const& definition);
@@ -111,6 +136,7 @@ private:
     void ApplyProtectedState(Creature* creature) const;
     Creature* GetCreature(uint16 mapId, ObjectGuid guid) const;
 
+    std::unordered_map<uint32, TravelingCampLayoutDefinition> _campLayouts;
     std::unordered_map<uint32, TravelingEventDefinition> _definitions;
     std::unordered_map<uint32, ActiveTravelingEvent> _active;
 };

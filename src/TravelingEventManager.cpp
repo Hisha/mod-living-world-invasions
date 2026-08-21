@@ -14,6 +14,7 @@
 #include "TemporarySummon.h"
 
 #include <algorithm>
+#include <cmath>
 #include <sstream>
 
 namespace lwi
@@ -33,6 +34,7 @@ void TravelingEventManager::Reset()
     }
 
     _active.clear();
+    _campLayouts.clear();
     _definitions.clear();
 }
 
@@ -45,6 +47,7 @@ void TravelingEventManager::LoadDefinitions()
     }
 
     _active.clear();
+    _campLayouts.clear();
     _definitions.clear();
 
     // The current DB column names are intentionally retained for compatibility
@@ -75,7 +78,7 @@ void TravelingEventManager::LoadDefinitions()
     }
 
     QueryResult stops = WorldDatabase.Query(
-        "SELECT `id`,`event_id`,`stop_order`,`route_node_id`,`dwell_seconds`,`arrival_text`,`departure_text` "
+        "SELECT `id`,`event_id`,`stop_order`,`route_node_id`,`camp_layout_id`,`dwell_seconds`,`arrival_text`,`departure_text` "
         "FROM `lwi_traveling_event_stop` WHERE `enabled` = 1 ORDER BY `event_id`,`stop_order`,`id`");
 
     if (stops)
@@ -94,37 +97,73 @@ void TravelingEventManager::LoadDefinitions()
             stop.EventId = eventId;
             stop.StopOrder = fields[2].Get<uint32>();
             stop.RouteNodeId = fields[3].Get<uint32>();
-            stop.DwellSeconds = std::max<uint32>(1, fields[4].Get<uint32>());
-            stop.ArrivalText = fields[5].Get<std::string>();
-            stop.DepartureText = fields[6].Get<std::string>();
+            stop.CampLayoutId = fields[4].Get<uint32>();
+            stop.DwellSeconds = std::max<uint32>(1, fields[5].Get<uint32>());
+            stop.ArrivalText = fields[6].Get<std::string>();
+            stop.DepartureText = fields[7].Get<std::string>();
 
             itr->second.Stops.push_back(std::move(stop));
         }
         while (stops->NextRow());
     }
 
+    QueryResult layouts = WorldDatabase.Query(
+        "SELECT `id`,`name`,"
+        "`merchant_forward`,`merchant_right`,`merchant_z`,`merchant_orientation_offset`,"
+        "`mule1_forward`,`mule1_right`,`mule1_z`,`mule1_orientation_offset`,"
+        "`mule2_forward`,`mule2_right`,`mule2_z`,`mule2_orientation_offset`,`enabled` "
+        "FROM `lwi_traveling_camp_layout` ORDER BY `id`");
+
+    if (layouts)
+    {
+        do
+        {
+            Field* fields = layouts->Fetch();
+
+            TravelingCampLayoutDefinition layout;
+            layout.Id = fields[0].Get<uint32>();
+            layout.Name = fields[1].Get<std::string>();
+            layout.MerchantForward = fields[2].Get<float>();
+            layout.MerchantRight = fields[3].Get<float>();
+            layout.MerchantZ = fields[4].Get<float>();
+            layout.MerchantOrientationOffset = fields[5].Get<float>();
+            layout.Mule1Forward = fields[6].Get<float>();
+            layout.Mule1Right = fields[7].Get<float>();
+            layout.Mule1Z = fields[8].Get<float>();
+            layout.Mule1OrientationOffset = fields[9].Get<float>();
+            layout.Mule2Forward = fields[10].Get<float>();
+            layout.Mule2Right = fields[11].Get<float>();
+            layout.Mule2Z = fields[12].Get<float>();
+            layout.Mule2OrientationOffset = fields[13].Get<float>();
+            layout.Enabled = fields[14].Get<bool>();
+
+            _campLayouts.emplace(layout.Id, std::move(layout));
+        }
+        while (layouts->NextRow());
+    }
+
     QueryResult props = WorldDatabase.Query(
-        "SELECT `id`,`event_id`,`gameobject_entry`,`offset_x`,`offset_y`,`offset_z`,`orientation_offset` "
-        "FROM `lwi_traveling_event_prop` WHERE `enabled` = 1 ORDER BY `event_id`,`id`");
+        "SELECT `id`,`layout_id`,`gameobject_entry`,`forward_offset`,`right_offset`,`z_offset`,`orientation_offset` "
+        "FROM `lwi_traveling_camp_layout_prop` WHERE `enabled` = 1 ORDER BY `layout_id`,`id`");
 
     if (props)
     {
         do
         {
             Field* fields = props->Fetch();
-            uint32 const eventId = fields[1].Get<uint32>();
+            uint32 const layoutId = fields[1].Get<uint32>();
 
-            auto itr = _definitions.find(eventId);
-            if (itr == _definitions.end())
+            auto itr = _campLayouts.find(layoutId);
+            if (itr == _campLayouts.end())
                 continue;
 
-            TravelingPropDefinition prop;
+            TravelingCampPropDefinition prop;
             prop.Id = fields[0].Get<uint32>();
-            prop.EventId = eventId;
+            prop.LayoutId = layoutId;
             prop.GameObjectEntry = fields[2].Get<uint32>();
-            prop.OffsetX = fields[3].Get<float>();
-            prop.OffsetY = fields[4].Get<float>();
-            prop.OffsetZ = fields[5].Get<float>();
+            prop.ForwardOffset = fields[3].Get<float>();
+            prop.RightOffset = fields[4].Get<float>();
+            prop.ZOffset = fields[5].Get<float>();
             prop.OrientationOffset = fields[6].Get<float>();
 
             itr->second.Props.push_back(std::move(prop));
@@ -133,14 +172,24 @@ void TravelingEventManager::LoadDefinitions()
     }
 
     LOG_INFO("server.loading",
-        "[LWI Travel] Loaded {} traveling-world-event definition(s).",
-        _definitions.size());
+        "[LWI Travel] Loaded {} traveling-world-event definition(s) and {} reusable camp layout(s).",
+        _definitions.size(),
+        _campLayouts.size());
 }
 
 TravelingEventDefinition const* TravelingEventManager::GetDefinition(uint32 eventId) const
 {
     auto itr = _definitions.find(eventId);
     if (itr == _definitions.end())
+        return nullptr;
+
+    return &itr->second;
+}
+
+TravelingCampLayoutDefinition const* TravelingEventManager::GetCampLayout(uint32 layoutId) const
+{
+    auto itr = _campLayouts.find(layoutId);
+    if (itr == _campLayouts.end() || !itr->second.Enabled)
         return nullptr;
 
     return &itr->second;
@@ -519,38 +568,114 @@ bool TravelingEventManager::BeginCamp(
     if (!merchant)
         return false;
 
+    std::vector<Creature*> mules;
+    mules.reserve(runtime.PackMuleGuids.size());
     for (ObjectGuid const& guid : runtime.PackMuleGuids)
     {
         Creature* mule = GetCreature(runtime.MapId, guid);
         if (!mule)
             return false;
-
-        ApplyProtectedState(mule);
+        mules.push_back(mule);
     }
 
+    TravelingCampLayoutDefinition const* layout =
+        stop.CampLayoutId != 0 ? GetCampLayout(stop.CampLayoutId) : nullptr;
+
+    if (stop.CampLayoutId != 0 && !layout)
+    {
+        LOG_ERROR("server.loading",
+            "[LWI Travel] Event {} stop {} references missing/disabled camp layout {}.",
+            definition.Id,
+            stop.Id,
+            stop.CampLayoutId);
+        return false;
+    }
+
+    auto buildCampPosition = [node](
+        float forward,
+        float right,
+        float zOffset,
+        float orientationOffset,
+        float& x,
+        float& y,
+        float& z,
+        float& orientation)
+    {
+        float const cosO = std::cos(node->Orientation);
+        float const sinO = std::sin(node->Orientation);
+
+        // Local camp coordinates:
+        //   +forward = direction the camp node faces
+        //   +right   = right side of that facing
+        x = node->X + cosO * forward - sinO * right;
+        y = node->Y + sinO * forward + cosO * right;
+        z = node->Z + zOffset;
+        orientation = node->Orientation + orientationOffset;
+    };
+
     ApplyProtectedState(merchant);
+
+    if (layout)
+    {
+        float x, y, z, orientation;
+
+        buildCampPosition(
+            layout->MerchantForward,
+            layout->MerchantRight,
+            layout->MerchantZ,
+            layout->MerchantOrientationOffset,
+            x, y, z, orientation);
+        merchant->NearTeleportTo(x, y, z, orientation);
+
+        if (mules.size() > 0)
+        {
+            buildCampPosition(
+                layout->Mule1Forward,
+                layout->Mule1Right,
+                layout->Mule1Z,
+                layout->Mule1OrientationOffset,
+                x, y, z, orientation);
+            mules[0]->NearTeleportTo(x, y, z, orientation);
+        }
+
+        if (mules.size() > 1)
+        {
+            buildCampPosition(
+                layout->Mule2Forward,
+                layout->Mule2Right,
+                layout->Mule2Z,
+                layout->Mule2OrientationOffset,
+                x, y, z, orientation);
+            mules[1]->NearTeleportTo(x, y, z, orientation);
+        }
+    }
+
+    for (Creature* mule : mules)
+        ApplyProtectedState(mule);
+
     merchant->SetNpcFlag(UNIT_NPC_FLAG_VENDOR);
 
     if (!stop.ArrivalText.empty())
         merchant->Say(stop.ArrivalText, LANG_UNIVERSAL);
 
-    // Camp props remain supported but are deliberately optional.  For the
-    // current test the prebuilt contains none; this pass is proving that the
-    // merchant and both mules can complete the route together.
     Map* map = sMapMgr->FindMap(node->MapId, 0);
-    if (map)
+    if (map && layout)
     {
-        for (TravelingPropDefinition const& prop : definition.Props)
+        for (TravelingCampPropDefinition const& prop : layout->Props)
         {
             if (prop.GameObjectEntry == 0)
                 continue;
 
+            float x, y, z, orientation;
+            buildCampPosition(
+                prop.ForwardOffset,
+                prop.RightOffset,
+                prop.ZOffset,
+                prop.OrientationOffset,
+                x, y, z, orientation);
+
             Position propPosition;
-            propPosition.Relocate(
-                node->X + prop.OffsetX,
-                node->Y + prop.OffsetY,
-                node->Z + prop.OffsetZ,
-                node->Orientation + prop.OrientationOffset);
+            propPosition.Relocate(x, y, z, orientation);
 
             GameObject* gameObject = map->SummonGameObject(
                 prop.GameObjectEntry,
@@ -571,11 +696,13 @@ bool TravelingEventManager::BeginCamp(
     runtime.StateTimerMs = std::max<uint32>(1, stop.DwellSeconds) * IN_MILLISECONDS;
 
     LOG_INFO("server.loading",
-        "[LWI Travel] Event {} stopped at route node {} for {} second(s); merchant vending enabled; "
-        "{} pack mule(s) remain with the caravan; {} camp prop(s) spawned.",
+        "[LWI Travel] Event {} stopped at route node {} for {} second(s); camp layout={} ({}), "
+        "merchant vending enabled; {} pack mule(s) parked; {} camp prop(s) spawned.",
         definition.Id,
         stop.RouteNodeId,
         stop.DwellSeconds,
+        stop.CampLayoutId,
+        layout ? layout->Name : "none",
         runtime.PackMuleGuids.size(),
         runtime.CampPropGuids.size());
 

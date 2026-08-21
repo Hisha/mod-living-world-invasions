@@ -1099,8 +1099,8 @@ bool MovementController::BeginCurrentNode(ActiveRuntimeMovement& movement)
             }
         }
 
-        // Traveling caravans always use walking speed, regardless of the
-        // movement profile used by the underlying authored route.
+        // Traveling caravans always walk, regardless of the movement profile
+        // used by the underlying authored route.
         if (movement.RouteMovement &&
             group->RouteFormation == RouteFormationProfile::TravelingCaravan)
         {
