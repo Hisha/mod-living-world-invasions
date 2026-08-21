@@ -105,9 +105,9 @@ INSERT INTO `lwi_traveling_camp_layout`
      `enabled`,`comment`)
 VALUES
     (@CAMP_LAYOUT_ID,'Traveling Salesman Basic Camp',
-     0.0, 3.5, 0, 0,
-    -1.0,-4.5, 0, 0,
-    -3.5,-4.5, 0, 0,
+     0.0, 6.0, 0, 0,
+    -1.0,-6.0, 0, 0,
+    -4.5,-6.5, 0, 0,
      1,'Reusable roadside camp centered and rotated by the stop route node.');
 
 INSERT INTO `lwi_traveling_camp_layout_prop`
@@ -118,7 +118,7 @@ VALUES
     (901101,@CAMP_LAYOUT_ID,180031, 4.0, 0.0,0,0,1,'Food Tent - purple/white'),
     (901102,@CAMP_LAYOUT_ID,271,    4.0,-3.0,0,0,1,'Crates - left of tent'),
     (901103,@CAMP_LAYOUT_ID,271,    4.0, 3.0,0,0,1,'Crates - right of tent'),
-    (901104,@CAMP_LAYOUT_ID,1798,  -5.0, 1.0,0,0,1,'Camp Fire');
+    (901104,@CAMP_LAYOUT_ID,1798,  -6.5, 1.0,0,0,1,'Camp Fire');
 
 INSERT INTO `lwi_traveling_event_stop`
     (`id`,`event_id`,`stop_order`,`route_node_id`,`camp_layout_id`,`dwell_seconds`,
