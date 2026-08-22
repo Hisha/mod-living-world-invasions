@@ -165,7 +165,7 @@ VALUES
     (@CAMP_LAYOUT_ID,'Traveling Salesman Basic Camp',
      0.5, 1.5, 0, 3.14159,
     -3.0,-7.5, 0, 0,
-    -4.5,-8.0, 0, 0,
+    -4.5,-9.0, 0, 0,
      1,'Reusable roadside camp centered and rotated by the stop route node.');
 
 INSERT INTO `lwi_traveling_camp_layout_prop`
