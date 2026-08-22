@@ -164,8 +164,8 @@ INSERT INTO `lwi_traveling_camp_layout`
 VALUES
     (@CAMP_LAYOUT_ID,'Traveling Salesman Basic Camp',
      0.5, 1.5, 0, 3.14159,
-     3.0,-6.0, 0, 0,
-    -4.5,-6.5, 0, 0,
+    -3.0,-7.5, 0, 0,
+    -4.5,-8.0, 0, 0,
      1,'Reusable roadside camp centered and rotated by the stop route node.');
 
 INSERT INTO `lwi_traveling_camp_layout_prop`
@@ -175,8 +175,8 @@ INSERT INTO `lwi_traveling_camp_layout_prop`
 VALUES
     (901101,@CAMP_LAYOUT_ID,@GO_SALESMAN_TENT, 4.0, 0.0,0,0,1,'Food Tent - purple/white'),
     (901102,@CAMP_LAYOUT_ID,@GO_SALESMAN_CRATE,    4.0,-3.0,0,0,1,'Crates - left of tent'),
-    (901103,@CAMP_LAYOUT_ID,@GO_SALESMAN_CRATE,    4.0, 3.0,0,0,1,'Crates - right of tent'),
-    (901104,@CAMP_LAYOUT_ID,@GO_SALESMAN_CAMPFIRE,  -6.0, 5,0,0,1,'Camp Fire');
+    (901103,@CAMP_LAYOUT_ID,@GO_SALESMAN_CRATE,    4.0,3.0,0,0,1,'Crates - right of tent'),
+    (901104,@CAMP_LAYOUT_ID,@GO_SALESMAN_CAMPFIRE,  -6.0,0,0,0,1,'Camp Fire');
 
 -- --------------------------------------------------------------------------
 -- Per-physical-camp terrain Z overrides.
